@@ -37,3 +37,44 @@ pub fn run() {
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn environment_health_reports_linux_contract() {
+        let h = environment_health();
+        // X-Platform header value sent to the backend (PLAN.md §5).
+        assert_eq!(h.platform, "linux");
+        // The Rust<->WebView bridge is what the UI checks against.
+        assert!(h.tauri_bridge);
+        // Version is sourced from Cargo, never empty.
+        assert_eq!(h.app_version, env!("CARGO_PKG_VERSION"));
+        assert!(!h.app_version.is_empty());
+        assert_eq!(h.app_name, "Miniti Linux");
+    }
+
+    #[test]
+    fn environment_health_pcm_matches_deepgram_contract() {
+        // Deepgram audio contract from PLAN.md §6: 16 kHz PCM16 LE.
+        let h = environment_health();
+        assert!(h.pcm_contract.contains("16 kHz"));
+        assert!(h.pcm_contract.contains("PCM16"));
+    }
+
+    #[test]
+    fn environment_health_serializes_to_expected_json_shape() {
+        let json = serde_json::to_value(environment_health()).expect("serializes");
+        for key in [
+            "app_name",
+            "app_version",
+            "platform",
+            "pcm_contract",
+            "os",
+            "tauri_bridge",
+        ] {
+            assert!(json.get(key).is_some(), "missing key: {key}");
+        }
+    }
+}
