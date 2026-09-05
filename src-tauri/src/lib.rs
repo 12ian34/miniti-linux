@@ -1,8 +1,9 @@
 //! Miniti Linux — native desktop meeting assistant (Tauri 2 + Rust).
 //!
-//! Module map (PLAN.md): `audio` (capture + PCM), `deepgram` (live transcription),
-//! `db` (SQLite), `prefs`, `device_id`, `coaching` (local metrics), `api`
-//! (backend client), `insights`, `webhook`, `gates`, `call_sensor`, and `state`
+//! Module map (PLAN.md): `audio` (capture + PCM), `deepgram` (live transcription
+//! + speaker identity/segmentation), `db` (SQLite), `prefs`, `device_id`,
+//! `coaching` (local metrics), `api` (backend client), `insights` (request
+//! contract), `webhook`, `gates`, `call_sensor` (sensor + policy), and `state`
 //! (recording engine + Tauri commands).
 
 use std::sync::{Arc, Mutex};
@@ -21,9 +22,12 @@ pub mod state;
 pub mod webhook;
 
 use state::{
-    coaching_overview, delete_meeting, environment_health, get_device_id, get_levels, get_meeting,
-    get_prefs, get_segments, list_meetings, search_meetings, set_pinned, set_prefs,
-    start_recording, stop_recording, AppState, Levels, RecordingSession,
+    accept_terms, coaching_overview, coaching_report, complete_onboarding, delete_meeting,
+    environment_health, get_device_id, get_levels, get_meeting, get_meeting_detail, get_prefs,
+    get_segments, get_usage, launch_gate, list_meetings, mark_as_you, portal_url,
+    recording_status, restore_license, search_meetings, set_meeting_title, set_pinned, set_prefs,
+    set_speaker_name, start_recording, stop_recording, subscribe_url, AppState, Levels,
+    RecordingSession,
 };
 
 fn init_tracing() {
@@ -38,14 +42,23 @@ fn build_state() -> AppState {
     let db_path = data_dir.join("miniti.db");
     let conn = db::open(&db_path).expect("failed to open database");
     let prefs = prefs::Prefs::load();
-    let device = device_id::get_or_create().unwrap_or_else(|_| "unknown-device".to_string());
+    let device = device_id::get_or_create().unwrap_or_else(|e| {
+        tracing::error!("device id unavailable ({e}); using an ephemeral id");
+        uuid::Uuid::new_v4().to_string()
+    });
+    let api_key = api::embedded_api_key();
+    if api_key.is_none() {
+        tracing::info!("no backend key in this build: managed mode unavailable, BYOK only");
+    }
 
     AppState {
         db: Arc::new(Mutex::new(conn)),
         prefs: Mutex::new(prefs),
         device_id: device,
+        api_key,
         levels: Arc::new(Levels::default()),
         session: Mutex::new(RecordingSession::default()),
+        last_status: Arc::new(Mutex::new(None)),
     }
 }
 
@@ -60,16 +73,29 @@ pub fn run() {
             get_prefs,
             set_prefs,
             get_device_id,
+            launch_gate,
+            accept_terms,
+            complete_onboarding,
+            get_usage,
+            subscribe_url,
+            portal_url,
+            restore_license,
             start_recording,
             stop_recording,
             get_levels,
+            recording_status,
             list_meetings,
             search_meetings,
             get_meeting,
+            get_meeting_detail,
             get_segments,
             set_pinned,
+            set_meeting_title,
+            set_speaker_name,
+            mark_as_you,
             delete_meeting,
             coaching_overview,
+            coaching_report,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

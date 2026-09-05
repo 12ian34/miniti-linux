@@ -14,7 +14,7 @@ use std::thread::{self, JoinHandle};
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 
-use super::pcm;
+use super::pcm::{self, LinearResampler};
 
 /// A chunk of 16 kHz mono PCM16 samples plus its RMS level in [0, 1].
 #[derive(Debug, Clone)]
@@ -72,21 +72,19 @@ pub fn start_microphone(sink: Sender<PcmFrame>) -> Result<CaptureHandle, String>
         .name("miniti-mic".into())
         .spawn(move || {
             let stream = match build_input_stream(sink) {
-                Ok(s) => {
-                    let _ = ready_tx.send(Ok(()));
-                    s
-                }
+                Ok(s) => s,
                 Err(e) => {
                     let _ = ready_tx.send(Err(e));
                     return;
                 }
             };
             if let Err(e) = stream.play() {
-                tracing::error!("mic stream play failed: {e}");
+                let _ = ready_tx.send(Err(format!("mic stream play failed: {e}")));
                 return;
             }
+            let _ = ready_tx.send(Ok(()));
             while !stop_thread.load(Ordering::SeqCst) {
-                thread::sleep(std::time::Duration::from_millis(100));
+                thread::sleep(std::time::Duration::from_millis(50));
             }
             drop(stream);
         })
@@ -99,7 +97,10 @@ pub fn start_microphone(sink: Sender<PcmFrame>) -> Result<CaptureHandle, String>
             child: None,
             source: Source::Microphone,
         }),
-        Ok(Err(e)) => Err(e),
+        Ok(Err(e)) => {
+            let _ = join.join();
+            Err(e)
+        }
         Err(_) => Err("mic capture thread exited before signaling readiness".into()),
     }
 }
@@ -119,14 +120,18 @@ fn build_input_stream(sink: Sender<PcmFrame>) -> Result<cpal::Stream, String> {
     macro_rules! stream_for {
         ($t:ty, $to_f32:expr) => {{
             let sink = sink.clone();
+            // One resampler per stream so phase carries across callbacks.
+            let mut resampler = LinearResampler::new(sample_rate, pcm::TARGET_SAMPLE_RATE);
             device
                 .build_input_stream(
                     &stream_config,
                     move |data: &[$t], _: &cpal::InputCallbackInfo| {
                         let floats: Vec<f32> = data.iter().map($to_f32).collect();
                         let mono = pcm::downmix_to_mono(&floats, channels);
-                        let resampled =
-                            pcm::resample_linear(&mono, sample_rate, pcm::TARGET_SAMPLE_RATE);
+                        let resampled = resampler.process(&mono);
+                        if resampled.is_empty() {
+                            return;
+                        }
                         let level = pcm::rms_level(&resampled);
                         let samples: Vec<i16> = resampled
                             .iter()
@@ -167,6 +172,9 @@ pub fn default_monitor_source() -> Result<String, String> {
     Ok(format!("{sink}.monitor"))
 }
 
+/// ~50 ms of 16 kHz mono s16le = 800 samples = 1600 bytes per frame.
+const SYSTEM_FRAME_BYTES: usize = 1600;
+
 /// Start system-audio capture from the default sink monitor via `parec`.
 pub fn start_system(sink: Sender<PcmFrame>) -> Result<CaptureHandle, String> {
     let monitor = default_monitor_source()?;
@@ -175,6 +183,7 @@ pub fn start_system(sink: Sender<PcmFrame>) -> Result<CaptureHandle, String> {
             "--format=s16le",
             &format!("--rate={}", pcm::TARGET_SAMPLE_RATE),
             "--channels=1",
+            "--latency-msec=50",
             "-d",
             &monitor,
         ])
@@ -193,22 +202,17 @@ pub fn start_system(sink: Sender<PcmFrame>) -> Result<CaptureHandle, String> {
     let join = thread::Builder::new()
         .name("miniti-system".into())
         .spawn(move || {
-            // ~50 ms of 16 kHz mono s16le = 1600 samples = 3200 bytes.
-            let mut buf = [0u8; 3200];
+            // Pipes deliver arbitrary byte counts. Always read whole frames so a
+            // partial read can never leave the sample stream byte-misaligned.
+            let mut buf = [0u8; SYSTEM_FRAME_BYTES];
             while !stop_thread.load(Ordering::SeqCst) {
-                match stdout.read(&mut buf) {
-                    Ok(0) => break,
-                    Ok(n) => {
-                        let samples: Vec<i16> = buf[..n]
-                            .chunks_exact(2)
-                            .map(|b| i16::from_le_bytes([b[0], b[1]]))
-                            .collect();
-                        let floats: Vec<f32> =
-                            samples.iter().map(|s| *s as f32 / i16::MAX as f32).collect();
-                        let level = pcm::rms_level(&floats);
-                        let _ = sink.send(PcmFrame { samples, level });
-                    }
-                    Err(_) => break,
+                if stdout.read_exact(&mut buf).is_err() {
+                    break; // EOF (parec killed) or pipe error
+                }
+                let samples = pcm::le_bytes_to_pcm16(&buf);
+                let level = pcm::rms_level_pcm16(&samples);
+                if sink.send(PcmFrame { samples, level }).is_err() {
+                    break;
                 }
             }
         })

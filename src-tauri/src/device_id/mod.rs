@@ -1,10 +1,14 @@
 //! Stable device UUID for the `X-Device-ID` header (PLAN.md §5).
 //!
-//! Preferred storage is libsecret (see TODO); this ships the documented file
-//! fallback under the XDG data dir so the id is stable across launches without
-//! requiring a secret service (e.g. headless / minimal desktops).
+//! Preferred storage is the desktop secret service (libsecret / GNOME Keyring /
+//! KWallet via the `keyring` crate). When no secret service is available the
+//! id falls back to a file under the XDG data dir, and a file copy is always
+//! kept so the id survives keyring resets. Both paths yield the same id.
 
 use std::path::{Path, PathBuf};
+
+const KEYRING_SERVICE: &str = "com.miniti.linux";
+const KEYRING_USER: &str = "device-id";
 
 /// `~/.local/share/miniti` (honors `XDG_DATA_HOME`).
 pub fn data_dir() -> PathBuf {
@@ -17,26 +21,70 @@ pub fn device_id_path() -> PathBuf {
     data_dir().join("device_id")
 }
 
-/// Read the device id from `path`, creating and persisting a new UUID if absent.
-pub fn get_or_create_at(path: &Path) -> std::io::Result<String> {
-    if let Ok(existing) = std::fs::read_to_string(path) {
-        let trimmed = existing.trim();
-        if !trimmed.is_empty() {
-            return Ok(trimmed.to_string());
-        }
-    }
-    let id = uuid::Uuid::new_v4().to_string();
+fn is_uuid(s: &str) -> bool {
+    uuid::Uuid::parse_str(s).is_ok()
+}
+
+fn read_file(path: &Path) -> Option<String> {
+    std::fs::read_to_string(path)
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| is_uuid(s))
+}
+
+fn write_file(path: &Path, id: &str) -> std::io::Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    std::fs::write(path, &id)?;
+    std::fs::write(path, id)
+}
+
+fn keyring_entry() -> Option<keyring::Entry> {
+    keyring::Entry::new(KEYRING_SERVICE, KEYRING_USER).ok()
+}
+
+fn read_keyring() -> Option<String> {
+    keyring_entry()?
+        .get_password()
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| is_uuid(s))
+}
+
+fn write_keyring(id: &str) -> bool {
+    match keyring_entry().map(|e| e.set_password(id)) {
+        Some(Ok(())) => true,
+        Some(Err(e)) => {
+            tracing::info!("secret service unavailable for device id ({e}); using file fallback");
+            false
+        }
+        None => false,
+    }
+}
+
+/// Read the device id from `path`, creating and persisting a new UUID if absent.
+/// File-only variant (no secret service) used by tests and as the fallback.
+pub fn get_or_create_at(path: &Path) -> std::io::Result<String> {
+    if let Some(existing) = read_file(path) {
+        return Ok(existing);
+    }
+    let id = uuid::Uuid::new_v4().to_string();
+    write_file(path, &id)?;
     Ok(id)
 }
 
-/// Default location. TODO: prefer libsecret via the `keyring` crate when a
-/// secret service is available, falling back to this file otherwise.
+/// Keyring-first resolution with file mirror + fallback.
 pub fn get_or_create() -> std::io::Result<String> {
-    get_or_create_at(&device_id_path())
+    let path = device_id_path();
+    if let Some(id) = read_keyring() {
+        if read_file(&path).as_deref() != Some(id.as_str()) {
+            let _ = write_file(&path, &id);
+        }
+        return Ok(id);
+    }
+    let id = get_or_create_at(&path)?;
+    write_keyring(&id);
+    Ok(id)
 }
 
 #[cfg(test)]
@@ -50,15 +98,17 @@ mod tests {
         let a = get_or_create_at(&path).unwrap();
         let b = get_or_create_at(&path).unwrap();
         assert_eq!(a, b, "id must be stable across calls");
-        assert_eq!(a.len(), 36, "uuid v4 string length");
+        assert!(is_uuid(&a));
     }
 
     #[test]
-    fn regenerates_when_empty() {
+    fn regenerates_when_empty_or_corrupt() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("device_id");
         std::fs::write(&path, "   ").unwrap();
+        assert!(is_uuid(&get_or_create_at(&path).unwrap()));
+        std::fs::write(&path, "not-a-uuid").unwrap();
         let id = get_or_create_at(&path).unwrap();
-        assert_eq!(id.len(), 36);
+        assert!(is_uuid(&id), "backend requires a valid UUID");
     }
 }

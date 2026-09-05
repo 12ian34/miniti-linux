@@ -2,10 +2,11 @@
 
 Tauri 2 + Rust desktop client for [Miniti](https://miniti.app).
 
-**Status:** Phase 0 scaffold. A minimal Tauri 2 + React/TypeScript skeleton is in
-place (`src-tauri/`, `src/`) with a dark "environment check" screen wired through
-the Rust ↔ WebView bridge. Audio/Deepgram/insights are not implemented yet — see
-[AGENTS.md](AGENTS.md) and [PLAN.md](PLAN.md) for the full plan.
+**Status:** Phase 0/1. Mic → Deepgram → SQLite → UI works end to end (BYOK or
+managed), with launch gates, webhook, coaching and history. System audio is
+metered but not yet transcribed; insights and the desktop shell are not started.
+The exact wired / contract-only / not-started split is in [AGENTS.md](AGENTS.md)
+§ Status; the plan is [PLAN.md](PLAN.md).
 
 Distribution target: GitHub Release binary tarball + AUR — not Flatpak/AppImage.
 
@@ -28,6 +29,19 @@ pnpm build              # typecheck + build the web frontend only
 cargo test --manifest-path src-tauri/Cargo.toml   # Rust unit tests
 pnpm tauri build        # release binary + .deb bundle
 ```
+
+### Managed mode needs the backend app key at build time
+
+The shared `X-API-Key` secret is never committed. Export it when building a binary
+that should support managed mode; it is XOR-obfuscated into the binary by
+`src-tauri/build.rs`:
+
+```bash
+MINITI_API_KEY=… pnpm tauri build
+```
+
+Builds without it still work in BYOK mode and report managed mode as unavailable
+in Settings. Debug logging: `RUST_LOG=debug pnpm tauri dev`.
 
 ## Package a release (tarball)
 
@@ -52,7 +66,12 @@ cp -r icons/hicolor/* ~/.local/share/icons/hicolor/
 miniti
 ```
 
-Built on Ubuntu 24.04 (glibc 2.39); Arch's newer glibc runs it fine.
+Release binaries must be built on the **Ubuntu 22.04** baseline (glibc 2.35) so they
+run on Ubuntu 22.04+, Debian 12+ and rolling distros — see
+[docs/distribution.md](docs/distribution.md). The Cloud Agent VM is Ubuntu 24.04
+(glibc 2.39): binaries built there run on Arch but **not** on Ubuntu 22.04 or
+Debian 12. `packaging/make-tarball.sh` records the actual build host and glibc
+in the tarball README so nobody has to guess.
 
 Headless machines (CI / Cloud Agents) can run the app under a virtual display:
 

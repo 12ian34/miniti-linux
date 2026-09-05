@@ -63,13 +63,40 @@ Honest Linux limits (document in UI/docs, don’t fake parity): Process-Tap-clas
 
 ## Status
 
-- Folder created 2026-09-05. **Phase 0 scaffold + core modules landed**: Tauri 2 + Rust + React/TypeScript, `identifier=com.miniti.linux`, binary `miniti`.
-- Implemented Rust modules under `src-tauri/src/` (all unit-tested — 56 tests): `audio` (PCM convert/resample/interleave/RMS + `cpal` mic + `parec` system capture), `deepgram` (query/URL builder, message parsing, speaker-ID mapping, stabilization, backoff, live WS), `db` (SQLite meetings + transcript segments), `prefs`, `device_id`, `coaching` (local metrics), `api` (backend client with obfuscated key + `X-Platform: linux`), `insights`, `webhook`, `gates`, `call_sensor` (policy), and `state` (recording engine + Tauri commands).
-- Frontend: multi-screen dark UI (`src/views/`): Home, Record (level meters + live transcript), Coaching, History (pin/search/delete), Settings.
-- **Not yet runnable end-to-end without credentials/backend**: live Deepgram needs a key (BYOK Secret) or managed session; managed API/insights need the backend + app secret; real capture needs an audio device (headless VMs fall back gracefully). Multichannel mic+system interleave util exists but the live sync engine is still TODO. Design tokens are placeholders until `../miniti` `ColorPalette` is reachable (see `repositoryDependencies` in `.cursor/environment.json`).
-- Dev environment is codified for Cloud Agents in `.cursor/environment.json` (bootstrap: `.cursor/install.sh` — installs WebKitGTK/GTK/PipeWire/libsecret/tray libs, sets Rust `stable` default, `pnpm install`). Run locally per [README.md](README.md) § Develop.
+Folder created 2026-09-05. Tauri 2 + Rust + React/TypeScript, `identifier=com.miniti.linux`, binary `miniti`. Last reviewed and reworked 2026-09-05 (second-pass review; see git log).
+
+### Wired and runnable (end-to-end paths that exist today)
+
+| Path | Notes |
+|---|---|
+| Mic → 16 kHz PCM16 → Deepgram → SQLite → UI | `cpal` capture with a phase-continuous resampler; per-word speaker segmentation and identity mapping ported from macOS (`SpeakerIdentityState` / `segmentBySpeaker`); interims replaced in place in the UI; `CloseStream` + drain on stop so trailing finals are kept; bounded reconnect with wall-clock timeline offsets |
+| BYOK credential | Deepgram `Token` from prefs; recording refuses to start without a key instead of producing an empty meeting |
+| Managed credential | `POST /api/session` → `Bearer` grant, refreshed before reconnects when near expiry; `POST /api/session/end` on stop. Requires a build with `MINITI_API_KEY` (see README); without it managed mode reports itself unavailable |
+| Launch gates | `GET /api/version` min-version force gate → terms → onboarding → main. Backend failures never block launch |
+| Webhook | `meeting.saved` POST on stop with the Apple payload shape (`meeting` envelope, `training` blob, resolved speaker labels) |
+| Coaching | `TrainingMetrics` + `CoachingAdvisor` ported (fillers/min, wpm, words/turn, questions/30 min, talk ratio, monologue words); per-language filler defaults verbatim from `TranscriptionLanguage`; focus / stats / history tabs |
+| History | list, search (LIKE-escaped), pin, delete, rename, speaker rename, mark-as-you |
+| Pro (Polar) | subscribe / portal URLs opened in the browser, license-key restore, usage display |
+| Device id | secret service via `keyring` with file mirror + fallback |
+
+### Contract-only (typed, tested, not called from any runtime path)
+
+- `insights` — `/api/insights` request/response shapes for every backend mode (`standard`, `meddpicc`, `questions`, `speaker_names`, `catchup`, `investigation`, `docs`, `docs_topics`) with mode-specific validation. The live insights loop (staggered incremental calls, apply-safety, UI) is Phase 2.
+- `call_sensor` — known-app classifier + `pactl source-outputs` parser (corked streams and Miniti's own clients excluded). The Smart-meetings lifecycle engine is Phase 4.
+
+### Not started
+
+- System audio **into the transcript**: `parec` monitor capture is metered only. Stereo interleave utilities exist; the live mic+system sync engine, `channels=2&multichannel=true` sessions, and echo reconciliation are still the Phase 0 kill-criteria spike.
+- Tray, floating presence, notifications, deep links (Phase 3). Prefs toggles exist but do nothing yet and are labelled as such in Settings.
+- Insights UI, Playbook/Docs MCP, catch-up, investigation (Phase 2). Google Calendar, Attio/Twenty, Granola import, markdown export (Phase 5).
+- Design tokens are placeholders until `../miniti` `ColorPalette` is ported.
+
+### Verification
+
+`cargo test --manifest-path src-tauri/Cargo.toml` (93 tests) and `pnpm build` both pass on macOS as of 2026-09-05. Nothing here has been run against a live Deepgram socket or the production backend yet — the next engineering step is exactly that, on Arch with a BYOK key, then the multichannel spike.
+
+- Dev environment for Cloud Agents: `.cursor/environment.json` (bootstrap `.cursor/install.sh`). Run locally per [README.md](README.md) § Develop.
 - Cursor-hosted repo: `ian/miniti-linux` (`https://origin.cursor.com/ian/miniti-linux.git`); page: https://cursor.com/codebase/ian/miniti-linux
-- Next engineering step: remaining Phase 0 spike in PLAN.md §13 — Rust mic capture → PCM16 16 kHz → Deepgram (BYOK), PipeWire system/monitor capture, stereo `channels=2&multichannel=true` smoke test, on Arch + an Ubuntu-built binary.
 
 ## When in doubt
 

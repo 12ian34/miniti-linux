@@ -20,8 +20,11 @@ CREATE TABLE IF NOT EXISTS meetings (
     action_items        TEXT NOT NULL DEFAULT '[]',
     key_decisions       TEXT NOT NULL DEFAULT '[]',
     topics              TEXT NOT NULL DEFAULT '[]',
+    discussion_flow     TEXT NOT NULL DEFAULT '[]',
     suggested_questions TEXT NOT NULL DEFAULT '[]',
+    docs                TEXT NOT NULL DEFAULT '[]',
     speaker_names       TEXT NOT NULL DEFAULT '{}',
+    self_speaker_ids    TEXT NOT NULL DEFAULT '[]',
     meddpicc            TEXT NOT NULL DEFAULT '{}',
     attendees           TEXT NOT NULL DEFAULT '[]',
     managed_session_id  TEXT,
@@ -39,13 +42,20 @@ CREATE TABLE IF NOT EXISTS transcript_segments (
     text        TEXT NOT NULL,
     start_s     REAL NOT NULL,
     end_s       REAL NOT NULL,
-    source      TEXT NOT NULL DEFAULT 'mono',
+    source      TEXT NOT NULL DEFAULT 'microphone',
     created_at  INTEGER NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_segments_meeting ON transcript_segments(meeting_id, start_s);
 CREATE INDEX IF NOT EXISTS idx_meetings_pinned ON meetings(pinned, started_at);
 "#;
+
+/// Columns added after the first schema; applied idempotently on open.
+const MIGRATIONS: &[(&str, &str)] = &[
+    ("meetings", "discussion_flow TEXT NOT NULL DEFAULT '[]'"),
+    ("meetings", "docs TEXT NOT NULL DEFAULT '[]'"),
+    ("meetings", "self_speaker_ids TEXT NOT NULL DEFAULT '[]'"),
+];
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Meeting {
@@ -60,8 +70,13 @@ pub struct Meeting {
     pub action_items: String,
     pub key_decisions: String,
     pub topics: String,
+    pub discussion_flow: String,
     pub suggested_questions: String,
+    pub docs: String,
     pub speaker_names: String,
+    /// JSON array of app speaker ids the user marked as "me". Empty = legacy
+    /// default (1000 is You).
+    pub self_speaker_ids: String,
     pub meddpicc: String,
     pub attendees: String,
     pub managed_session_id: Option<String>,
@@ -86,8 +101,11 @@ impl Meeting {
             action_items: "[]".into(),
             key_decisions: "[]".into(),
             topics: "[]".into(),
+            discussion_flow: "[]".into(),
             suggested_questions: "[]".into(),
+            docs: "[]".into(),
             speaker_names: "{}".into(),
+            self_speaker_ids: "[]".into(),
             meddpicc: "{}".into(),
             attendees: "[]".into(),
             managed_session_id: None,
@@ -108,12 +126,25 @@ impl Meeting {
             t
         }
     }
+
+    /// Explicit self speaker ids, or `None` for the legacy implicit default.
+    pub fn self_speaker_ids(&self) -> Option<Vec<i64>> {
+        serde_json::from_str::<Vec<i64>>(&self.self_speaker_ids)
+            .ok()
+            .filter(|v| !v.is_empty())
+    }
+
+    pub fn duration_seconds(&self) -> i64 {
+        match (self.started_at, self.ended_at) {
+            (Some(s), Some(e)) => (e - s).max(0),
+            _ => 0,
+        }
+    }
 }
 
 /// Remove a leading "YYYY-MM-DD HH:MM " style prefix Apple added to some titles.
 pub fn strip_legacy_timestamp_prefix(title: &str) -> String {
     let bytes = title.as_bytes();
-    // Matches "dddd-dd-dd" then a space.
     let looks_like_date = bytes.len() >= 11
         && bytes[0..4].iter().all(u8::is_ascii_digit)
         && bytes[4] == b'-'
@@ -122,7 +153,6 @@ pub fn strip_legacy_timestamp_prefix(title: &str) -> String {
         && bytes[8..10].iter().all(u8::is_ascii_digit);
     if looks_like_date {
         if let Some(idx) = title.find(' ') {
-            // Drop the date and an optional following HH:MM token.
             let rest = title[idx + 1..].trim_start();
             let after_time = rest
                 .split_once(' ')
@@ -180,28 +210,55 @@ pub fn open_in_memory() -> DbResult<Connection> {
 }
 
 fn init(conn: &Connection) -> DbResult<()> {
-    conn.execute_batch("PRAGMA foreign_keys = ON;")?;
-    conn.execute_batch(SCHEMA)
+    conn.execute_batch("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;")?;
+    conn.execute_batch(SCHEMA)?;
+    migrate(conn)
 }
+
+fn has_column(conn: &Connection, table: &str, column: &str) -> DbResult<bool> {
+    let mut stmt = conn.prepare(&format!("PRAGMA table_info({table})"))?;
+    let names = stmt.query_map([], |row| row.get::<_, String>(1))?;
+    for n in names {
+        if n? == column {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+fn migrate(conn: &Connection) -> DbResult<()> {
+    for (table, decl) in MIGRATIONS {
+        let column = decl.split_whitespace().next().unwrap_or_default();
+        if !has_column(conn, table, column)? {
+            conn.execute_batch(&format!("ALTER TABLE {table} ADD COLUMN {decl};"))?;
+        }
+    }
+    Ok(())
+}
+
+const MEETING_COLS: &str = "id,title,started_at,ended_at,language,notes,summary,action_items,\
+    key_decisions,topics,discussion_flow,suggested_questions,docs,speaker_names,self_speaker_ids,\
+    meddpicc,attendees,managed_session_id,calendar_event_id,import_source,pinned,\
+    insights_updated_at,created_at";
 
 pub fn upsert_meeting(conn: &Connection, m: &Meeting) -> DbResult<()> {
     conn.execute(
-        r#"INSERT INTO meetings
-            (id,title,started_at,ended_at,language,notes,summary,action_items,key_decisions,
-             topics,suggested_questions,speaker_names,meddpicc,attendees,managed_session_id,
-             calendar_event_id,import_source,pinned,insights_updated_at,created_at)
-           VALUES
-            (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20)
+        &format!(
+            r#"INSERT INTO meetings ({MEETING_COLS}) VALUES
+            (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?23)
            ON CONFLICT(id) DO UPDATE SET
              title=?2,started_at=?3,ended_at=?4,language=?5,notes=?6,summary=?7,action_items=?8,
-             key_decisions=?9,topics=?10,suggested_questions=?11,speaker_names=?12,meddpicc=?13,
-             attendees=?14,managed_session_id=?15,calendar_event_id=?16,import_source=?17,
-             pinned=?18,insights_updated_at=?19"#,
+             key_decisions=?9,topics=?10,discussion_flow=?11,suggested_questions=?12,docs=?13,
+             speaker_names=?14,self_speaker_ids=?15,meddpicc=?16,attendees=?17,
+             managed_session_id=?18,calendar_event_id=?19,import_source=?20,pinned=?21,
+             insights_updated_at=?22"#
+        ),
         params![
             m.id, m.title, m.started_at, m.ended_at, m.language, m.notes, m.summary,
-            m.action_items, m.key_decisions, m.topics, m.suggested_questions, m.speaker_names,
-            m.meddpicc, m.attendees, m.managed_session_id, m.calendar_event_id, m.import_source,
-            m.pinned as i64, m.insights_updated_at, m.created_at,
+            m.action_items, m.key_decisions, m.topics, m.discussion_flow, m.suggested_questions,
+            m.docs, m.speaker_names, m.self_speaker_ids, m.meddpicc, m.attendees,
+            m.managed_session_id, m.calendar_event_id, m.import_source, m.pinned as i64,
+            m.insights_updated_at, m.created_at,
         ],
     )?;
     Ok(())
@@ -219,22 +276,21 @@ fn row_to_meeting(row: &rusqlite::Row) -> DbResult<Meeting> {
         action_items: row.get(7)?,
         key_decisions: row.get(8)?,
         topics: row.get(9)?,
-        suggested_questions: row.get(10)?,
-        speaker_names: row.get(11)?,
-        meddpicc: row.get(12)?,
-        attendees: row.get(13)?,
-        managed_session_id: row.get(14)?,
-        calendar_event_id: row.get(15)?,
-        import_source: row.get(16)?,
-        pinned: row.get::<_, i64>(17)? != 0,
-        insights_updated_at: row.get(18)?,
-        created_at: row.get(19)?,
+        discussion_flow: row.get(10)?,
+        suggested_questions: row.get(11)?,
+        docs: row.get(12)?,
+        speaker_names: row.get(13)?,
+        self_speaker_ids: row.get(14)?,
+        meddpicc: row.get(15)?,
+        attendees: row.get(16)?,
+        managed_session_id: row.get(17)?,
+        calendar_event_id: row.get(18)?,
+        import_source: row.get(19)?,
+        pinned: row.get::<_, i64>(20)? != 0,
+        insights_updated_at: row.get(21)?,
+        created_at: row.get(22)?,
     })
 }
-
-const MEETING_COLS: &str = "id,title,started_at,ended_at,language,notes,summary,action_items,\
-    key_decisions,topics,suggested_questions,speaker_names,meddpicc,attendees,managed_session_id,\
-    calendar_event_id,import_source,pinned,insights_updated_at,created_at";
 
 pub fn get_meeting(conn: &Connection, id: &str) -> DbResult<Option<Meeting>> {
     let sql = format!("SELECT {MEETING_COLS} FROM meetings WHERE id=?1");
@@ -252,12 +308,18 @@ pub fn list_meetings(conn: &Connection, limit: i64) -> DbResult<Vec<Meeting>> {
     rows.collect()
 }
 
+/// Escape `%`, `_` and `\` so user input is matched literally in LIKE.
+fn like_escape(q: &str) -> String {
+    q.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_")
+}
+
 /// Case-insensitive search over title, summary, notes, and topics.
 pub fn search_meetings(conn: &Connection, query: &str, limit: i64) -> DbResult<Vec<Meeting>> {
-    let like = format!("%{}%", query);
+    let like = format!("%{}%", like_escape(query));
     let sql = format!(
         "SELECT {MEETING_COLS} FROM meetings \
-         WHERE title LIKE ?1 OR summary LIKE ?1 OR notes LIKE ?1 OR topics LIKE ?1 \
+         WHERE title LIKE ?1 ESCAPE '\\' OR summary LIKE ?1 ESCAPE '\\' \
+            OR notes LIKE ?1 ESCAPE '\\' OR topics LIKE ?1 ESCAPE '\\' \
          ORDER BY pinned DESC, COALESCE(started_at, created_at) DESC LIMIT ?2"
     );
     let mut stmt = conn.prepare(&sql)?;
@@ -273,9 +335,40 @@ pub fn set_pinned(conn: &Connection, id: &str, pinned: bool) -> DbResult<()> {
     Ok(())
 }
 
+pub fn set_title(conn: &Connection, id: &str, title: &str) -> DbResult<()> {
+    conn.execute("UPDATE meetings SET title=?2 WHERE id=?1", params![id, title])?;
+    Ok(())
+}
+
+pub fn set_speaker_names(conn: &Connection, id: &str, names_json: &str) -> DbResult<()> {
+    conn.execute(
+        "UPDATE meetings SET speaker_names=?2 WHERE id=?1",
+        params![id, names_json],
+    )?;
+    Ok(())
+}
+
+pub fn set_self_speaker_ids(conn: &Connection, id: &str, ids_json: &str) -> DbResult<()> {
+    conn.execute(
+        "UPDATE meetings SET self_speaker_ids=?2 WHERE id=?1",
+        params![id, ids_json],
+    )?;
+    Ok(())
+}
+
 pub fn delete_meeting(conn: &Connection, id: &str) -> DbResult<()> {
     conn.execute("DELETE FROM meetings WHERE id=?1", params![id])?;
     Ok(())
+}
+
+pub fn meeting_exists(conn: &Connection, id: &str) -> DbResult<bool> {
+    conn.query_row(
+        "SELECT 1 FROM meetings WHERE id=?1",
+        params![id],
+        |_| Ok(()),
+    )
+    .optional()
+    .map(|o| o.is_some())
 }
 
 pub fn add_segment(conn: &Connection, seg: &TranscriptSegment) -> DbResult<()> {
@@ -293,7 +386,7 @@ pub fn add_segment(conn: &Connection, seg: &TranscriptSegment) -> DbResult<()> {
 pub fn list_segments(conn: &Connection, meeting_id: &str) -> DbResult<Vec<TranscriptSegment>> {
     let mut stmt = conn.prepare(
         "SELECT id,meeting_id,speaker,text,start_s,end_s,source \
-         FROM transcript_segments WHERE meeting_id=?1 ORDER BY start_s ASC",
+         FROM transcript_segments WHERE meeting_id=?1 ORDER BY start_s ASC, created_at ASC",
     )?;
     let rows = stmt.query_map(params![meeting_id], |row| {
         Ok(TranscriptSegment {
@@ -329,12 +422,32 @@ mod tests {
         upsert_meeting(&conn, &m).unwrap();
         let got = get_meeting(&conn, &m.id).unwrap().unwrap();
         assert_eq!(got.title, "Standup");
+        assert_eq!(got.discussion_flow, "[]");
 
         m.summary = "did things".into();
+        m.self_speaker_ids = "[1000,1001]".into();
         upsert_meeting(&conn, &m).unwrap();
-        assert_eq!(get_meeting(&conn, &m.id).unwrap().unwrap().summary, "did things");
+        let got = get_meeting(&conn, &m.id).unwrap().unwrap();
+        assert_eq!(got.summary, "did things");
+        assert_eq!(got.self_speaker_ids(), Some(vec![1000, 1001]));
 
         assert_eq!(list_meetings(&conn, 10).unwrap().len(), 1);
+        assert!(meeting_exists(&conn, &m.id).unwrap());
+        assert!(!meeting_exists(&conn, "nope").unwrap());
+    }
+
+    #[test]
+    fn migration_adds_missing_columns_to_old_schema() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE meetings (id TEXT PRIMARY KEY, title TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL);",
+        )
+        .unwrap();
+        assert!(!has_column(&conn, "meetings", "discussion_flow").unwrap());
+        migrate(&conn).unwrap();
+        assert!(has_column(&conn, "meetings", "discussion_flow").unwrap());
+        assert!(has_column(&conn, "meetings", "self_speaker_ids").unwrap());
+        migrate(&conn).unwrap(); // idempotent
     }
 
     #[test]
@@ -342,7 +455,7 @@ mod tests {
         let conn = open_in_memory().unwrap();
         let a = Meeting::new("A", "en");
         let mut b = Meeting::new("B", "en");
-        b.started_at = Some(a.started_at.unwrap() - 100); // older
+        b.started_at = Some(a.started_at.unwrap() - 100);
         upsert_meeting(&conn, &a).unwrap();
         upsert_meeting(&conn, &b).unwrap();
         set_pinned(&conn, &b.id, true).unwrap();
@@ -351,13 +464,16 @@ mod tests {
     }
 
     #[test]
-    fn search_matches_summary_and_topics() {
+    fn search_matches_summary_and_topics_and_escapes_wildcards() {
         let conn = open_in_memory().unwrap();
         let mut m = Meeting::new("Weekly", "en");
-        m.summary = "discussed churn reduction".into();
+        m.summary = "discussed churn reduction 100%".into();
         upsert_meeting(&conn, &m).unwrap();
         assert_eq!(search_meetings(&conn, "churn", 10).unwrap().len(), 1);
         assert_eq!(search_meetings(&conn, "nope", 10).unwrap().len(), 0);
+        assert_eq!(search_meetings(&conn, "100%", 10).unwrap().len(), 1);
+        assert_eq!(search_meetings(&conn, "%", 10).unwrap().len(), 1, "literal percent");
+        assert_eq!(search_meetings(&conn, "_", 10).unwrap().len(), 0, "underscore is literal, not wildcard");
     }
 
     #[test]
@@ -366,7 +482,7 @@ mod tests {
         let m = Meeting::new("M", "en");
         upsert_meeting(&conn, &m).unwrap();
         for i in 0..5 {
-            let seg = TranscriptSegment::new(&m.id, 0, format!("w{i}"), i as f64, i as f64 + 0.5, "mono");
+            let seg = TranscriptSegment::new(&m.id, 0, format!("w{i}"), i as f64, i as f64 + 0.5, "microphone");
             add_segment(&conn, &seg).unwrap();
         }
         assert_eq!(list_segments(&conn, &m.id).unwrap().len(), 5);

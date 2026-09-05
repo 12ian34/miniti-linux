@@ -50,7 +50,7 @@ Prebuilt binaries must be produced on an **old-enough** image that still has Web
 
 CI sketch:
 
-1. Job on `ubuntu-22.04` → `pnpm tauri build` (or cargo + frontend) → pack tarball → upload GitHub Release  
+1. Job on `ubuntu-22.04` → `MINITI_API_KEY=$SECRET pnpm tauri build` (the backend app key is injected at build time by `src-tauri/build.rs`; never commit it) → `packaging/make-tarball.sh` (records build host + glibc, warns above the 2.35 baseline) → upload GitHub Release  
 2. Optional: emit `.deb` in the same job  
 3. Do **not** require Flatpak
 
@@ -71,7 +71,8 @@ Tauri documents AUR packaging: https://v2.tauri.app/distribute/aur/
 
 - `makedepends=(rust cargo nodejs pnpm …)` + WebKitGTK **dev** packages  
 - Build with Tauri; install from `target/release` / bundle data  
-- **Disable Tauri updater pubkey / `createUpdaterArtifacts`** for source builds — missing private key breaks AUR builds, and pacman owns updates anyway  
+- **Disable Tauri updater pubkey / `createUpdaterArtifacts`** for source builds — missing private key breaks AUR builds, and pacman owns updates anyway
+- Source builds have no `MINITI_API_KEY`, so they are **BYOK-only**; managed mode needs the `-bin` package built in CI with the key  
 
 Placeholder directories: `packaging/aur/miniti-bin/`, `packaging/aur/miniti/` — fill PKGBUILDs at first release.
 

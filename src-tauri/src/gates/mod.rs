@@ -1,7 +1,12 @@
 //! Launch gate routing (PLAN.md §4): force-update → terms → onboarding → main.
+//! Wired through the `launch_gate` command; the frontend renders the matching
+//! screen before the main app.
+
+use serde::Serialize;
 
 /// Which screen the app should present at launch.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Gate {
     ForceUpdate,
     Terms,
@@ -13,6 +18,7 @@ pub enum Gate {
 #[derive(Debug, Clone)]
 pub struct GateInputs {
     pub current_version: String,
+    /// Empty / unknown when the backend could not be reached — never forces.
     pub min_version: String,
     pub accepted_terms_version: Option<String>,
     pub current_terms_version: String,
@@ -39,9 +45,15 @@ pub fn compare_versions(a: &str, b: &str) -> std::cmp::Ordering {
     std::cmp::Ordering::Equal
 }
 
+/// True when `min_version` is a well-formed dotted version we should honour.
+fn is_version_like(s: &str) -> bool {
+    !s.trim().is_empty() && s.split('.').all(|p| !p.is_empty() && p.chars().all(|c| c.is_ascii_digit()))
+}
+
 /// Route to the first gate that applies, in priority order.
 pub fn route(inputs: &GateInputs) -> Gate {
-    if compare_versions(&inputs.min_version, &inputs.current_version) == std::cmp::Ordering::Greater
+    if is_version_like(&inputs.min_version)
+        && compare_versions(&inputs.min_version, &inputs.current_version) == std::cmp::Ordering::Greater
     {
         return Gate::ForceUpdate;
     }
@@ -85,6 +97,20 @@ mod tests {
     }
 
     #[test]
+    fn unknown_min_version_never_forces() {
+        for min in ["", "unknown", "1.x"] {
+            let g = route(&GateInputs {
+                current_version: "0.1.0".into(),
+                min_version: min.into(),
+                accepted_terms_version: Some("1.0".into()),
+                current_terms_version: "1.0".into(),
+                first_launch: false,
+            });
+            assert_eq!(g, Gate::Main, "min_version {min:?} must not force");
+        }
+    }
+
+    #[test]
     fn terms_then_onboarding_then_main() {
         let base = GateInputs {
             current_version: "1.0.0".into(),
@@ -118,5 +144,10 @@ mod tests {
             first_launch: false,
         });
         assert_eq!(g, Gate::Terms);
+    }
+
+    #[test]
+    fn gate_serializes_snake_case() {
+        assert_eq!(serde_json::to_value(Gate::ForceUpdate).unwrap(), "force_update");
     }
 }

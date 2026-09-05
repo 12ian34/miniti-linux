@@ -29,6 +29,14 @@ version="$(sed -n 's/^\s*"version"\s*:\s*"\([^"]*\)".*/\1/p' \
 version="${version:-0.0.0}"
 
 pkg="miniti-${version}-${target}"
+
+# Record what this binary was actually built on. The release baseline is Ubuntu
+# 22.04 (glibc 2.35); a newer host produces a binary older distros cannot load.
+build_host="$(. /etc/os-release 2>/dev/null && echo "${PRETTY_NAME:-unknown}" || echo unknown)"
+build_glibc="$(ldd --version 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+$' || echo unknown)"
+if [[ "$build_glibc" != "unknown" ]] && [[ "$(printf '%s\n' "$build_glibc" 2.35 | sort -V | tail -1)" != "2.35" ]]; then
+  echo "warning: built against glibc $build_glibc (> 2.35 baseline); this tarball will not run on Ubuntu 22.04 / Debian 12" >&2
+fi
 stage="$out_dir/$pkg"
 rm -rf "$stage"
 mkdir -p "$stage/icons/hicolor/32x32/apps" \
@@ -73,8 +81,9 @@ update-desktop-database ~/.local/share/applications 2>/dev/null || true
 
 Then launch from your app menu or run \`miniti\`.
 
-Built on Ubuntu 24.04 (glibc 2.39). Rolling distros such as Arch ship a newer
-glibc and will run this fine; very old distros may need a build on an older base.
+Built on: $build_host (glibc $build_glibc). Requires glibc >= $build_glibc.
+Official releases are built on the Ubuntu 22.04 baseline (glibc 2.35); a tarball
+built on a newer host will not load on older distros.
 EOF
 
 tar -C "$out_dir" -czf "$out_dir/${pkg}.tar.gz" "$pkg"
