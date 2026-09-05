@@ -44,6 +44,8 @@ packaging/*.tar.zst
 coverage/
 *.profraw
 
-# Cursor / agent local
-.cursor/
+# Cursor / agent local (keep the Cloud Agent env config tracked)
+.cursor/*
+!.cursor/environment.json
+!.cursor/install.sh
 *.canvas.data.json
