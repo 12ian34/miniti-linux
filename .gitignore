@@ -1,0 +1,49 @@
+# OS / editor
+.DS_Store
+*.swp
+*~
+.idea/
+.vscode/
+*.code-workspace
+
+# Rust / Tauri
+target/
+src-tauri/target/
+src-tauri/gen/
+src-tauri/WixTools/
+*.pdb
+
+# Node / frontend
+node_modules/
+dist/
+dist-ssr/
+.vite/
+*.local
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Packaging artifacts
+*.AppImage
+*.flatpak
+*.snap
+packaging/*.pkg.tar*
+packaging/*.tar.zst
+*.deb
+*.rpm
+
+# Test / coverage
+coverage/
+*.profraw
+
+# Cursor / agent local
+.cursor/
+*.canvas.data.json
