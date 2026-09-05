@@ -17,6 +17,7 @@ src-tauri/WixTools/
 node_modules/
 dist/
 dist-ssr/
+dist-release/
 .vite/
 *.local
 npm-debug.log*

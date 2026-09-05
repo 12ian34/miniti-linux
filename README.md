@@ -25,8 +25,34 @@ pnpm install            # frontend deps
 pnpm tauri dev          # run the desktop app (starts Vite + the Rust shell)
 
 pnpm build              # typecheck + build the web frontend only
-pnpm tauri build        # produce a release binary / .deb bundle
+cargo test --manifest-path src-tauri/Cargo.toml   # Rust unit tests
+pnpm tauri build        # release binary + .deb bundle
 ```
+
+## Package a release (tarball)
+
+```bash
+pnpm tauri build                 # builds src-tauri/target/release/miniti + .deb
+packaging/make-tarball.sh        # -> dist-release/miniti-<ver>-x86_64-unknown-linux-gnu.tar.gz
+```
+
+The `.deb` (Debian/Ubuntu) is written to
+`src-tauri/target/release/bundle/deb/`. The tarball is the primary,
+distro-agnostic artifact and its bundled `README.md` lists the runtime deps.
+
+### Install on Arch Linux
+
+```bash
+sudo pacman -S --needed webkit2gtk-4.1 gtk3 libsoup3 librsvg \
+  libappindicator-gtk3 openssl pipewire libpulse libsecret
+tar xzf miniti-*-x86_64-unknown-linux-gnu.tar.gz && cd miniti-*-x86_64-unknown-linux-gnu
+install -Dm755 miniti ~/.local/bin/miniti
+install -Dm644 miniti.desktop ~/.local/share/applications/miniti.desktop
+cp -r icons/hicolor/* ~/.local/share/icons/hicolor/
+miniti
+```
+
+Built on Ubuntu 24.04 (glibc 2.39); Arch's newer glibc runs it fine.
 
 Headless machines (CI / Cloud Agents) can run the app under a virtual display:
 
