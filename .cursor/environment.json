@@ -1,4 +1,8 @@
 {
   "name": "Miniti Linux (Tauri 2 + Rust)",
-  "install": "./.cursor/install.sh"
+  "install": "./.cursor/install.sh",
+  "repositoryDependencies": [
+    "origin.cursor.com/ian/miniti",
+    "origin.cursor.com/ian/miniti-api"
+  ]
 }

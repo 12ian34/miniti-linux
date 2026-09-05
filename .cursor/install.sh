@@ -19,6 +19,7 @@ sudo apt-get install -y --no-install-recommends \
   libssl-dev \
   libpipewire-0.3-dev \
   libpulse-dev \
+  libasound2-dev \
   libsecret-1-dev \
   build-essential \
   curl wget file libglib2.0-dev \
