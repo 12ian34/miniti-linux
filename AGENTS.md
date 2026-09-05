@@ -33,6 +33,7 @@ Do not modify sibling repos from this workflow unless the user explicitly asks. 
 | I need to… | Read |
 |---|---|
 | Build / ship the product | [PLAN.md](PLAN.md) |
+| Set up / run the app locally | [README.md](README.md) § Develop; Cloud Agent env in `.cursor/environment.json` |
 | Understand feasibility & gaps | [docs/feasibility.md](docs/feasibility.md) |
 | Package binary + AUR | [docs/distribution.md](docs/distribution.md) |
 | Backend endpoints / Polar | `../miniti-api/AGENTS.md` (and PLAN § API) |
@@ -62,9 +63,10 @@ Honest Linux limits (document in UI/docs, don’t fake parity): Process-Tap-clas
 
 ## Status
 
-- Folder created 2026-09-05. Planning docs only — **no app scaffold yet**.
+- Folder created 2026-09-05. **Phase 0 scaffold landed**: Tauri 2 + Rust + React/TypeScript skeleton (`src-tauri/`, `src/`), `identifier=com.miniti.linux`, binary `miniti`. The dark "environment check" screen calls a Rust `environment_health` command to prove the toolchain and Rust↔WebView bridge (audio/Deepgram/insights not implemented yet).
+- Dev environment is codified for Cloud Agents in `.cursor/environment.json` (bootstrap: `.cursor/install.sh` — installs WebKitGTK/GTK/PipeWire/libsecret/tray libs, sets Rust `stable` default, `pnpm install`). Run locally per [README.md](README.md) § Develop.
 - Cursor-hosted repo: `ian/miniti-linux` (`https://origin.cursor.com/ian/miniti-linux.git`); page: https://cursor.com/codebase/ian/miniti-linux
-- Next engineering step: Phase 0 spike in PLAN.md (PipeWire dual capture → Deepgram → minimal Tauri shell on Arch + Ubuntu 22.04 builder).
+- Next engineering step: remaining Phase 0 spike in PLAN.md §13 — Rust mic capture → PCM16 16 kHz → Deepgram (BYOK), PipeWire system/monitor capture, stereo `channels=2&multichannel=true` smoke test, on Arch + an Ubuntu-built binary.
 
 ## When in doubt
 
