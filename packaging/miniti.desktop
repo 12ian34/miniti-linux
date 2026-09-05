@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=Miniti
+Comment=AI meeting assistant — live transcription and insights
+Exec=miniti %U
+Icon=miniti
+Terminal=false
+Type=Application
+Categories=Office;AudioVideo;
+StartupWMClass=miniti
+MimeType=x-scheme-handler/miniti-google;x-scheme-handler/miniti-attio;x-scheme-handler/miniti-twenty;

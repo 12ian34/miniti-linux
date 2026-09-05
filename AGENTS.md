@@ -62,7 +62,8 @@ Honest Linux limits (document in UI/docs, don’t fake parity): Process-Tap-clas
 
 ## Status
 
-- Folder created 2026-09-05. Planning docs only — **no app scaffold yet**, **not git-initialized** (user will git when ready).
+- Folder created 2026-09-05. Planning docs only — **no app scaffold yet**.
+- Cursor-hosted repo: `ian/miniti-linux` (`https://origin.cursor.com/ian/miniti-linux.git`); page: https://cursor.com/codebase/ian/miniti-linux
 - Next engineering step: Phase 0 spike in PLAN.md (PipeWire dual capture → Deepgram → minimal Tauri shell on Arch + Ubuntu 22.04 builder).
 
 ## When in doubt
