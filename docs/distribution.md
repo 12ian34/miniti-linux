@@ -13,6 +13,10 @@ Miniti Linux ships as a **normal dynamically linked desktop binary**, not Flatpa
 
 Same pattern for `aarch64` when we care (Pi / ARM laptops) — not required for v1.
 
+Build the tarball with `packaging/make-tarball.sh` after `pnpm tauri build`
+(it stages the binary + `.desktop` + hicolor icons + a runtime-deps README and
+emits `miniti-<version>-x86_64-unknown-linux-gnu.tar.gz` plus a `.sha256`).
+
 ### Tarball layout (proposed)
 
 ```

@@ -33,6 +33,7 @@ Do not modify sibling repos from this workflow unless the user explicitly asks. 
 | I need to… | Read |
 |---|---|
 | Build / ship the product | [PLAN.md](PLAN.md) |
+| Set up / run the app locally | [README.md](README.md) § Develop; Cloud Agent env in `.cursor/environment.json` |
 | Understand feasibility & gaps | [docs/feasibility.md](docs/feasibility.md) |
 | Package binary + AUR | [docs/distribution.md](docs/distribution.md) |
 | Backend endpoints / Polar | `../miniti-api/AGENTS.md` (and PLAN § API) |
@@ -62,9 +63,13 @@ Honest Linux limits (document in UI/docs, don’t fake parity): Process-Tap-clas
 
 ## Status
 
-- Folder created 2026-09-05. Planning docs only — **no app scaffold yet**.
+- Folder created 2026-09-05. **Phase 0 scaffold + core modules landed**: Tauri 2 + Rust + React/TypeScript, `identifier=com.miniti.linux`, binary `miniti`.
+- Implemented Rust modules under `src-tauri/src/` (all unit-tested — 56 tests): `audio` (PCM convert/resample/interleave/RMS + `cpal` mic + `parec` system capture), `deepgram` (query/URL builder, message parsing, speaker-ID mapping, stabilization, backoff, live WS), `db` (SQLite meetings + transcript segments), `prefs`, `device_id`, `coaching` (local metrics), `api` (backend client with obfuscated key + `X-Platform: linux`), `insights`, `webhook`, `gates`, `call_sensor` (policy), and `state` (recording engine + Tauri commands).
+- Frontend: multi-screen dark UI (`src/views/`): Home, Record (level meters + live transcript), Coaching, History (pin/search/delete), Settings.
+- **Not yet runnable end-to-end without credentials/backend**: live Deepgram needs a key (BYOK Secret) or managed session; managed API/insights need the backend + app secret; real capture needs an audio device (headless VMs fall back gracefully). Multichannel mic+system interleave util exists but the live sync engine is still TODO. Design tokens are placeholders until `../miniti` `ColorPalette` is reachable (see `repositoryDependencies` in `.cursor/environment.json`).
+- Dev environment is codified for Cloud Agents in `.cursor/environment.json` (bootstrap: `.cursor/install.sh` — installs WebKitGTK/GTK/PipeWire/libsecret/tray libs, sets Rust `stable` default, `pnpm install`). Run locally per [README.md](README.md) § Develop.
 - Cursor-hosted repo: `ian/miniti-linux` (`https://origin.cursor.com/ian/miniti-linux.git`); page: https://cursor.com/codebase/ian/miniti-linux
-- Next engineering step: Phase 0 spike in PLAN.md (PipeWire dual capture → Deepgram → minimal Tauri shell on Arch + Ubuntu 22.04 builder).
+- Next engineering step: remaining Phase 0 spike in PLAN.md §13 — Rust mic capture → PCM16 16 kHz → Deepgram (BYOK), PipeWire system/monitor capture, stereo `channels=2&multichannel=true` smoke test, on Arch + an Ubuntu-built binary.
 
 ## When in doubt
 
