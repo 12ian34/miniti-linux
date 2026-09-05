@@ -62,7 +62,7 @@ Records mic (and on desktop, system audio), streams to Deepgram for live transcr
 |---|---|
 | Shell | Tauri 2 |
 | Native | Rust (audio, call sensor, keyring, FS, deep links) |
-| UI | Web (React or Svelte — pick at scaffold; dark tokens from Apple `ColorPalette`) |
+| UI | Web — **React + TypeScript + Vite** (chosen at scaffold); dark tokens from Apple `ColorPalette` |
 | State | Rust-owned domain + UI store; isolate high-frequency levels/transcript |
 | DB | SQLite (`sqlx` or `rusqlite`) — Meeting schema compatible with Apple fields |
 | Prefs | JSON/TOML in XDG config, or `tauri-plugin-store` |
@@ -327,7 +327,7 @@ Fire-and-forget POST on `meeting.saved` / `meeting.updated`, 10s timeout. Shape 
 
 Kill criteria: dual capture → Deepgram multichannel (or mono×2 proof) on **Arch** and a binary built on **Ubuntu 22.04** running on Arch.
 
-1. `pnpm create tauri-app` (or equivalent) skeleton  
+1. `pnpm create tauri-app` (or equivalent) skeleton — **done** (React+TS; `com.miniti.linux`; dev env in `.cursor/`)  
 2. Rust mic capture → PCM16 16 kHz → Deepgram BYOK  
 3. PipeWire system/monitor capture  
 4. Stereo interleave + `channels=2&multichannel=true` smoke test  
