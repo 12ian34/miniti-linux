@@ -328,11 +328,13 @@ Fire-and-forget POST on `meeting.saved` / `meeting.updated`, 10s timeout. Shape 
 Kill criteria: dual capture → Deepgram multichannel (or mono×2 proof) on **Arch** and a binary built on **Ubuntu 22.04** running on Arch.
 
 1. `pnpm create tauri-app` (or equivalent) skeleton — **done** (React+TS; `com.miniti.linux`; dev env in `.cursor/`)  
-2. Rust mic capture → PCM16 16 kHz → Deepgram BYOK  
-3. PipeWire system/monitor capture  
-4. Stereo interleave + `channels=2&multichannel=true` smoke test  
-5. Minimal UI: levels + live transcript text  
-6. Document distro failures  
+2. Rust mic capture → PCM16 16 kHz → Deepgram BYOK — **code done** (`audio::capture` cpal + `deepgram::live`); needs a key + audio device to run  
+3. PipeWire system/monitor capture — **code done** (`parec` monitor reader); metering wired, needs a running audio server  
+4. Stereo interleave + `channels=2&multichannel=true` smoke test — interleave util + multichannel query **done** and unit-tested; live mic+system sync engine **TODO**  
+5. Minimal UI: levels + live transcript text — **done** (Record view: meters + live transcript via `transcript` events)  
+6. Document distro failures — pending real-hardware runs (Arch ThinkPad)  
+
+Beyond the spike, Phase 1+ core is also scaffolded and unit-tested: SQLite persistence, prefs, device id, coaching metrics, backend API client (`X-Platform: linux`), insights request shaping, webhook payload, launch gates, and call-sensor policy. Live managed/insights paths await the backend + app secret.
 
 **Stop and reassess (Qt?) if system audio cannot be made reliable on Arch + one other distro.**
 
