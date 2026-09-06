@@ -44,6 +44,7 @@ use state::{
     start_recording, stop_recording, subscribe_url, trim_transcript, AppState, Levels,
     RecordingSession,
     list_templates, set_template,
+    frontend_ready,
 };
 
 /// Keeps the non-blocking log writer alive for the life of the process.
@@ -197,6 +198,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             environment_health,
             recording_presence,
+            frontend_ready,
             disable_nudge_kind,
             debug_log_path,
             debug_log_tail,

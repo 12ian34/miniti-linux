@@ -678,6 +678,14 @@ pub fn build_presence(app: &AppHandle) -> RecordingPresence {
     }
 }
 
+/// First thing the webview calls after React mounts; a missing line in the log
+/// means the page never ran (asset, CSP, or renderer failure), which is how a
+/// blank window is told apart from a paint problem.
+#[tauri::command]
+pub fn frontend_ready(window: tauri::WebviewWindow, user_agent: String, viewport: String) {
+    tracing::info!(target: "frontend", "webview ready: window={} viewport={} ua={}", window.label(), viewport, user_agent);
+}
+
 #[tauri::command]
 pub fn recording_presence(app: AppHandle) -> RecordingPresence {
     build_presence(&app)

@@ -68,6 +68,9 @@ export function errorMessage(e: unknown): string {
 }
 
 export const environmentHealth = () => invoke<EnvHealth>("environment_health");
+/** Startup beacon: lets the Rust log prove the webview ran our code (blank-window triage). */
+export const frontendReady = () =>
+  invoke<void>("frontend_ready", { userAgent: navigator.userAgent, viewport: `${window.innerWidth}x${window.innerHeight}` });
 export const getPrefs = () => invoke<Prefs>("get_prefs");
 export const setPrefs = (prefs: Prefs) => invoke<void>("set_prefs", { prefs });
 export const getDeviceId = () => invoke<string>("get_device_id");
