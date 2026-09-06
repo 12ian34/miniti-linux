@@ -333,3 +333,8 @@ code { font-family: var(--mono); background: var(--surface-card); padding: 1px 5
 .topic.answered { border-color: var(--border-light); }
 .doc-card.high { border-color: var(--amber); }
 .investigation p { white-space: pre-wrap; }
+
+/* ---- Step 4: trim / export ------------------------------------------------- */
+.turn-tools { margin-left: var(--s-4); opacity: 0; transition: opacity 120ms; }
+.turn:hover .turn-tools { opacity: 1; }
+.ghost.on { color: var(--text); background: var(--surface-card); }

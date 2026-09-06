@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { hasBridge, insightsFinishing, onInsightsStatus, setPinned } from "../api";
+import { errorMessage, hasBridge, importGranolaCsv, insightsFinishing, onInsightsStatus, setPinned } from "../api";
 import { useTauriEvent } from "../useEvent";
 import { displayTitle, duration, groupMeetings, timeOnly } from "../format";
 import { useStore } from "../store";
@@ -10,6 +10,21 @@ export function Sidebar() {
   const { route, navigate, meetings, sidebarOpen, setSidebarOpen, recording, refreshMeetings } = store;
   const [query, setQuery] = useState("");
   const [finishing, setFinishing] = useState<string[]>([]);
+  const [importMsg, setImportMsg] = useState<string | null>(null);
+  async function importGranola() {
+    setImportMsg(null);
+    try {
+      const r = await importGranolaCsv();
+      if (!r) return;
+      const parts = [r.imported > 0 ? `Imported ${r.imported} meeting${r.imported === 1 ? "" : "s"}` : "No new meetings imported"];
+      if (r.duplicates > 0) parts.push(`${r.duplicates} already imported`);
+      if (r.skipped_rows > 0) parts.push(`${r.skipped_rows} row${r.skipped_rows === 1 ? "" : "s"} skipped`);
+      setImportMsg(parts.join(" · "));
+      await refreshMeetings();
+    } catch (e) {
+      setImportMsg(errorMessage(e));
+    }
+  }
   useEffect(() => {
     if (!hasBridge) return;
     insightsFinishing().then(setFinishing).catch(() => {});
@@ -135,11 +150,14 @@ export function Sidebar() {
         ))}
       </div>
 
+      {importMsg && <p className="muted tiny pad">{importMsg}</p>}
       <div className="sidebar-foot">
         <button className="ghost" onClick={() => navigate({ kind: "settings" })}>
           ⚙ settings
         </button>
-        <span className="muted tiny">multi-dimensional meetings</span>
+        <button className="ghost" onClick={importGranola} title="Import a Granola CSV export">
+          ⇪ import
+        </button>
       </div>
     </aside>
   );

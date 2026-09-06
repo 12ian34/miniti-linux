@@ -12,6 +12,7 @@
     "notification:default",
     "deep-link:default",
     "core:event:default",
-    "core:window:default"
+    "core:window:default",
+    "clipboard-manager:allow-write-text"
   ]
 }

@@ -539,6 +539,22 @@ pub fn list_segments(conn: &Connection, meeting_id: &str) -> DbResult<Vec<Transc
     rows.collect()
 }
 
+pub fn delete_segment(conn: &Connection, meeting_id: &str, segment_id: &str) -> DbResult<usize> {
+    conn.execute(
+        "DELETE FROM transcript_segments WHERE meeting_id=?1 AND id=?2",
+        params![meeting_id, segment_id],
+    )
+}
+
+/// Trim: drop segments starting after `to_s`.
+pub fn trim_segments_after(conn: &Connection, meeting_id: &str, to_s: f64) -> DbResult<usize> {
+    let n = conn.execute(
+        "DELETE FROM transcript_segments WHERE meeting_id=?1 AND start_s > ?2",
+        params![meeting_id, to_s],
+    )?;
+    Ok(n)
+}
+
 /// Trim: drop segments starting before `from_s` (used by history trimming).
 pub fn trim_segments_before(conn: &Connection, meeting_id: &str, from_s: f64) -> DbResult<usize> {
     let n = conn.execute(

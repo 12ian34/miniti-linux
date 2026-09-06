@@ -15,7 +15,9 @@ pub mod coaching;
 pub mod db;
 pub mod deepgram;
 pub mod device_id;
+pub mod export;
 pub mod gates;
+pub mod import;
 pub mod insights;
 pub mod prefs;
 pub mod state;
@@ -23,12 +25,13 @@ pub mod webhook;
 
 use state::{
     accept_terms, catch_up, coaching_overview, coaching_report, complete_onboarding,
-    delete_meeting, environment_health, get_device_id, get_levels, get_meeting,
-    get_meeting_detail, get_prefs, get_segments, get_usage, insights_finishing, investigate,
-    launch_gate, list_meetings, lookup_doc_topic, mark_as_you, pick_folder, portal_url,
-    probe_docs_mcp, recording_status, regenerate_insights, restore_license, search_meetings,
-    set_meeting_title, set_notes, set_pinned, set_prefs, set_sales_enabled, set_speaker_name,
-    start_recording, stop_recording, subscribe_url, AppState, Levels, RecordingSession,
+    delete_meeting, delete_segment, environment_health, export_markdown, get_device_id,
+    get_levels, get_meeting, get_meeting_detail, get_prefs, get_segments, get_usage,
+    import_granola_csv, insights_finishing, investigate, launch_gate, list_meetings,
+    lookup_doc_topic, mark_as_you, meeting_markdown, pick_folder, portal_url, probe_docs_mcp,
+    recording_status, regenerate_insights, restore_license, search_meetings, set_meeting_title,
+    set_notes, set_pinned, set_prefs, set_sales_enabled, set_speaker_name, start_recording,
+    stop_recording, subscribe_url, trim_transcript, AppState, Levels, RecordingSession,
 };
 
 fn init_tracing() {
@@ -72,6 +75,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_deep_link::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
         .manage(build_state())
         .invoke_handler(tauri::generate_handler![
             environment_health,
@@ -110,6 +114,11 @@ pub fn run() {
             lookup_doc_topic,
             probe_docs_mcp,
             pick_folder,
+            meeting_markdown,
+            export_markdown,
+            import_granola_csv,
+            delete_segment,
+            trim_transcript,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1017,6 +1017,109 @@ pub async fn probe_docs_mcp(url: String) -> Result<serde_json::Value, String> {
     Ok(serde_json::json!({ "search_tool": search_tool, "tools": tools }))
 }
 
+// ---- Export / import / trim -----------------------------------------------------
+
+#[tauri::command]
+pub fn meeting_markdown(state: State<AppState>, meeting_id: String) -> Result<String, String> {
+    let prefs = state.prefs_snapshot()?;
+    let conn = state.db.lock().map_err(|_| "db poisoned")?;
+    let meeting = db::get_meeting(&conn, &meeting_id).map_err(|e| e.to_string())?.ok_or("meeting not found")?;
+    let segments = db::list_segments(&conn, &meeting_id).map_err(|e| e.to_string())?;
+    Ok(crate::export::full_meeting_markdown(&meeting, &segments, &state.fillers(&prefs)))
+}
+
+/// Save the full meeting as Markdown via the native save dialog. Returns the
+/// written path, or None if the user cancelled.
+#[tauri::command]
+pub async fn export_markdown(app: AppHandle, state: State<'_, AppState>, meeting_id: String) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+    let prefs = state.prefs_snapshot()?;
+    let (markdown, file_name) = {
+        let conn = state.db.lock().map_err(|_| "db poisoned")?;
+        let meeting = db::get_meeting(&conn, &meeting_id).map_err(|e| e.to_string())?.ok_or("meeting not found")?;
+        let segments = db::list_segments(&conn, &meeting_id).map_err(|e| e.to_string())?;
+        (
+            crate::export::full_meeting_markdown(&meeting, &segments, &state.fillers(&prefs)),
+            crate::export::export_file_name(&meeting),
+        )
+    };
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    let mut dialog = app.dialog().file().set_file_name(&file_name).add_filter("Markdown", &["md"]);
+    if let Some(dir) = prefs.export_folder.as_deref().filter(|d| !d.is_empty()) {
+        dialog = dialog.set_directory(dir);
+    }
+    dialog.save_file(move |p| {
+        let _ = tx.send(p.map(|p| p.to_string()));
+    });
+    let Some(path) = rx.await.map_err(|_| "dialog closed".to_string())? else {
+        return Ok(None);
+    };
+    tokio::fs::write(&path, markdown).await.map_err(|e| format!("could not write {path}: {e}"))?;
+    if let Some(parent) = std::path::Path::new(&path).parent() {
+        let mut p = state.prefs.lock().map_err(|_| "prefs poisoned")?;
+        p.export_folder = Some(parent.to_string_lossy().to_string());
+        let _ = p.save();
+    }
+    Ok(Some(path))
+}
+
+/// Pick a Granola CSV export and import it with duplicate protection.
+#[tauri::command]
+pub async fn import_granola_csv(app: AppHandle, state: State<'_, AppState>) -> Result<Option<crate::import::granola::ImportSummary>, String> {
+    use tauri_plugin_dialog::DialogExt;
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    app.dialog().file().add_filter("CSV", &["csv"]).pick_file(move |p| {
+        let _ = tx.send(p.map(|p| p.to_string()));
+    });
+    let Some(path) = rx.await.map_err(|_| "dialog closed".to_string())? else {
+        return Ok(None);
+    };
+    let bytes = tokio::fs::read(&path).await.map_err(|e| e.to_string())?;
+    let text = String::from_utf8(bytes).map_err(|_| "The Granola export could not be read as a UTF-8 CSV file.".to_string())?;
+    let parsed = crate::import::granola::parse(&text)?;
+    let prefs = state.prefs_snapshot()?;
+    let conn = state.db.lock().map_err(|_| "db poisoned")?;
+    let existing: std::collections::HashSet<String> = db::find_by_import_source(&conn, crate::import::granola::SOURCE)
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .collect();
+    let mut imported = 0;
+    let mut duplicates = 0;
+    for rec in &parsed.meetings {
+        let (meeting, segments) = crate::import::granola::make_meeting(rec, &prefs.language);
+        if existing.contains(meeting.import_source.as_deref().unwrap_or_default()) {
+            duplicates += 1;
+            continue;
+        }
+        db::upsert_meeting(&conn, &meeting).map_err(|e| e.to_string())?;
+        db::replace_segments(&conn, &meeting.id, &segments).map_err(|e| e.to_string())?;
+        imported += 1;
+    }
+    let summary = crate::import::granola::ImportSummary { imported, duplicates, skipped_rows: parsed.skipped_rows };
+    let _ = app.emit("meeting_saved", "import");
+    Ok(Some(summary))
+}
+
+#[tauri::command]
+pub fn delete_segment(state: State<AppState>, meeting_id: String, segment_id: String) -> Result<(), String> {
+    let conn = state.db.lock().map_err(|_| "db poisoned")?;
+    db::delete_segment(&conn, &meeting_id, &segment_id).map(|_| ()).map_err(|e| e.to_string())
+}
+
+/// Trim a saved transcript: drop everything before `before_s` and/or after `after_s`.
+#[tauri::command]
+pub fn trim_transcript(state: State<AppState>, meeting_id: String, before_s: Option<f64>, after_s: Option<f64>) -> Result<usize, String> {
+    let conn = state.db.lock().map_err(|_| "db poisoned")?;
+    let mut removed = 0;
+    if let Some(b) = before_s {
+        removed += db::trim_segments_before(&conn, &meeting_id, b).map_err(|e| e.to_string())?;
+    }
+    if let Some(a) = after_s {
+        removed += db::trim_segments_after(&conn, &meeting_id, a).map_err(|e| e.to_string())?;
+    }
+    Ok(removed)
+}
+
 /// Folder picker for codebase investigations (native dialog).
 #[tauri::command]
 pub async fn pick_folder(app: AppHandle) -> Result<Option<String>, String> {

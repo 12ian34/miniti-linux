@@ -89,6 +89,14 @@ export const lookupDocTopic = (meetingId: string, label: string) =>
 export const probeDocsMcp = (url: string) =>
   invoke<{ search_tool: string; tools: string[] }>("probe_docs_mcp", { url });
 export const pickFolder = () => invoke<string | null>("pick_folder");
+export const meetingMarkdown = (meetingId: string) => invoke<string>("meeting_markdown", { meetingId });
+export const exportMarkdown = (meetingId: string) => invoke<string | null>("export_markdown", { meetingId });
+export const importGranolaCsv = () =>
+  invoke<{ imported: number; duplicates: number; skipped_rows: number } | null>("import_granola_csv");
+export const deleteSegment = (meetingId: string, segmentId: string) =>
+  invoke<void>("delete_segment", { meetingId, segmentId });
+export const trimTranscript = (meetingId: string, beforeS: number | null, afterS: number | null) =>
+  invoke<number>("trim_transcript", { meetingId, beforeS, afterS });
 
 export function onInsightsUpdated(handler: (meetingId: string) => void): Promise<UnlistenFn> {
   return listen<string>("insights_updated", (e) => handler(e.payload));

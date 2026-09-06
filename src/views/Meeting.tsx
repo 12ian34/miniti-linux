@@ -29,7 +29,17 @@ import { useTauriEvent } from "../useEvent";
 import type { Levels, MeetingDetail, StreamStatus, TranscriptEventPayload } from "../types";
 import { InsightsRail } from "./InsightsRail";
 import { CatchUpButton, InvestigateButton } from "./MeetingTools";
-import { insightsFinishing, onInsightsUpdated, onInvestigationSuggested } from "../api";
+import {
+  deleteSegment,
+  exportMarkdown,
+  insightsFinishing,
+  meetingMarkdown,
+  onInsightsUpdated,
+  onInvestigationSuggested,
+  regenerateInsights,
+  trimTranscript,
+} from "../api";
+import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 
 interface Line {
   key: string;
@@ -58,6 +68,51 @@ export function MeetingView({ id }: { id: string }) {
   const live = recording.recording && recording.meeting_id === id;
   const [finishing, setFinishing] = useState(false);
   const [suggestedFocus, setSuggestedFocus] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [trimMode, setTrimMode] = useState(false);
+
+  async function copyTranscript() {
+    try {
+      const md = await meetingMarkdown(id);
+      const transcript = md.slice(md.indexOf("## Transcript"));
+      await writeText(transcript);
+      setNotice("Transcript copied.");
+    } catch (e) {
+      setError(errorMessage(e));
+    }
+  }
+  async function exportMd() {
+    try {
+      const path = await exportMarkdown(id);
+      if (path) setNotice(`Exported to ${path}`);
+    } catch (e) {
+      setError(errorMessage(e));
+    }
+  }
+  async function removeTurn(keys: string[]) {
+    try {
+      for (const k of keys) {
+        if (k.startsWith("seg:")) await deleteSegment(id, k.slice(4));
+      }
+      await load();
+      setNotice("Removed. Regenerate insights from More to refresh them.");
+    } catch (e) {
+      setError(errorMessage(e));
+    }
+  }
+  async function trim(beforeS: number | null, afterS: number | null) {
+    try {
+      const n = await trimTranscript(id, beforeS, afterS);
+      await load();
+      setTrimMode(false);
+      if (n > 0) {
+        await regenerateInsights(id).catch(() => {});
+        setNotice(`Trimmed ${n} segment${n === 1 ? "" : "s"}; regenerating insights.`);
+      }
+    } catch (e) {
+      setError(errorMessage(e));
+    }
+  }
 
   const [detail, setDetail] = useState<MeetingDetail | null>(null);
   const [lines, setLines] = useState<Line[]>([]);
@@ -259,6 +314,11 @@ export function MeetingView({ id }: { id: string }) {
               </button>
             ) : (
               <>
+                <button className="ghost" onClick={copyTranscript} title="Copy transcript">copy</button>
+                <button className="ghost" onClick={exportMd} title="Export as Markdown">export</button>
+                <button className={`ghost ${trimMode ? "on" : ""}`} onClick={() => setTrimMode(!trimMode)} title="Trim transcript">
+                  trim
+                </button>
                 <button className="ghost" onClick={togglePin} title="Pin">
                   {m?.pinned ? "★" : "☆"}
                 </button>
@@ -280,6 +340,18 @@ export function MeetingView({ id }: { id: string }) {
         </div>
 
         {error && <div className="banner error">{error}</div>}
+        {notice && (
+          <div className="banner ok">
+            {notice}
+            <button className="ghost" onClick={() => setNotice(null)}>×</button>
+          </div>
+        )}
+        {trimMode && !live && (
+          <div className="banner warn">
+            Trim mode: hover a turn to remove it, or cut everything before / after it. Insights regenerate afterwards.
+            <button className="ghost" onClick={() => setTrimMode(false)}>done</button>
+          </div>
+        )}
         {justStopped && !live && (
           <div className="banner ok">
             Saved.{finishing ? " Final insights are being generated in the background." : ""}
@@ -313,7 +385,15 @@ export function MeetingView({ id }: { id: string }) {
             {lines.length === 0 ? (
               <p className="muted pad">{live ? "Listening…" : "No transcript."}</p>
             ) : (
-              <TranscriptBody lines={lines} label={label} isYou={isYou} />
+              <TranscriptBody
+                lines={lines}
+                label={label}
+                isYou={isYou}
+                trim={trimMode && !live}
+                onRemove={removeTurn}
+                onTrimBefore={(t) => trim(t, null)}
+                onTrimAfter={(t) => trim(null, t)}
+              />
             )}
             <div ref={bottomRef} />
             {!follow && live && (
@@ -345,10 +425,18 @@ function TranscriptBody({
   lines,
   label,
   isYou,
+  trim,
+  onRemove,
+  onTrimBefore,
+  onTrimAfter,
 }: {
   lines: Line[];
   label: (id: number) => string;
   isYou: (id: number) => boolean;
+  trim?: boolean;
+  onRemove?: (keys: string[]) => void;
+  onTrimBefore?: (startS: number) => void;
+  onTrimAfter?: (startS: number) => void;
 }) {
   // Group consecutive lines by speaker, like the macOS speaker-turn document.
   const turns: { speaker: number; lines: Line[] }[] = [];
@@ -363,6 +451,13 @@ function TranscriptBody({
         <div className={`turn ${isYou(t.speaker) ? "you" : ""}`} key={`${t.speaker}-${i}`}>
           <div className="turn-speaker" style={{ color: speakerColor(t.speaker, isYou(t.speaker)) }}>
             {label(t.speaker)}
+            {trim && (
+              <span className="turn-tools">
+                <button className="ghost tiny" onClick={() => onTrimBefore?.(t.lines[0].start)} title="Remove everything before this turn">⇤ cut before</button>
+                <button className="ghost tiny" onClick={() => onRemove?.(t.lines.map((l) => l.key))} title="Remove this turn">✕</button>
+                <button className="ghost tiny" onClick={() => onTrimAfter?.(t.lines[t.lines.length - 1].start)} title="Remove everything after this turn">cut after ⇥</button>
+              </span>
+            )}
           </div>
           <div className="turn-text">
             {t.lines.map((l) => (
