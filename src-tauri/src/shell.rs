@@ -27,10 +27,14 @@ pub struct TrayHandles {
 pub type TraySlot = Mutex<Option<TrayHandles>>;
 
 fn build_menu(app: &AppHandle) -> Result<(Menu<Wry>, TrayHandles, TrayIcon<Wry>), tauri::Error> {
-    let status = MenuItemBuilder::with_id("status", "Not recording").enabled(false).build(app)?;
+    let status = MenuItemBuilder::with_id("status", "Not recording")
+        .enabled(false)
+        .build(app)?;
     let toggle = MenuItemBuilder::with_id("toggle", "Start meeting").build(app)?;
     let open = MenuItemBuilder::with_id("open", "Open Miniti").build(app)?;
-    let decision = MenuItemBuilder::with_id("decision", "").enabled(false).build(app)?;
+    let decision = MenuItemBuilder::with_id("decision", "")
+        .enabled(false)
+        .build(app)?;
     let decision_primary = MenuItemBuilder::with_id("decision_primary", "").build(app)?;
     let decision_secondary = MenuItemBuilder::with_id("decision_secondary", "").build(app)?;
     let quit = MenuItemBuilder::with_id("quit", "Quit Miniti").build(app)?;
@@ -45,7 +49,9 @@ fn build_menu(app: &AppHandle) -> Result<(Menu<Wry>, TrayHandles, TrayIcon<Wry>)
         .separator()
         .item(&quit)
         .build()?;
-    let mut builder = TrayIconBuilder::with_id("miniti").menu(&menu).tooltip("Miniti");
+    let mut builder = TrayIconBuilder::with_id("miniti")
+        .menu(&menu)
+        .tooltip("Miniti");
     if let Some(icon) = app.default_window_icon() {
         builder = builder.icon(icon.clone());
     }
@@ -114,8 +120,15 @@ pub fn setup_tray(app: &AppHandle, enabled: bool) {
 }
 
 /// Reflect recording state in the tray: timer title, status row, toggle label.
-pub fn update_tray(app: &AppHandle, recording: bool, elapsed_seconds: f64, stream_state: Option<&str>) {
-    let Some(slot) = app.try_state::<TraySlot>() else { return };
+pub fn update_tray(
+    app: &AppHandle,
+    recording: bool,
+    elapsed_seconds: f64,
+    stream_state: Option<&str>,
+) {
+    let Some(slot) = app.try_state::<TraySlot>() else {
+        return;
+    };
     let Ok(guard) = slot.lock() else { return };
     let Some(h) = guard.as_ref() else { return };
     if recording {
@@ -126,7 +139,9 @@ pub fn update_tray(app: &AppHandle, recording: bool, elapsed_seconds: f64, strea
             format!("{}:{:02}", s / 60, s % 60)
         };
         let _ = h.tray.set_title(Some(format!("● {title}")));
-        let _ = h.tray.set_tooltip(Some(format!("Miniti — recording {title}")));
+        let _ = h
+            .tray
+            .set_tooltip(Some(format!("Miniti — recording {title}")));
         let _ = h.status.set_text(match stream_state {
             Some("reconnecting") => format!("Recording {title} · reconnecting…"),
             Some("failed") => format!("Recording {title} · transcription failed"),
@@ -143,7 +158,9 @@ pub fn update_tray(app: &AppHandle, recording: bool, elapsed_seconds: f64, strea
 
 /// Show or clear a Smart-meeting decision in the tray menu.
 pub fn set_tray_decision(app: &AppHandle, decision: Option<(&str, &str, &str)>) {
-    let Some(slot) = app.try_state::<TraySlot>() else { return };
+    let Some(slot) = app.try_state::<TraySlot>() else {
+        return;
+    };
     let Ok(guard) = slot.lock() else { return };
     let Some(h) = guard.as_ref() else { return };
     match decision {
@@ -232,7 +249,10 @@ pub fn shrink_presence(app: &AppHandle) {
 #[tauri::command]
 pub fn resize_presence(app: AppHandle, width: f64, height: f64) {
     if let Some(w) = app.get_webview_window(PRESENCE_LABEL) {
-        let _ = w.set_size(tauri::LogicalSize::new(width.clamp(200.0, 360.0), height.clamp(44.0, 260.0)));
+        let _ = w.set_size(tauri::LogicalSize::new(
+            width.clamp(200.0, 360.0),
+            height.clamp(44.0, 260.0),
+        ));
     }
 }
 
@@ -271,7 +291,10 @@ pub fn parse_deep_link(raw: &str) -> Option<DeepLinkEvent> {
     Some(DeepLinkEvent {
         scheme: u.scheme().to_string(),
         host: u.host_str().unwrap_or_default().to_string(),
-        query: u.query_pairs().map(|(k, v)| (k.to_string(), v.to_string())).collect(),
+        query: u
+            .query_pairs()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect(),
         url: raw.to_string(),
     })
 }
@@ -308,8 +331,14 @@ mod tests {
         assert_eq!(ev.scheme, "miniti-google");
         assert_eq!(ev.host, "oauth-callback");
         assert_eq!(ev.query.get("status").map(String::as_str), Some("success"));
-        let err = parse_deep_link("miniti-attio://oauth-callback?status=error&message=denied%20by%20user").unwrap();
-        assert_eq!(err.query.get("message").map(String::as_str), Some("denied by user"));
+        let err = parse_deep_link(
+            "miniti-attio://oauth-callback?status=error&message=denied%20by%20user",
+        )
+        .unwrap();
+        assert_eq!(
+            err.query.get("message").map(String::as_str),
+            Some("denied by user")
+        );
         assert!(parse_deep_link("not a url").is_none());
     }
 }

@@ -528,7 +528,7 @@ export function Settings() {
                 <button className="ghost" onClick={() => openUrl("https://miniti.app/docs")}>docs</button>
                 <button className="ghost" onClick={() => openUrl("https://miniti.app/changelog")}>changelog</button>
                 <button className="ghost" onClick={() => openUrl("https://miniti.app/terms")}>terms & privacy</button>
-                <button className="ghost" onClick={() => openUrl("https://github.com/ian/miniti-linux/issues")}>report an issue</button>
+                <button className="ghost" onClick={() => openUrl("https://github.com/12ian34/miniti-linux/issues")}>report an issue</button>
               </div>
               <p className="muted small">Diagnostics: run with <code>RUST_LOG=debug miniti</code> and share the terminal output. Transcripts and audio never leave the device except to Deepgram and, in managed mode, the Miniti backend.</p>
             </section>

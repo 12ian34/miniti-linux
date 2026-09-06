@@ -79,3 +79,9 @@ Headless machines (CI / Cloud Agents) can run the app under a virtual display:
 Xvfb :99 -screen 0 1280x800x24 &
 DISPLAY=:99 WEBKIT_DISABLE_DMABUF_RENDERER=1 dbus-run-session -- pnpm tauri dev
 ```
+
+## License
+
+Elastic License 2.0 (see `LICENSE`): use, modify and redistribute freely, but you
+may not offer Miniti as a hosted or managed service, remove the notices, or
+circumvent the Pro entitlement checks. Source: https://github.com/12ian34/miniti-linux

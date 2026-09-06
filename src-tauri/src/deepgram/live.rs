@@ -28,12 +28,19 @@ use super::{
 #[serde(tag = "state", rename_all = "snake_case")]
 pub enum StreamStatus {
     Connecting,
-    Connected { generation: u64 },
-    Reconnecting { attempt: u32, reason: String },
+    Connected {
+        generation: u64,
+    },
+    Reconnecting {
+        attempt: u32,
+        reason: String,
+    },
     /// Graceful end after `CloseStream` drained.
     Ended,
     /// Gave up after repeated connect failures.
-    Failed { reason: String },
+    Failed {
+        reason: String,
+    },
 }
 
 #[derive(Debug)]
@@ -196,9 +203,8 @@ fn describe_connect_error(e: tokio_tungstenite::tungstenite::Error) -> String {
 
 /// Produces a credential for each (re)connect. Managed mode refreshes the
 /// session grant when it is near expiry; BYOK returns the same key.
-pub type AuthProvider = Box<
-    dyn FnMut() -> Pin<Box<dyn Future<Output = Result<Auth, String>> + Send>> + Send,
->;
+pub type AuthProvider =
+    Box<dyn FnMut() -> Pin<Box<dyn Future<Output = Result<Auth, String>> + Send>> + Send>;
 
 /// Drive a meeting's transcription: connect, stream, reconnect on transport
 /// drops, and finish gracefully when `pcm_rx` closes. Status changes are
@@ -305,6 +311,9 @@ mod tests {
         .unwrap();
         assert_eq!(s["state"], "reconnecting");
         assert_eq!(s["attempt"], 2);
-        assert_eq!(serde_json::to_value(StreamStatus::Ended).unwrap()["state"], "ended");
+        assert_eq!(
+            serde_json::to_value(StreamStatus::Ended).unwrap()["state"],
+            "ended"
+        );
     }
 }

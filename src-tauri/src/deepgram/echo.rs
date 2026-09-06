@@ -39,7 +39,11 @@ fn lcs_len(a: &[String], b: &[String]) -> usize {
     for x in a {
         cur[0] = 0;
         for (j, y) in b.iter().enumerate() {
-            cur[j + 1] = if x == y { prev[j] + 1 } else { prev[j + 1].max(cur[j]) };
+            cur[j + 1] = if x == y {
+                prev[j] + 1
+            } else {
+                prev[j + 1].max(cur[j])
+            };
         }
         std::mem::swap(&mut prev, &mut cur);
     }
@@ -74,7 +78,11 @@ pub struct EchoSegment {
 
 /// Port of `isLikelyMicEcho`: text/time agreement is the primary signal;
 /// source energy only relaxes the threshold for short or imperfect matches.
-pub fn is_likely_mic_echo(mic: &EchoSegment, system: &[EchoSegment], system_dominant: bool) -> bool {
+pub fn is_likely_mic_echo(
+    mic: &EchoSegment,
+    system: &[EchoSegment],
+    system_dominant: bool,
+) -> bool {
     let mut overlapping: Vec<&EchoSegment> = system
         .iter()
         .filter(|s| s.end >= mic.start - TIME_PADDING && s.start <= mic.end + TIME_PADDING)
@@ -82,12 +90,20 @@ pub fn is_likely_mic_echo(mic: &EchoSegment, system: &[EchoSegment], system_domi
     if overlapping.is_empty() {
         return false;
     }
-    overlapping.sort_by(|a, b| a.start.partial_cmp(&b.start).unwrap_or(std::cmp::Ordering::Equal));
+    overlapping.sort_by(|a, b| {
+        a.start
+            .partial_cmp(&b.start)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     let mic_tokens = echo_tokens(&mic.text);
     if mic_tokens.is_empty() {
         return false;
     }
-    let sys_text = overlapping.iter().map(|s| s.text.as_str()).collect::<Vec<_>>().join(" ");
+    let sys_text = overlapping
+        .iter()
+        .map(|s| s.text.as_str())
+        .collect::<Vec<_>>()
+        .join(" ");
     let sys_tokens = echo_tokens(&sys_text);
     if sys_tokens.is_empty() {
         return false;
@@ -143,7 +159,11 @@ impl DualChannelReconciler {
 
     fn is_echo(&self, ev: &TranscriptEvent, dominant: Source) -> bool {
         is_likely_mic_echo(
-            &EchoSegment { text: ev.text.clone(), start: ev.start, end: ev.end },
+            &EchoSegment {
+                text: ev.text.clone(),
+                start: ev.start,
+                end: ev.end,
+            },
             &self.system_segments(),
             dominant == Source::System,
         )
@@ -152,12 +172,17 @@ impl DualChannelReconciler {
     fn enqueue_ordered(&mut self, events: Vec<TranscriptEvent>, now: Instant) {
         for ev in events {
             self.seq += 1;
-            self.ordered.push(Ordered { ev, seq: self.seq, deadline: now + DUAL_CHANNEL_ORDERING_DELAY });
+            self.ordered.push(Ordered {
+                ev,
+                seq: self.seq,
+                deadline: now + DUAL_CHANNEL_ORDERING_DELAY,
+            });
         }
     }
 
     fn prune_system_history(&mut self, now: Instant) {
-        self.recent_system.retain(|r| now.duration_since(r.received) <= ECHO_SYSTEM_HISTORY_WINDOW);
+        self.recent_system
+            .retain(|r| now.duration_since(r.received) <= ECHO_SYSTEM_HISTORY_WINDOW);
     }
 
     fn suppress_pending_echoes<F: Fn(f64, f64) -> Source>(&mut self, dominant: &F) {
@@ -165,7 +190,15 @@ impl DualChannelReconciler {
         let mut survivors = Vec::with_capacity(self.pending_mic.len());
         for p in self.pending_mic.drain(..) {
             let d = dominant(p.ev.start, p.ev.end);
-            if is_likely_mic_echo(&EchoSegment { text: p.ev.text.clone(), start: p.ev.start, end: p.ev.end }, &system, d == Source::System) {
+            if is_likely_mic_echo(
+                &EchoSegment {
+                    text: p.ev.text.clone(),
+                    start: p.ev.start,
+                    end: p.ev.end,
+                },
+                &system,
+                d == Source::System,
+            ) {
                 self.suppressed += 1;
             } else {
                 survivors.push(p);
@@ -177,8 +210,18 @@ impl DualChannelReconciler {
     /// Once the clean system channel has finalized beyond an ambiguous mic
     /// segment, a surviving non-match is genuine local speech.
     fn release_covered_by_system(&mut self, now: Instant) {
-        let Some(watermark) = self.recent_system.iter().map(|r| r.seg.end).fold(None, |m: Option<f64>, e| Some(m.map_or(e, |x| x.max(e)))) else { return };
-        let (covered, keep): (Vec<PendingMic>, Vec<PendingMic>) = self.pending_mic.drain(..).partition(|p| p.ev.end + SYSTEM_COVERAGE_MARGIN <= watermark);
+        let Some(watermark) = self
+            .recent_system
+            .iter()
+            .map(|r| r.seg.end)
+            .fold(None, |m: Option<f64>, e| Some(m.map_or(e, |x| x.max(e))))
+        else {
+            return;
+        };
+        let (covered, keep): (Vec<PendingMic>, Vec<PendingMic>) = self
+            .pending_mic
+            .drain(..)
+            .partition(|p| p.ev.end + SYSTEM_COVERAGE_MARGIN <= watermark);
         self.pending_mic = keep;
         if !covered.is_empty() {
             self.enqueue_ordered(covered.into_iter().map(|p| p.ev).collect(), now);
@@ -187,7 +230,12 @@ impl DualChannelReconciler {
 
     /// Feed one batch of events from a Results frame. Returns
     /// `(interims_to_show, finals_committed_now)`.
-    pub fn ingest<F: Fn(f64, f64) -> Source>(&mut self, events: Vec<TranscriptEvent>, now: Instant, dominant: &F) -> (Vec<TranscriptEvent>, Vec<TranscriptEvent>) {
+    pub fn ingest<F: Fn(f64, f64) -> Source>(
+        &mut self,
+        events: Vec<TranscriptEvent>,
+        now: Instant,
+        dominant: &F,
+    ) -> (Vec<TranscriptEvent>, Vec<TranscriptEvent>) {
         let mut interims = Vec::new();
         let mut system_finals = Vec::new();
         let mut mic_finals = Vec::new();
@@ -195,7 +243,9 @@ impl DualChannelReconciler {
         for ev in events {
             if !ev.is_final {
                 // Hide system-dominant mic interims (playback would flash as "You").
-                if ev.source == SegmentSource::Microphone && dominant(ev.start, ev.end) == Source::System {
+                if ev.source == SegmentSource::Microphone
+                    && dominant(ev.start, ev.end) == Source::System
+                {
                     continue;
                 }
                 interims.push(ev);
@@ -210,7 +260,14 @@ impl DualChannelReconciler {
 
         if !system_finals.is_empty() {
             for ev in &system_finals {
-                self.recent_system.push(RecentSystem { seg: EchoSegment { text: ev.text.clone(), start: ev.start, end: ev.end }, received: now });
+                self.recent_system.push(RecentSystem {
+                    seg: EchoSegment {
+                        text: ev.text.clone(),
+                        start: ev.start,
+                        end: ev.end,
+                    },
+                    received: now,
+                });
             }
             self.prune_system_history(now);
             self.suppress_pending_echoes(dominant);
@@ -227,7 +284,10 @@ impl DualChannelReconciler {
             }
             match d {
                 Source::Mic => immediate.push(ev),
-                Source::System | Source::Unknown => self.pending_mic.push(PendingMic { ev, deadline: now + MIC_ECHO_RECONCILIATION_DELAY }),
+                Source::System | Source::Unknown => self.pending_mic.push(PendingMic {
+                    ev,
+                    deadline: now + MIC_ECHO_RECONCILIATION_DELAY,
+                }),
             }
         }
         if !immediate.is_empty() {
@@ -242,17 +302,23 @@ impl DualChannelReconciler {
 
     /// Commit ordered finals whose rendezvous window elapsed, and expire
     /// pending mic segments past their reconciliation deadline.
-    pub fn flush_due<F: Fn(f64, f64) -> Source>(&mut self, now: Instant, dominant: &F) -> Vec<TranscriptEvent> {
+    pub fn flush_due<F: Fn(f64, f64) -> Source>(
+        &mut self,
+        now: Instant,
+        dominant: &F,
+    ) -> Vec<TranscriptEvent> {
         if self.pending_mic.iter().any(|p| p.deadline <= now) {
             self.suppress_pending_echoes(dominant);
-            let (due, keep): (Vec<PendingMic>, Vec<PendingMic>) = self.pending_mic.drain(..).partition(|p| p.deadline <= now);
+            let (due, keep): (Vec<PendingMic>, Vec<PendingMic>) =
+                self.pending_mic.drain(..).partition(|p| p.deadline <= now);
             self.pending_mic = keep;
             if !due.is_empty() {
                 self.enqueue_ordered(due.into_iter().map(|p| p.ev).collect(), now);
             }
             self.prune_system_history(now);
         }
-        let (due, keep): (Vec<Ordered>, Vec<Ordered>) = self.ordered.drain(..).partition(|o| o.deadline <= now);
+        let (due, keep): (Vec<Ordered>, Vec<Ordered>) =
+            self.ordered.drain(..).partition(|o| o.deadline <= now);
         self.ordered = keep;
         Self::commit(due)
     }
@@ -269,11 +335,20 @@ impl DualChannelReconciler {
 
     /// Next time something becomes due (for the caller's timer).
     pub fn next_deadline(&self) -> Option<Instant> {
-        self.ordered.iter().map(|o| o.deadline).chain(self.pending_mic.iter().map(|p| p.deadline)).min()
+        self.ordered
+            .iter()
+            .map(|o| o.deadline)
+            .chain(self.pending_mic.iter().map(|p| p.deadline))
+            .min()
     }
 
     fn commit(mut batch: Vec<Ordered>) -> Vec<TranscriptEvent> {
-        batch.sort_by(|a, b| a.ev.start.partial_cmp(&b.ev.start).unwrap_or(std::cmp::Ordering::Equal).then(a.seq.cmp(&b.seq)));
+        batch.sort_by(|a, b| {
+            a.ev.start
+                .partial_cmp(&b.ev.start)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then(a.seq.cmp(&b.seq))
+        });
         batch.into_iter().map(|o| o.ev).collect()
     }
 }
@@ -282,37 +357,98 @@ impl DualChannelReconciler {
 mod tests {
     use super::*;
 
-    fn ev(source: SegmentSource, text: &str, start: f64, end: f64, is_final: bool) -> TranscriptEvent {
+    fn ev(
+        source: SegmentSource,
+        text: &str,
+        start: f64,
+        end: f64,
+        is_final: bool,
+    ) -> TranscriptEvent {
         TranscriptEvent {
             text: text.into(),
-            speaker_id: if source == SegmentSource::Microphone { 1000 } else { 0 },
+            speaker_id: if source == SegmentSource::Microphone {
+                1000
+            } else {
+                0
+            },
             start,
             end,
             is_final,
             confidence: 0.9,
             source,
-            channel_index: Some(if source == SegmentSource::Microphone { 0 } else { 1 }),
+            channel_index: Some(if source == SegmentSource::Microphone {
+                0
+            } else {
+                1
+            }),
         }
     }
     fn seg(text: &str, start: f64, end: f64) -> EchoSegment {
-        EchoSegment { text: text.into(), start, end }
+        EchoSegment {
+            text: text.into(),
+            start,
+            end,
+        }
     }
 
     #[test]
     fn echo_detection_matches_macos_rules() {
         let sys = vec![seg("nobody alive today will remember this", 10.0, 13.0)];
-        assert!(is_likely_mic_echo(&seg("nobody alive today will remember", 10.2, 12.0), &sys, false), "near-verbatim (≥84% coverage) needs no dominance");
-        assert!(!is_likely_mic_echo(&seg("nobody alive today, though", 10.2, 12.0), &sys, false), "imperfect ASR variant kept without dominance");
-        assert!(is_likely_mic_echo(&seg("nobody alive today, though", 10.2, 12.0), &sys, true), "…but suppressed once the clean system source dominates");
-        assert!(!is_likely_mic_echo(&seg("let me check the calendar for tomorrow", 10.2, 12.0), &sys, true), "unrelated overlap kept");
-        assert!(!is_likely_mic_echo(&seg("nobody alive today will remember this", 30.0, 33.0), &sys, true), "no time overlap");
+        assert!(
+            is_likely_mic_echo(
+                &seg("nobody alive today will remember", 10.2, 12.0),
+                &sys,
+                false
+            ),
+            "near-verbatim (≥84% coverage) needs no dominance"
+        );
+        assert!(
+            !is_likely_mic_echo(&seg("nobody alive today, though", 10.2, 12.0), &sys, false),
+            "imperfect ASR variant kept without dominance"
+        );
+        assert!(
+            is_likely_mic_echo(&seg("nobody alive today, though", 10.2, 12.0), &sys, true),
+            "…but suppressed once the clean system source dominates"
+        );
+        assert!(
+            !is_likely_mic_echo(
+                &seg("let me check the calendar for tomorrow", 10.2, 12.0),
+                &sys,
+                true
+            ),
+            "unrelated overlap kept"
+        );
+        assert!(
+            !is_likely_mic_echo(
+                &seg("nobody alive today will remember this", 30.0, 33.0),
+                &sys,
+                true
+            ),
+            "no time overlap"
+        );
         // 1–2 word interjections: exact match + system dominance only.
-        assert!(is_likely_mic_echo(&seg("nobody alive", 10.5, 11.0), &sys, true));
-        assert!(!is_likely_mic_echo(&seg("nobody alive", 10.5, 11.0), &sys, false));
-        assert!(!is_likely_mic_echo(&seg("yeah right", 10.5, 11.0), &sys, true));
+        assert!(is_likely_mic_echo(
+            &seg("nobody alive", 10.5, 11.0),
+            &sys,
+            true
+        ));
+        assert!(!is_likely_mic_echo(
+            &seg("nobody alive", 10.5, 11.0),
+            &sys,
+            false
+        ));
+        assert!(!is_likely_mic_echo(
+            &seg("yeah right", 10.5, 11.0),
+            &sys,
+            true
+        ));
         // Fuzzy variant needs dominance.
         // 5 of 7 words match (71%): under the 84% verbatim bar, over the 66% dominance bar.
-        let fuzzy = seg("nobody alive today will remember something else", 10.0, 13.0);
+        let fuzzy = seg(
+            "nobody alive today will remember something else",
+            10.0,
+            13.0,
+        );
         assert!(!is_likely_mic_echo(&fuzzy, &sys, false));
         assert!(is_likely_mic_echo(&fuzzy, &sys, true));
     }
@@ -322,7 +458,17 @@ mod tests {
         let mut r = DualChannelReconciler::new();
         let t0 = Instant::now();
         let mic_dom = |_: f64, _: f64| Source::Mic;
-        let (interims, finals) = r.ingest(vec![ev(SegmentSource::Microphone, "hello there everyone", 1.0, 2.0, true)], t0, &mic_dom);
+        let (interims, finals) = r.ingest(
+            vec![ev(
+                SegmentSource::Microphone,
+                "hello there everyone",
+                1.0,
+                2.0,
+                true,
+            )],
+            t0,
+            &mic_dom,
+        );
         assert!(interims.is_empty());
         assert!(finals.is_empty(), "held for the 350 ms rendezvous");
         let out = r.flush_due(t0 + Duration::from_millis(400), &mic_dom);
@@ -335,8 +481,28 @@ mod tests {
         let mut r = DualChannelReconciler::new();
         let t0 = Instant::now();
         let sys_dom = |_: f64, _: f64| Source::System;
-        r.ingest(vec![ev(SegmentSource::System, "welcome to the world service news hour", 5.0, 8.0, true)], t0, &sys_dom);
-        let (_, _) = r.ingest(vec![ev(SegmentSource::Microphone, "welcome to the world service news", 5.3, 8.1, true)], t0 + Duration::from_millis(50), &sys_dom);
+        r.ingest(
+            vec![ev(
+                SegmentSource::System,
+                "welcome to the world service news hour",
+                5.0,
+                8.0,
+                true,
+            )],
+            t0,
+            &sys_dom,
+        );
+        let (_, _) = r.ingest(
+            vec![ev(
+                SegmentSource::Microphone,
+                "welcome to the world service news",
+                5.3,
+                8.1,
+                true,
+            )],
+            t0 + Duration::from_millis(50),
+            &sys_dom,
+        );
         let out = r.flush_due(t0 + Duration::from_secs(5), &sys_dom);
         assert_eq!(out.len(), 1, "only the system final survives");
         assert_eq!(out[0].source, SegmentSource::System);
@@ -349,14 +515,45 @@ mod tests {
         let t0 = Instant::now();
         let unknown = |_: f64, _: f64| Source::Unknown;
         // Genuine local interjection during quiet: ambiguous → pending.
-        r.ingest(vec![ev(SegmentSource::Microphone, "can we move on to pricing", 10.0, 11.5, true)], t0, &unknown);
-        assert!(r.flush_due(t0 + Duration::from_millis(400), &unknown).is_empty(), "still pending");
+        r.ingest(
+            vec![ev(
+                SegmentSource::Microphone,
+                "can we move on to pricing",
+                10.0,
+                11.5,
+                true,
+            )],
+            t0,
+            &unknown,
+        );
+        assert!(
+            r.flush_due(t0 + Duration::from_millis(400), &unknown)
+                .is_empty(),
+            "still pending"
+        );
         // System finalizes well past it with unrelated text → released without waiting 4 s.
-        let (_, finals) = r.ingest(vec![ev(SegmentSource::System, "the quarterly numbers look strong overall", 11.0, 13.0, true)], t0 + Duration::from_millis(500), &unknown);
+        let (_, finals) = r.ingest(
+            vec![ev(
+                SegmentSource::System,
+                "the quarterly numbers look strong overall",
+                11.0,
+                13.0,
+                true,
+            )],
+            t0 + Duration::from_millis(500),
+            &unknown,
+        );
         assert!(finals.is_empty());
         let out = r.flush_due(t0 + Duration::from_millis(900), &unknown);
         let texts: Vec<&str> = out.iter().map(|e| e.text.as_str()).collect();
-        assert_eq!(texts, vec!["can we move on to pricing", "the quarterly numbers look strong overall"], "chronological");
+        assert_eq!(
+            texts,
+            vec![
+                "can we move on to pricing",
+                "the quarterly numbers look strong overall"
+            ],
+            "chronological"
+        );
     }
 
     #[test]
@@ -364,10 +561,24 @@ mod tests {
         let mut r = DualChannelReconciler::new();
         let t0 = Instant::now();
         let unknown = |_: f64, _: f64| Source::Unknown;
-        r.ingest(vec![ev(SegmentSource::Microphone, "is anyone there", 1.0, 2.0, true)], t0, &unknown);
-        assert!(r.flush_due(t0 + Duration::from_secs(3), &unknown).is_empty());
+        r.ingest(
+            vec![ev(
+                SegmentSource::Microphone,
+                "is anyone there",
+                1.0,
+                2.0,
+                true,
+            )],
+            t0,
+            &unknown,
+        );
+        assert!(r
+            .flush_due(t0 + Duration::from_secs(3), &unknown)
+            .is_empty());
         // Deadline passes → moves into the 350 ms ordering buffer, then commits.
-        assert!(r.flush_due(t0 + Duration::from_millis(4_100), &unknown).is_empty());
+        assert!(r
+            .flush_due(t0 + Duration::from_millis(4_100), &unknown)
+            .is_empty());
         let out = r.flush_due(t0 + Duration::from_millis(4_500), &unknown);
         assert_eq!(out.len(), 1);
     }
@@ -378,11 +589,23 @@ mod tests {
         let t0 = Instant::now();
         let sys_dom = |_: f64, _: f64| Source::System;
         let mic_dom = |_: f64, _: f64| Source::Mic;
-        let (i1, _) = r.ingest(vec![ev(SegmentSource::Microphone, "partial", 1.0, 1.5, false)], t0, &sys_dom);
+        let (i1, _) = r.ingest(
+            vec![ev(SegmentSource::Microphone, "partial", 1.0, 1.5, false)],
+            t0,
+            &sys_dom,
+        );
         assert!(i1.is_empty());
-        let (i2, _) = r.ingest(vec![ev(SegmentSource::Microphone, "partial", 1.0, 1.5, false)], t0, &mic_dom);
+        let (i2, _) = r.ingest(
+            vec![ev(SegmentSource::Microphone, "partial", 1.0, 1.5, false)],
+            t0,
+            &mic_dom,
+        );
         assert_eq!(i2.len(), 1);
-        let (i3, _) = r.ingest(vec![ev(SegmentSource::System, "partial", 1.0, 1.5, false)], t0, &sys_dom);
+        let (i3, _) = r.ingest(
+            vec![ev(SegmentSource::System, "partial", 1.0, 1.5, false)],
+            t0,
+            &sys_dom,
+        );
         assert_eq!(i3.len(), 1, "system interims always show");
     }
 
@@ -391,10 +614,33 @@ mod tests {
         let mut r = DualChannelReconciler::new();
         let t0 = Instant::now();
         let unknown = |_: f64, _: f64| Source::Unknown;
-        r.ingest(vec![ev(SegmentSource::Microphone, "second thing here", 5.0, 6.0, true)], t0, &unknown);
-        r.ingest(vec![ev(SegmentSource::System, "first thing here", 1.0, 2.0, true)], t0, &unknown);
+        r.ingest(
+            vec![ev(
+                SegmentSource::Microphone,
+                "second thing here",
+                5.0,
+                6.0,
+                true,
+            )],
+            t0,
+            &unknown,
+        );
+        r.ingest(
+            vec![ev(
+                SegmentSource::System,
+                "first thing here",
+                1.0,
+                2.0,
+                true,
+            )],
+            t0,
+            &unknown,
+        );
         let out = r.flush_all(&unknown);
-        assert_eq!(out.iter().map(|e| e.start as i64).collect::<Vec<_>>(), vec![1, 5]);
+        assert_eq!(
+            out.iter().map(|e| e.start as i64).collect::<Vec<_>>(),
+            vec![1, 5]
+        );
         assert!(r.next_deadline().is_none());
     }
 }

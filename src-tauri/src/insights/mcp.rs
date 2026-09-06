@@ -67,7 +67,8 @@ fn is_blocked_ip(ip: IpAddr) -> bool {
 /// Validate a user-provided MCP URL: https only, no credentials, no local /
 /// private / metadata hosts.
 pub fn assert_safe_mcp_url(raw: &str) -> Result<url::Url, String> {
-    let u = url::Url::parse(raw.trim()).map_err(|_| "docs_mcp_url must be a valid URL".to_string())?;
+    let u =
+        url::Url::parse(raw.trim()).map_err(|_| "docs_mcp_url must be a valid URL".to_string())?;
     if u.scheme() != "https" {
         return Err("docs_mcp_url must use https".into());
     }
@@ -83,7 +84,10 @@ pub fn assert_safe_mcp_url(raw: &str) -> Result<url::Url, String> {
     {
         return Err("docs_mcp_url host is not allowed".into());
     }
-    if let Ok(ip) = host.trim_matches(|c| c == '[' || c == ']').parse::<IpAddr>() {
+    if let Ok(ip) = host
+        .trim_matches(|c| c == '[' || c == ']')
+        .parse::<IpAddr>()
+    {
         if is_blocked_ip(ip) {
             return Err("docs_mcp_url host is not allowed".into());
         }
@@ -103,13 +107,24 @@ fn first_string_property(schema: Option<&Value>) -> Option<String> {
             }
         }
     }
-    props.iter().find(|(_, v)| is_string(v)).map(|(k, _)| k.clone())
+    props
+        .iter()
+        .find(|(_, v)| is_string(v))
+        .map(|(k, _)| k.clone())
 }
 
 /// Prefer a tool whose name matches "search" with a string query argument.
 pub fn discover_search_tool(tools: &[McpTool]) -> Option<SearchTool> {
     const BLOCKED: &[&str] = &[
-        "submit_feedback", "feedback", "create", "update", "delete", "write", "send", "post", "put",
+        "submit_feedback",
+        "feedback",
+        "create",
+        "update",
+        "delete",
+        "write",
+        "send",
+        "post",
+        "put",
         "patch",
     ];
     let mut best: Option<(i32, SearchTool)> = None;
@@ -128,14 +143,25 @@ pub fn discover_search_tool(tools: &[McpTool]) -> Option<SearchTool> {
         if arg == "query" || arg == "q" {
             score += 20;
         }
-        if lname.contains("knowledge") || lname.contains("docs") || lname.contains("documentation") {
+        if lname.contains("knowledge") || lname.contains("docs") || lname.contains("documentation")
+        {
             score += 10;
         }
-        if lname.contains("filesystem") || lname.contains("shell") || lname.contains("feedback") || lname.contains("submit") {
+        if lname.contains("filesystem")
+            || lname.contains("shell")
+            || lname.contains("feedback")
+            || lname.contains("submit")
+        {
             score -= 50;
         }
         if best.as_ref().map(|(s, _)| score > *s).unwrap_or(true) {
-            best = Some((score, SearchTool { name: t.name.clone(), query_argument: arg }));
+            best = Some((
+                score,
+                SearchTool {
+                    name: t.name.clone(),
+                    query_argument: arg,
+                },
+            ));
         }
     }
     best.filter(|(s, _)| *s >= 0).map(|(_, t)| t)
@@ -175,7 +201,13 @@ fn parse_text_chunk(text: &str) -> Option<DocChunk> {
         .map(|i| trimmed[i + "Content:".len()..].trim().to_string());
     if title.is_some() || link.is_some() || content.is_some() {
         return Some(DocChunk {
-            title: truncate(&title.clone().or_else(|| link.clone()).unwrap_or_else(|| "Documentation".into()), 200),
+            title: truncate(
+                &title
+                    .clone()
+                    .or_else(|| link.clone())
+                    .unwrap_or_else(|| "Documentation".into()),
+                200,
+            ),
             url: link,
             text: truncate(&content.unwrap_or_else(|| trimmed.to_string()), 4000),
             score: None,
@@ -202,9 +234,15 @@ fn chunks_from_value(v: &Value, depth: usize) -> Vec<DocChunk> {
     }
     match v {
         Value::String(s) => parse_text_chunk(s).into_iter().collect(),
-        Value::Array(items) => items.iter().flat_map(|i| chunks_from_value(i, depth + 1)).collect(),
+        Value::Array(items) => items
+            .iter()
+            .flat_map(|i| chunks_from_value(i, depth + 1))
+            .collect(),
         Value::Object(o) => {
-            let get = |keys: &[&str]| keys.iter().find_map(|k| o.get(*k).and_then(|x| x.as_str()).filter(|s| !s.is_empty()));
+            let get = |keys: &[&str]| {
+                keys.iter()
+                    .find_map(|k| o.get(*k).and_then(|x| x.as_str()).filter(|s| !s.is_empty()))
+            };
             let title = get(&["title", "name"]);
             let url = get(&["url", "link", "href"]);
             let text = get(&["content", "text", "snippet", "markdown"]);
@@ -232,7 +270,11 @@ fn chunks_from_value(v: &Value, depth: usize) -> Vec<DocChunk> {
 
 /// Normalize a `tools/call` result into deduped chunks (max 8).
 pub fn normalize_tool_result(result: &Value) -> Vec<DocChunk> {
-    if result.get("isError").and_then(|b| b.as_bool()).unwrap_or(false) {
+    if result
+        .get("isError")
+        .and_then(|b| b.as_bool())
+        .unwrap_or(false)
+    {
         return Vec::new();
     }
     let mut chunks = Vec::new();
@@ -251,7 +293,12 @@ pub fn normalize_tool_result(result: &Value) -> Vec<DocChunk> {
         if c.text.trim().is_empty() {
             continue;
         }
-        let key = format!("{}|{}|{}", c.url.clone().unwrap_or_default(), c.title, truncate(&c.text, 80));
+        let key = format!(
+            "{}|{}|{}",
+            c.url.clone().unwrap_or_default(),
+            c.title,
+            truncate(&c.text, 80)
+        );
         if seen.insert(key) {
             out.push(c);
             if out.len() >= MAX_CHUNKS {
@@ -267,14 +314,17 @@ fn parse_jsonrpc_body(body: &str, content_type: &str) -> Result<Value, String> {
     if trimmed.is_empty() {
         return Err("empty MCP response".into());
     }
-    let is_sse = content_type.contains("text/event-stream") || trimmed.starts_with("event:") || trimmed.starts_with("data:");
+    let is_sse = content_type.contains("text/event-stream")
+        || trimmed.starts_with("event:")
+        || trimmed.starts_with("data:");
     let parse_sse = |t: &str| -> Result<Value, String> {
         let last = t
             .lines()
             .filter_map(|l| l.strip_prefix("data:"))
             .next_back()
             .ok_or_else(|| "MCP SSE response missing data".to_string())?;
-        serde_json::from_str(last.trim()).map_err(|_| "MCP SSE response is not valid JSON".to_string())
+        serde_json::from_str(last.trim())
+            .map_err(|_| "MCP SSE response is not valid JSON".to_string())
     };
     if is_sse {
         return parse_sse(trimmed);
@@ -303,7 +353,12 @@ impl McpClient {
             .redirect(reqwest::redirect::Policy::none())
             .build()
             .map_err(|e| e.to_string())?;
-        Ok(Self { url: u.to_string(), http, session_id: None, initialized: false })
+        Ok(Self {
+            url: u.to_string(),
+            http,
+            session_id: None,
+            initialized: false,
+        })
     }
 
     async fn post(&mut self, payload: Value) -> Result<Option<Value>, String> {
@@ -316,9 +371,17 @@ impl McpClient {
             req = req.header("Mcp-Session-Id", sid.clone());
         }
         let resp = req.json(&payload).send().await.map_err(|e| {
-            if e.is_timeout() { "MCP request timed out".to_string() } else { format!("MCP request failed: {e}") }
+            if e.is_timeout() {
+                "MCP request timed out".to_string()
+            } else {
+                format!("MCP request failed: {e}")
+            }
         })?;
-        if let Some(sid) = resp.headers().get("mcp-session-id").and_then(|v| v.to_str().ok()) {
+        if let Some(sid) = resp
+            .headers()
+            .get("mcp-session-id")
+            .and_then(|v| v.to_str().ok())
+        {
             self.session_id = Some(sid.to_string());
         }
         let status = resp.status();
@@ -329,7 +392,9 @@ impl McpClient {
             .unwrap_or_default()
             .to_string();
         let body = resp.text().await.map_err(|e| e.to_string())?;
-        if status == reqwest::StatusCode::ACCEPTED || (status.is_success() && body.trim().is_empty()) {
+        if status == reqwest::StatusCode::ACCEPTED
+            || (status.is_success() && body.trim().is_empty())
+        {
             return Ok(None);
         }
         if !status.is_success() {
@@ -339,7 +404,9 @@ impl McpClient {
         if let Some(err) = v.get("error") {
             return Err(format!(
                 "MCP error: {}",
-                err.get("message").and_then(|m| m.as_str()).unwrap_or("unknown")
+                err.get("message")
+                    .and_then(|m| m.as_str())
+                    .unwrap_or("unknown")
             ));
         }
         Ok(Some(v.get("result").cloned().unwrap_or(Value::Null)))
@@ -351,7 +418,9 @@ impl McpClient {
         if let Some(p) = params {
             payload["params"] = p;
         }
-        self.post(payload).await?.ok_or_else(|| "MCP returned no result".to_string())
+        self.post(payload)
+            .await?
+            .ok_or_else(|| "MCP returned no result".to_string())
     }
 
     pub async fn initialize(&mut self) -> Result<(), String> {
@@ -371,7 +440,9 @@ impl McpClient {
         if !r.is_object() {
             return Err("MCP initialize returned unexpected result".into());
         }
-        let _ = self.post(json!({ "jsonrpc": "2.0", "method": "notifications/initialized" })).await;
+        let _ = self
+            .post(json!({ "jsonrpc": "2.0", "method": "notifications/initialized" }))
+            .await;
         self.initialized = true;
         Ok(())
     }
@@ -392,15 +463,22 @@ impl McpClient {
 
     pub async fn call_tool(&mut self, name: &str, args: Value) -> Result<Value, String> {
         self.initialize().await?;
-        self.request("tools/call", Some(json!({ "name": name, "arguments": args }))).await
+        self.request(
+            "tools/call",
+            Some(json!({ "name": name, "arguments": args })),
+        )
+        .await
     }
 
     /// Discover the search tool and retrieve normalized chunks for `query`.
     pub async fn retrieve(&mut self, query: &str) -> Result<(SearchTool, Vec<DocChunk>), String> {
         let tools = self.list_tools().await?;
-        let tool = discover_search_tool(&tools).ok_or_else(|| "No searchable docs tool found on MCP server".to_string())?;
+        let tool = discover_search_tool(&tools)
+            .ok_or_else(|| "No searchable docs tool found on MCP server".to_string())?;
         let q: String = query.trim().chars().take(400).collect();
-        let result = self.call_tool(&tool.name, json!({ tool.query_argument.clone(): q })).await?;
+        let result = self
+            .call_tool(&tool.name, json!({ tool.query_argument.clone(): q }))
+            .await?;
         Ok((tool, normalize_tool_result(&result)))
     }
 }
@@ -409,7 +487,8 @@ impl McpClient {
 pub async fn probe(url: &str) -> Result<(String, Vec<String>), String> {
     let mut c = McpClient::new(url)?;
     let tools = c.list_tools().await?;
-    let search = discover_search_tool(&tools).ok_or_else(|| "No searchable docs tool found on MCP server".to_string())?;
+    let search = discover_search_tool(&tools)
+        .ok_or_else(|| "No searchable docs tool found on MCP server".to_string())?;
     Ok((search.name, tools.into_iter().map(|t| t.name).collect()))
 }
 
@@ -477,7 +556,10 @@ mod tests {
         let chunks = normalize_tool_result(&result);
         assert_eq!(chunks.len(), 2, "deduped");
         assert_eq!(chunks[0].title, "SSO");
-        assert_eq!(chunks[0].url.as_deref(), Some("https://docs.example.com/sso"));
+        assert_eq!(
+            chunks[0].url.as_deref(),
+            Some("https://docs.example.com/sso")
+        );
         assert_eq!(chunks[0].text, "SAML is supported.");
         assert_eq!(chunks[1].title, "Retention");
         assert!(normalize_tool_result(&json!({"isError": true, "content": []})).is_empty());
@@ -485,9 +567,14 @@ mod tests {
 
     #[test]
     fn parses_json_and_sse_rpc_bodies() {
-        let v = parse_jsonrpc_body(r#"{"jsonrpc":"2.0","id":1,"result":{"ok":true}}"#, "application/json").unwrap();
+        let v = parse_jsonrpc_body(
+            r#"{"jsonrpc":"2.0","id":1,"result":{"ok":true}}"#,
+            "application/json",
+        )
+        .unwrap();
         assert_eq!(v["result"]["ok"], true);
-        let sse = "event: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"tools\":[]}}\n\n";
+        let sse =
+            "event: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"tools\":[]}}\n\n";
         let v = parse_jsonrpc_body(sse, "text/event-stream").unwrap();
         assert!(v["result"]["tools"].is_array());
         assert!(parse_jsonrpc_body("", "application/json").is_err());

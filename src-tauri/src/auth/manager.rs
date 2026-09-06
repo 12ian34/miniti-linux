@@ -123,11 +123,13 @@ fn keyring_entry() -> Option<keyring::Entry> {
     keyring::Entry::new(KEYRING_SERVICE, KEYRING_USER).ok()
 }
 
+#[allow(clippy::disallowed_methods)]
 fn read_keyring() -> Option<Credentials> {
     let raw = keyring_op(|| keyring_entry()?.get_password().ok())??;
     serde_json::from_str(&raw).ok()
 }
 
+#[allow(clippy::disallowed_methods)]
 fn write_keyring(creds: &Credentials) -> bool {
     let Ok(json) = serde_json::to_string(creds) else {
         return false;
@@ -142,6 +144,7 @@ fn write_keyring(creds: &Credentials) -> bool {
     }
 }
 
+#[allow(clippy::disallowed_methods)]
 fn delete_keyring() {
     let _ = keyring_op(|| keyring_entry().map(|e| e.delete_credential()));
 }
@@ -767,5 +770,22 @@ mod tests {
             .expect("delete account (DELETE + proof)");
         manager.clear_local();
         assert!(!manager.is_enrolled());
+    }
+
+    /// Regression: the secret-service backend blocks on a private tokio runtime,
+    /// which panics if it runs on a tokio worker. `keyring_op` must keep it off
+    /// the runtime. Linux only: the Apple backend never had the problem, and a
+    /// read of a probe entry touches nothing in the developer's keyring.
+    #[cfg(target_os = "linux")]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn keyring_calls_from_the_async_runtime_do_not_panic() {
+        #[allow(clippy::disallowed_methods)]
+        let probed = keyring_op(|| {
+            keyring::Entry::new(KEYRING_SERVICE, "test-probe")
+                .map(|e| e.get_password().is_ok())
+                .unwrap_or(false)
+        });
+        // Either answer is fine (no secret service on CI); what matters is that we got here.
+        let _ = probed;
     }
 }

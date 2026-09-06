@@ -17,7 +17,12 @@ pub mod provider;
 /// Port of `buildDocsSearchQuery`: last ~600 chars of transcript as the query.
 pub fn build_docs_search_query(transcript: &str) -> String {
     let n = transcript.chars().count();
-    transcript.chars().skip(n.saturating_sub(600)).collect::<String>().trim().to_string()
+    transcript
+        .chars()
+        .skip(n.saturating_sub(600))
+        .collect::<String>()
+        .trim()
+        .to_string()
 }
 
 /// Every `mode` value the backend accepts. Coaching is intentionally absent.
@@ -229,7 +234,13 @@ pub fn build_request(
 /// Validate mode-specific required fields before sending.
 pub fn validate(req: &InsightRequest) -> Result<(), String> {
     match req.mode {
-        "docs" if req.docs_mcp_url.as_deref().map(str::is_empty).unwrap_or(true) => {
+        "docs"
+            if req
+                .docs_mcp_url
+                .as_deref()
+                .map(str::is_empty)
+                .unwrap_or(true) =>
+        {
             Err("docs mode requires docs_mcp_url".into())
         }
         "investigation" => {
@@ -245,15 +256,21 @@ pub fn validate(req: &InsightRequest) -> Result<(), String> {
             }
             if req.investigation_scope == Some(InvestigationScope::Codebase) {
                 match req.codebase_context.as_deref() {
-                    None | Some("") => return Err("codebase investigation requires codebase_context".into()),
+                    None | Some("") => {
+                        return Err("codebase investigation requires codebase_context".into())
+                    }
                     Some(c) if c.chars().count() > CODEBASE_CONTEXT_MAX_CHARS => {
-                        return Err(format!("codebase_context exceeds {CODEBASE_CONTEXT_MAX_CHARS} characters"))
+                        return Err(format!(
+                            "codebase_context exceeds {CODEBASE_CONTEXT_MAX_CHARS} characters"
+                        ))
                     }
                     _ => {}
                 }
             }
             if req.referenced_files.len() > REFERENCED_FILES_MAX {
-                return Err(format!("referenced_files exceeds {REFERENCED_FILES_MAX} entries"));
+                return Err(format!(
+                    "referenced_files exceeds {REFERENCED_FILES_MAX} entries"
+                ));
             }
             Ok(())
         }
@@ -371,15 +388,42 @@ mod tests {
 
     #[test]
     fn model_pins_follow_server_routing() {
-        assert_eq!(model_for(InsightMode::Standard, AppMode::Managed, true), MODEL_MINI);
-        assert_eq!(model_for(InsightMode::Standard, AppMode::Managed, false), MODEL_MINI_LARGE);
-        assert_eq!(model_for(InsightMode::Meddpicc, AppMode::Managed, false), MODEL_MINI_LARGE);
-        assert_eq!(model_for(InsightMode::Docs, AppMode::Managed, false), MODEL_MINI_LARGE);
-        assert_eq!(model_for(InsightMode::SpeakerNames, AppMode::Managed, false), MODEL_MINI);
-        assert_eq!(model_for(InsightMode::Catchup, AppMode::Managed, false), MODEL_MINI);
-        assert_eq!(model_for(InsightMode::DocsTopics, AppMode::Managed, false), MODEL_MINI);
-        assert_eq!(model_for(InsightMode::Standard, AppMode::Byok, false), MODEL_MINI);
-        assert_eq!(model_for(InsightMode::Investigation, AppMode::Byok, false), MODEL_MINI_LARGE);
+        assert_eq!(
+            model_for(InsightMode::Standard, AppMode::Managed, true),
+            MODEL_MINI
+        );
+        assert_eq!(
+            model_for(InsightMode::Standard, AppMode::Managed, false),
+            MODEL_MINI_LARGE
+        );
+        assert_eq!(
+            model_for(InsightMode::Meddpicc, AppMode::Managed, false),
+            MODEL_MINI_LARGE
+        );
+        assert_eq!(
+            model_for(InsightMode::Docs, AppMode::Managed, false),
+            MODEL_MINI_LARGE
+        );
+        assert_eq!(
+            model_for(InsightMode::SpeakerNames, AppMode::Managed, false),
+            MODEL_MINI
+        );
+        assert_eq!(
+            model_for(InsightMode::Catchup, AppMode::Managed, false),
+            MODEL_MINI
+        );
+        assert_eq!(
+            model_for(InsightMode::DocsTopics, AppMode::Managed, false),
+            MODEL_MINI
+        );
+        assert_eq!(
+            model_for(InsightMode::Standard, AppMode::Byok, false),
+            MODEL_MINI
+        );
+        assert_eq!(
+            model_for(InsightMode::Investigation, AppMode::Byok, false),
+            MODEL_MINI_LARGE
+        );
     }
 
     #[test]
@@ -389,7 +433,11 @@ mod tests {
             AppMode::Managed,
             "hello world",
             "en",
-            &[Attendee { name: "Alex".into(), domain: "acme.com".into(), role: Some("VP".into()) }],
+            &[Attendee {
+                name: "Alex".into(),
+                domain: "acme.com".into(),
+                role: Some("VP".into()),
+            }],
             Some(IncrementalPayload {
                 strategy: IncrementalPayload::STRATEGY.into(),
                 full_segment_count: 140,
@@ -410,11 +458,23 @@ mod tests {
         assert_eq!(json["attendees"][0]["name"], "Alex");
         assert_eq!(json["attendees"][0]["domain"], "acme.com");
         assert_eq!(json["attendees"][0]["role"], "VP");
-        assert_eq!(json["incremental_payload"]["strategy"], "delta_recent_window_v1");
+        assert_eq!(
+            json["incremental_payload"]["strategy"],
+            "delta_recent_window_v1"
+        );
         assert_eq!(json["incremental_payload"]["acked_segment_count"], 120);
         assert_eq!(json["model"], MODEL_MINI, "incremental → lighter model");
-        for absent in ["docs_mcp_url", "topic", "focus", "investigation_scope", "existing_summary"] {
-            assert!(json.get(absent).is_none(), "{absent} must be omitted when unset");
+        for absent in [
+            "docs_mcp_url",
+            "topic",
+            "focus",
+            "investigation_scope",
+            "existing_summary",
+        ] {
+            assert!(
+                json.get(absent).is_none(),
+                "{absent} must be omitted when unset"
+            );
         }
     }
 
@@ -438,12 +498,28 @@ mod tests {
 
     #[test]
     fn validation_catches_missing_required_fields() {
-        let mut docs = build_request(InsightMode::Docs, AppMode::Managed, "t", "en", &[], None, None);
+        let mut docs = build_request(
+            InsightMode::Docs,
+            AppMode::Managed,
+            "t",
+            "en",
+            &[],
+            None,
+            None,
+        );
         assert!(validate(&docs).is_err());
         docs.docs_mcp_url = Some("https://docs.example.com/mcp".into());
         assert!(validate(&docs).is_ok());
 
-        let mut inv = build_request(InsightMode::Investigation, AppMode::Managed, "t", "en", &[], None, None);
+        let mut inv = build_request(
+            InsightMode::Investigation,
+            AppMode::Managed,
+            "t",
+            "en",
+            &[],
+            None,
+            None,
+        );
         assert!(validate(&inv).is_err());
         inv.investigation_scope = Some(InvestigationScope::Codebase);
         inv.focus = Some("why".into());

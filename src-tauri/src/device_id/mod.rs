@@ -57,12 +57,14 @@ fn keyring_op<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> Opti
     rx.recv_timeout(std::time::Duration::from_secs(5)).ok()
 }
 
+#[allow(clippy::disallowed_methods)]
 fn read_keyring() -> Option<String> {
     keyring_op(|| keyring_entry()?.get_password().ok())?
         .map(|s| s.trim().to_string())
         .filter(|s| is_uuid(s))
 }
 
+#[allow(clippy::disallowed_methods)]
 fn write_keyring(id: &str) -> bool {
     let id = id.to_string();
     match keyring_op(move || keyring_entry().map(|e| e.set_password(&id))) {

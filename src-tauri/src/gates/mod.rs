@@ -47,13 +47,16 @@ pub fn compare_versions(a: &str, b: &str) -> std::cmp::Ordering {
 
 /// True when `min_version` is a well-formed dotted version we should honour.
 fn is_version_like(s: &str) -> bool {
-    !s.trim().is_empty() && s.split('.').all(|p| !p.is_empty() && p.chars().all(|c| c.is_ascii_digit()))
+    !s.trim().is_empty()
+        && s.split('.')
+            .all(|p| !p.is_empty() && p.chars().all(|c| c.is_ascii_digit()))
 }
 
 /// Route to the first gate that applies, in priority order.
 pub fn route(inputs: &GateInputs) -> Gate {
     if is_version_like(&inputs.min_version)
-        && compare_versions(&inputs.min_version, &inputs.current_version) == std::cmp::Ordering::Greater
+        && compare_versions(&inputs.min_version, &inputs.current_version)
+            == std::cmp::Ordering::Greater
     {
         return Gate::ForceUpdate;
     }
@@ -148,6 +151,9 @@ mod tests {
 
     #[test]
     fn gate_serializes_snake_case() {
-        assert_eq!(serde_json::to_value(Gate::ForceUpdate).unwrap(), "force_update");
+        assert_eq!(
+            serde_json::to_value(Gate::ForceUpdate).unwrap(),
+            "force_update"
+        );
     }
 }

@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { invoke as tauriInvoke, type InvokeArgs } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type {
   CalendarView,
@@ -32,6 +32,31 @@ import type {
 /** True when running inside the Tauri shell (vs a plain browser preview). */
 export const hasBridge =
   typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+
+/**
+ * Longest a command may take before the UI gives up on it. Investigations and
+ * insights can legitimately run for over a minute; nothing should take two.
+ */
+export const INVOKE_DEADLINE_MS = 120_000;
+
+/**
+ * `invoke` with a deadline. A command whose task dies (panic, runtime deadlock)
+ * never settles its promise, which left the 0.3.0 enrollment button on
+ * "Creating…" forever. Rejecting after the deadline turns that into an error
+ * the user can see and report.
+ */
+function invoke<T>(cmd: string, args?: InvokeArgs, deadlineMs = INVOKE_DEADLINE_MS): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error(`Miniti stopped responding (${cmd}). Restart the app; if it repeats, send the log from Settings → Privacy & Support.`)),
+      deadlineMs,
+    );
+    tauriInvoke<T>(cmd, args).then(
+      (v) => { clearTimeout(timer); resolve(v); },
+      (e) => { clearTimeout(timer); reject(e); },
+    );
+  });
+}
 
 /** Normalize a rejected invoke into a readable message. */
 export function errorMessage(e: unknown): string {

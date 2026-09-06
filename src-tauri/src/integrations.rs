@@ -218,7 +218,11 @@ pub fn unambiguous_current(events: &[CalendarEvent], now: i64) -> Option<Calenda
             _ => false,
         })
         .collect();
-    if candidates.len() == 1 { Some(candidates[0].clone()) } else { None }
+    if candidates.len() == 1 {
+        Some(candidates[0].clone())
+    } else {
+        None
+    }
 }
 
 // ---- Backend calls -----------------------------------------------------------
@@ -230,15 +234,29 @@ impl ApiClient {
     }
 
     pub async fn google_connect_start(&self) -> Result<ConnectStart, ApiError> {
-        self.post_json(&endpoint_url(self.base(), "api/google/connect/start"), &json!({ "callback_scheme": GOOGLE_SCHEME })).await
+        self.post_json(
+            &endpoint_url(self.base(), "api/google/connect/start"),
+            &json!({ "callback_scheme": GOOGLE_SCHEME }),
+        )
+        .await
     }
     pub async fn google_status(&self) -> Result<GoogleStatus, ApiError> {
-        self.get_json(&endpoint_url(self.base(), "api/google/status")).await
+        self.get_json(&endpoint_url(self.base(), "api/google/status"))
+            .await
     }
     pub async fn google_disconnect(&self) -> Result<Value, ApiError> {
-        self.post_json(&endpoint_url(self.base(), "api/google/disconnect"), &json!({})).await
+        self.post_json(
+            &endpoint_url(self.base(), "api/google/disconnect"),
+            &json!({}),
+        )
+        .await
     }
-    pub async fn google_events(&self, time_min: &str, time_max: &str, max_results: u32) -> Result<CalendarEvents, ApiError> {
+    pub async fn google_events(
+        &self,
+        time_min: &str,
+        time_max: &str,
+        max_results: u32,
+    ) -> Result<CalendarEvents, ApiError> {
         let url = format!(
             "{}?time_min={}&time_max={}&max_results={}",
             endpoint_url(self.base(), "api/google/events"),
@@ -249,16 +267,40 @@ impl ApiClient {
         self.get_json(&url).await
     }
     pub async fn crm_connect_start(&self, provider: CrmProvider) -> Result<ConnectStart, ApiError> {
-        self.post_json(&endpoint_url(self.base(), &format!("api/{}/connect/start", provider.path())), &json!({ "callback_scheme": provider.scheme() })).await
+        self.post_json(
+            &endpoint_url(
+                self.base(),
+                &format!("api/{}/connect/start", provider.path()),
+            ),
+            &json!({ "callback_scheme": provider.scheme() }),
+        )
+        .await
     }
     pub async fn crm_status(&self, provider: CrmProvider) -> Result<CrmStatus, ApiError> {
-        self.get_json(&endpoint_url(self.base(), &format!("api/{}/status", provider.path()))).await
+        self.get_json(&endpoint_url(
+            self.base(),
+            &format!("api/{}/status", provider.path()),
+        ))
+        .await
     }
-    pub async fn crm_search(&self, provider: CrmProvider, query: &str, objects: &[&str]) -> Result<CrmSearch, ApiError> {
-        self.post_json(&endpoint_url(self.base(), &format!("api/{}/search", provider.path())), &json!({ "query": query, "objects": objects })).await
+    pub async fn crm_search(
+        &self,
+        provider: CrmProvider,
+        query: &str,
+        objects: &[&str],
+    ) -> Result<CrmSearch, ApiError> {
+        self.post_json(
+            &endpoint_url(self.base(), &format!("api/{}/search", provider.path())),
+            &json!({ "query": query, "objects": objects }),
+        )
+        .await
     }
     pub async fn crm_send(&self, provider: CrmProvider, body: &Value) -> Result<Value, ApiError> {
-        self.post_json(&endpoint_url(self.base(), &format!("api/{}/send", provider.path())), body).await
+        self.post_json(
+            &endpoint_url(self.base(), &format!("api/{}/send", provider.path())),
+            body,
+        )
+        .await
     }
 }
 
@@ -266,7 +308,9 @@ fn urlencoding(s: &str) -> String {
     let mut out = String::new();
     for b in s.bytes() {
         match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => out.push(b as char),
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(b as char)
+            }
             _ => out.push_str(&format!("%{b:02X}")),
         }
     }
@@ -296,7 +340,9 @@ pub fn normalized_action_items(items: &[String]) -> Vec<String> {
         .iter()
         .map(|i| {
             let mut t = i.trim();
-            for p in ["- [ ]", "- [x]", "- [X]", "[ ]", "[x]", "[X]", "-", "•", "*", "☐", "☑"] {
+            for p in [
+                "- [ ]", "- [x]", "- [X]", "[ ]", "[x]", "[X]", "-", "•", "*", "☐", "☑",
+            ] {
                 if let Some(rest) = t.strip_prefix(p) {
                     t = rest.trim();
                     break;
@@ -313,7 +359,12 @@ pub fn crm_meeting_payload(meeting: &Meeting, segments: &[TranscriptSegment]) ->
     let med: HashMap<String, Value> = serde_json::from_str(&meeting.meddpicc).unwrap_or_default();
     let meddpicc: serde_json::Map<String, Value> = med
         .into_iter()
-        .filter_map(|(k, v)| v.as_str().map(str::trim).filter(|s| !s.is_empty()).map(|s| (k, Value::String(s.to_string()))))
+        .filter_map(|(k, v)| {
+            v.as_str()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(|s| (k, Value::String(s.to_string())))
+        })
         .collect();
     let start = meeting.started_at.unwrap_or(meeting.created_at);
     let mut payload = json!({
@@ -346,7 +397,10 @@ pub fn default_tasks(meeting: &Meeting, today: &str) -> Vec<CrmTask> {
     let items: Vec<String> = serde_json::from_str(&meeting.action_items).unwrap_or_default();
     normalized_action_items(&items)
         .into_iter()
-        .map(|content| CrmTask { content, deadline_at: Some(today.to_string()) })
+        .map(|content| CrmTask {
+            content,
+            deadline_at: Some(today.to_string()),
+        })
         .collect()
 }
 
@@ -355,7 +409,13 @@ mod tests {
     use super::*;
 
     fn ev(id: &str, start: i64, end: i64) -> CalendarEvent {
-        CalendarEvent { id: id.into(), title: id.into(), start: iso(start), end: iso(end), ..Default::default() }
+        CalendarEvent {
+            id: id.into(),
+            title: id.into(),
+            start: iso(start),
+            end: iso(end),
+            ..Default::default()
+        }
     }
 
     #[test]
@@ -365,11 +425,20 @@ mod tests {
             ev("past", now - 7200, now - 3600),
             ev("later", now + 7200, now + 9000),
             ev("soon", now + 600, now + 1800),
-            CalendarEvent { is_all_day: true, ..ev("allday", now, now + 86400) },
-            CalendarEvent { status: Some("cancelled".into()), ..ev("cancelled", now + 60, now + 600) },
+            CalendarEvent {
+                is_all_day: true,
+                ..ev("allday", now, now + 86400)
+            },
+            CalendarEvent {
+                status: Some("cancelled".into()),
+                ..ev("cancelled", now + 60, now + 600)
+            },
         ];
         let up = upcoming(&events, now, 5);
-        assert_eq!(up.iter().map(|e| e.id.as_str()).collect::<Vec<_>>(), vec!["soon", "later"]);
+        assert_eq!(
+            up.iter().map(|e| e.id.as_str()).collect::<Vec<_>>(),
+            vec!["soon", "later"]
+        );
         assert_eq!(upcoming(&events, now, 1).len(), 1);
     }
 
@@ -377,8 +446,18 @@ mod tests {
     fn unambiguous_current_event() {
         let now = 1_700_000_000;
         assert!(unambiguous_current(&[ev("a", now - 60, now + 600)], now).is_some());
-        assert!(unambiguous_current(&[ev("a", now + 240, now + 600)], now).is_some(), "5-minute lead-in counts");
-        assert!(unambiguous_current(&[ev("a", now - 60, now + 600), ev("b", now - 30, now + 900)], now).is_none(), "overlap is ambiguous");
+        assert!(
+            unambiguous_current(&[ev("a", now + 240, now + 600)], now).is_some(),
+            "5-minute lead-in counts"
+        );
+        assert!(
+            unambiguous_current(
+                &[ev("a", now - 60, now + 600), ev("b", now - 30, now + 900)],
+                now
+            )
+            .is_none(),
+            "overlap is ambiguous"
+        );
         assert!(unambiguous_current(&[ev("a", now + 900, now + 1200)], now).is_none());
     }
 

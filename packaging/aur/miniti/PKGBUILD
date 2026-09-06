@@ -6,15 +6,15 @@ pkgver=0.3.0
 pkgrel=1
 pkgdesc="Miniti — AI meeting assistant with live transcription, insights and coaching"
 arch=('x86_64' 'aarch64')
-url="https://miniti.app"
-license=('custom')
+url="https://github.com/12ian34/miniti-linux"
+license=('Elastic-2.0')
 depends=('webkit2gtk-4.1' 'gtk3' 'libsoup3' 'librsvg' 'libappindicator-gtk3' 'openssl'
          'pipewire' 'pipewire-pulse' 'libpulse' 'libsecret' 'libnotify' 'hicolor-icon-theme')
 makedepends=('rust' 'cargo' 'nodejs' 'pnpm' 'base-devel' 'alsa-lib' 'pkgconf')
 optdepends=('gnome-keyring: store the device id in the secret service')
 provides=('miniti')
 conflicts=('miniti-bin' 'miniti-git')
-source=("miniti-${pkgver}.tar.gz::https://github.com/ian/miniti-linux/archive/refs/tags/v${pkgver}.tar.gz")
+source=("miniti-${pkgver}.tar.gz::https://github.com/12ian34/miniti-linux/archive/refs/tags/v${pkgver}.tar.gz")
 sha256sums=('SKIP')
 
 prepare() {
@@ -41,4 +41,5 @@ package() {
   install -Dm644 src-tauri/icons/128x128@2x.png "${pkgdir}/usr/share/icons/hicolor/256x256@2/apps/miniti.png"
   install -Dm644 src-tauri/icons/icon.png "${pkgdir}/usr/share/icons/hicolor/512x512/apps/miniti.png"
   install -Dm644 README.md "${pkgdir}/usr/share/doc/${pkgname}/README.md"
+  install -Dm644 LICENSE "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
 }

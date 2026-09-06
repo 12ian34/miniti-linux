@@ -22,8 +22,8 @@ pub mod device_id;
 pub mod export;
 pub mod gates;
 pub mod import;
-pub mod integrations;
 pub mod insights;
+pub mod integrations;
 pub mod prefs;
 pub mod shell;
 pub mod smart;
@@ -31,22 +31,32 @@ pub mod state;
 pub mod webhook;
 
 use state::{
-    accept_terms, catch_up, coaching_overview, coaching_report, complete_onboarding,
-    delete_meeting, delete_segment, environment_health, export_markdown, get_device_id,
-    get_levels, get_meeting, get_meeting_detail, get_prefs, get_segments, get_usage,
-    import_granola_csv, insights_finishing, investigate, launch_gate, list_meetings,
-    lookup_doc_topic, mark_as_you, meeting_markdown, pick_folder, portal_url, probe_docs_mcp,
-    recording_status, regenerate_insights, restore_license, search_meetings, set_meeting_title,
-    set_notes, set_pinned, set_prefs, set_sales_enabled, set_speaker_name, start_recording,
-    stop_recording, subscribe_url, trim_transcript, AppState, Levels, RecordingSession,
-    auth_status, auth_create_account, auth_restore_account, auth_recovery_key, auth_rotate_recovery_key,
-    auth_devices, auth_remove_device, auth_sign_out, auth_delete_account,
+    accept_terms, auth_create_account, auth_delete_account, auth_devices, auth_recovery_key,
+    auth_remove_device, auth_restore_account, auth_rotate_recovery_key, auth_sign_out, auth_status,
+    catch_up, coaching_overview, coaching_report, complete_onboarding, delete_meeting,
+    delete_segment, environment_health, export_markdown, get_device_id, get_levels, get_meeting,
+    get_meeting_detail, get_prefs, get_segments, get_usage, import_granola_csv, insights_finishing,
+    investigate, launch_gate, list_meetings, lookup_doc_topic, mark_as_you, meeting_markdown,
+    pick_folder, portal_url, probe_docs_mcp, recording_status, regenerate_insights,
+    restore_license, search_meetings, set_meeting_title, set_notes, set_pinned, set_prefs,
+    set_sales_enabled, set_speaker_name, start_recording, stop_recording, subscribe_url,
+    trim_transcript, AppState, Levels, RecordingSession,
 };
 
 fn init_tracing() {
     let filter = tracing_subscriber::EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
     let _ = tracing_subscriber::fmt().with_env_filter(filter).try_init();
+    // A panic inside a command must show up in the log a user can send us, not vanish.
+    let default_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let location = info
+            .location()
+            .map(|l| format!("{}:{}", l.file(), l.line()))
+            .unwrap_or_else(|| "unknown".into());
+        tracing::error!(target: "panic", "panic at {location}: {info}");
+        default_hook(info);
+    }));
 }
 
 fn build_state() -> AppState {
@@ -59,7 +69,11 @@ fn build_state() -> AppState {
         tracing::error!("device id unavailable ({e}); using an ephemeral id");
         uuid::Uuid::new_v4().to_string()
     });
-    let auth = Arc::new(auth::manager::AuthManager::load(api::DEFAULT_BASE_URL, device.clone(), state::APP_VERSION));
+    let auth = Arc::new(auth::manager::AuthManager::load(
+        api::DEFAULT_BASE_URL,
+        device.clone(),
+        state::APP_VERSION,
+    ));
     if !auth.is_enrolled() {
         tracing::info!("device not enrolled: managed mode needs a recovery key (Settings → Account); BYOK works");
     }
@@ -83,7 +97,9 @@ pub fn run() {
     tauri::Builder::default()
         .manage(shell::TraySlot::new(None))
         .manage(smart::MonitorSlot::new(smart::MonitorState::default()))
-        .manage(integrations::CalendarSlot::new(integrations::CalendarState::default()))
+        .manage(integrations::CalendarSlot::new(
+            integrations::CalendarState::default(),
+        ))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())

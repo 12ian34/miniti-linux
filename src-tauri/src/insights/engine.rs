@@ -25,7 +25,10 @@ use crate::coaching;
 use crate::db::{self, Meeting, TranscriptSegment};
 
 use super::provider::Provider;
-use super::{build_request, validate, Attendee, IncrementalPayload, InsightMode, InsightRequest, InvestigationScope};
+use super::{
+    build_request, validate, Attendee, IncrementalPayload, InsightMode, InsightRequest,
+    InvestigationScope,
+};
 
 const TICK: Duration = Duration::from_secs(5);
 const RECENT_WINDOW_CHARS: usize = 10_000;
@@ -53,9 +56,21 @@ struct CadencePolicy {
     maximum_interval: Duration,
 }
 
-const STANDARD_POLICY: CadencePolicy = CadencePolicy { minimum_interval: Duration::from_secs(60), minimum_segment_delta: 4, maximum_interval: Duration::from_secs(120) };
-const MEDDPICC_POLICY: CadencePolicy = CadencePolicy { minimum_interval: Duration::from_secs(90), minimum_segment_delta: 8, maximum_interval: Duration::from_secs(180) };
-const QUESTIONS_POLICY: CadencePolicy = CadencePolicy { minimum_interval: Duration::from_secs(60), minimum_segment_delta: 6, maximum_interval: Duration::from_secs(120) };
+const STANDARD_POLICY: CadencePolicy = CadencePolicy {
+    minimum_interval: Duration::from_secs(60),
+    minimum_segment_delta: 4,
+    maximum_interval: Duration::from_secs(120),
+};
+const MEDDPICC_POLICY: CadencePolicy = CadencePolicy {
+    minimum_interval: Duration::from_secs(90),
+    minimum_segment_delta: 8,
+    maximum_interval: Duration::from_secs(180),
+};
+const QUESTIONS_POLICY: CadencePolicy = CadencePolicy {
+    minimum_interval: Duration::from_secs(60),
+    minimum_segment_delta: 6,
+    maximum_interval: Duration::from_secs(120),
+};
 
 /// Per-mode tracking (port of the `*CadenceAnchor` / `*AckedSegmentCount` fields).
 #[derive(Default)]
@@ -74,13 +89,23 @@ struct ModeState {
 
 impl ModeState {
     fn new() -> Self {
-        Self { last_applied_seq: -1, rolling_state: Value::Null, ..Default::default() }
+        Self {
+            last_applied_seq: -1,
+            rolling_state: Value::Null,
+            ..Default::default()
+        }
     }
 
     /// Port of the cadence decision: first pass on threshold, then either the
     /// minimum interval with enough new finals, or the maximum interval with
     /// any new final. A warm-up retry covers the very first success.
-    fn due(&self, policy: CadencePolicy, first_threshold: usize, segments: usize, now: Instant) -> bool {
+    fn due(
+        &self,
+        policy: CadencePolicy,
+        first_threshold: usize,
+        segments: usize,
+        now: Instant,
+    ) -> bool {
         if self.in_flight.load(Ordering::Relaxed) || segments == 0 {
             return false;
         }
@@ -88,14 +113,21 @@ impl ModeState {
             if segments < first_threshold {
                 return false;
             }
-            return self.last_attempt.map(|t| now.duration_since(t) >= WARMUP_RETRY_INTERVAL).unwrap_or(true);
+            return self
+                .last_attempt
+                .map(|t| now.duration_since(t) >= WARMUP_RETRY_INTERVAL)
+                .unwrap_or(true);
         }
         let delta = segments.saturating_sub(self.last_fired_segments);
         if delta == 0 {
             return false;
         }
-        let since = self.anchor.map(|a| now.duration_since(a)).unwrap_or(Duration::MAX);
-        (since >= policy.minimum_interval && delta >= policy.minimum_segment_delta) || since >= policy.maximum_interval
+        let since = self
+            .anchor
+            .map(|a| now.duration_since(a))
+            .unwrap_or(Duration::MAX);
+        (since >= policy.minimum_interval && delta >= policy.minimum_segment_delta)
+            || since >= policy.maximum_interval
     }
 }
 
@@ -108,8 +140,22 @@ pub struct InsightsEvent {
     pub message: Option<String>,
 }
 
-fn emit(app: &AppHandle, meeting_id: &str, mode: &str, state: &'static str, message: Option<String>) {
-    let _ = app.emit("insights_status", InsightsEvent { meeting_id: meeting_id.into(), mode: mode.into(), state, message });
+fn emit(
+    app: &AppHandle,
+    meeting_id: &str,
+    mode: &str,
+    state: &'static str,
+    message: Option<String>,
+) {
+    let _ = app.emit(
+        "insights_status",
+        InsightsEvent {
+            meeting_id: meeting_id.into(),
+            mode: mode.into(),
+            state,
+            message,
+        },
+    );
     if state == "applied" || state == "finished" {
         let _ = app.emit("insights_updated", meeting_id);
     }
@@ -134,27 +180,46 @@ pub type Finishing = Arc<Mutex<HashSet<String>>>;
 // ---- Transcript text (ports of transcriptText / transcriptTextWithSpeakerIDs)
 
 pub fn labels_for(meeting: &Meeting, segments: &[TranscriptSegment]) -> HashMap<i64, String> {
-    let names: HashMap<String, String> = serde_json::from_str(&meeting.speaker_names).unwrap_or_default();
+    let names: HashMap<String, String> =
+        serde_json::from_str(&meeting.speaker_names).unwrap_or_default();
     let names_opt = if names.is_empty() { None } else { Some(&names) };
     let self_ids = meeting.self_speaker_ids();
     let mut ids: Vec<i64> = segments.iter().map(|s| s.speaker).collect();
     ids.sort_unstable();
     ids.dedup();
     ids.into_iter()
-        .map(|id| (id, coaching::resolved_speaker_label(id, names_opt, self_ids.as_deref())))
+        .map(|id| {
+            (
+                id,
+                coaching::resolved_speaker_label(id, names_opt, self_ids.as_deref()),
+            )
+        })
         .collect()
 }
 
 pub fn transcript_text(segments: &[TranscriptSegment], labels: &HashMap<i64, String>) -> String {
     segments
         .iter()
-        .map(|s| format!("[{}] {}", labels.get(&s.speaker).cloned().unwrap_or_else(|| coaching::resolved_speaker_label(s.speaker, None, None)), s.text))
+        .map(|s| {
+            format!(
+                "[{}] {}",
+                labels
+                    .get(&s.speaker)
+                    .cloned()
+                    .unwrap_or_else(|| coaching::resolved_speaker_label(s.speaker, None, None)),
+                s.text
+            )
+        })
         .collect::<Vec<_>>()
         .join("\n")
 }
 
 pub fn transcript_with_speaker_ids(segments: &[TranscriptSegment]) -> String {
-    segments.iter().map(|s| format!("[SpeakerID:{}] {}", s.speaker, s.text)).collect::<Vec<_>>().join("\n")
+    segments
+        .iter()
+        .map(|s| format!("[SpeakerID:{}] {}", s.speaker, s.text))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn tail_chars(s: &str, n: usize) -> String {
@@ -166,25 +231,58 @@ fn attendees_of(meeting: &Meeting) -> Vec<Attendee> {
     let raw: Vec<Value> = serde_json::from_str(&meeting.attendees).unwrap_or_default();
     raw.into_iter()
         .filter_map(|a| {
-            let email = a.get("email").and_then(|e| e.as_str()).unwrap_or_default().to_string();
-            let name = a.get("name").or(a.get("displayName")).and_then(|n| n.as_str()).map(String::from)
+            let email = a
+                .get("email")
+                .and_then(|e| e.as_str())
+                .unwrap_or_default()
+                .to_string();
+            let name = a
+                .get("name")
+                .or(a.get("displayName"))
+                .and_then(|n| n.as_str())
+                .map(String::from)
                 .filter(|n| !n.trim().is_empty())
                 .unwrap_or_else(|| email.split('@').next().unwrap_or_default().to_string());
-            let domain = a.get("domain").and_then(|d| d.as_str()).map(String::from)
+            let domain = a
+                .get("domain")
+                .and_then(|d| d.as_str())
+                .map(String::from)
                 .unwrap_or_else(|| email.split('@').nth(1).unwrap_or_default().to_string());
-            if name.is_empty() && domain.is_empty() { None } else { Some(Attendee { name, domain, role: None }) }
+            if name.is_empty() && domain.is_empty() {
+                None
+            } else {
+                Some(Attendee {
+                    name,
+                    domain,
+                    role: None,
+                })
+            }
         })
         .collect()
 }
 
-fn incremental_payload(state: &ModeState, segments: &[TranscriptSegment], labels: &HashMap<i64, String>, full: &str) -> Option<IncrementalPayload> {
+fn incremental_payload(
+    state: &ModeState,
+    segments: &[TranscriptSegment],
+    labels: &HashMap<i64, String>,
+    full: &str,
+) -> Option<IncrementalPayload> {
     if state.success_count == 0 || state.rolling_state.is_null() {
         return None;
     }
     let acked = state.acked_segments.min(segments.len());
     let delta_segments = &segments[acked..];
     let recent = tail_chars(full, RECENT_WINDOW_CHARS);
-    let recent_count = segments.iter().rev().scan(0usize, |acc, s| { *acc += s.text.chars().count() + 1; Some(*acc) }).take_while(|n| *n <= RECENT_WINDOW_CHARS).count().max(1);
+    let recent_count = segments
+        .iter()
+        .rev()
+        .scan(0usize, |acc, s| {
+            *acc += s.text.chars().count() + 1;
+            Some(*acc)
+        })
+        .take_while(|n| *n <= RECENT_WINDOW_CHARS)
+        .count()
+        .max(1);
     Some(IncrementalPayload {
         strategy: IncrementalPayload::STRATEGY.into(),
         full_segment_count: segments.len(),
@@ -198,11 +296,22 @@ fn incremental_payload(state: &ModeState, segments: &[TranscriptSegment], labels
 }
 
 fn string_array(v: &Value, key: &str) -> Vec<String> {
-    v.get(key).and_then(|a| a.as_array()).map(|a| a.iter().filter_map(|x| x.as_str().map(|s| s.trim().to_string())).filter(|s| !s.is_empty()).collect()).unwrap_or_default()
+    v.get(key)
+        .and_then(|a| a.as_array())
+        .map(|a| {
+            a.iter()
+                .filter_map(|x| x.as_str().map(|s| s.trim().to_string()))
+                .filter(|s| !s.is_empty())
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 fn opt_string(v: &Value, key: &str) -> Option<String> {
-    v.get(key).and_then(|s| s.as_str()).map(|s| s.trim().to_string()).filter(|s| !s.is_empty() && s.to_lowercase() != "null")
+    v.get(key)
+        .and_then(|s| s.as_str())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty() && s.to_lowercase() != "null")
 }
 
 /// Strip leading bullet characters the model may add despite instructions.
@@ -214,11 +323,27 @@ fn strip_bullets(s: &str) -> String {
         .join("\n")
 }
 
-pub const MEDDPICC_KEYS: [&str; 8] = ["metrics", "economic_buyer", "decision_criteria", "decision_process", "paper_process", "identified_pain", "champion", "competition"];
+pub const MEDDPICC_KEYS: [&str; 8] = [
+    "metrics",
+    "economic_buyer",
+    "decision_criteria",
+    "decision_process",
+    "paper_process",
+    "identified_pain",
+    "champion",
+    "competition",
+];
 
 // ---- Apply (port of applyInsights per mode) ------------------------------------
 
-fn apply_standard(conn: &Connection, meeting_id: &str, v: &Value, state: &mut ModeState, segments: usize, update_title: bool) -> Result<(), String> {
+fn apply_standard(
+    conn: &Connection,
+    meeting_id: &str,
+    v: &Value,
+    state: &mut ModeState,
+    segments: usize,
+    update_title: bool,
+) -> Result<(), String> {
     let summary = opt_string(v, "summary").unwrap_or_default();
     let action_items = string_array(v, "action_items");
     let topics = string_array(v, "topics");
@@ -226,19 +351,30 @@ fn apply_standard(conn: &Connection, meeting_id: &str, v: &Value, state: &mut Mo
     let decisions = string_array(v, "key_decisions");
     let decisions_json = serde_json::to_string(&decisions).unwrap_or_default();
     db::set_standard_insights(
-        conn, meeting_id, &summary,
+        conn,
+        meeting_id,
+        &summary,
         &serde_json::to_string(&action_items).unwrap_or_default(),
         &serde_json::to_string(&topics).unwrap_or_default(),
         &serde_json::to_string(&flow).unwrap_or_default(),
-        if decisions.is_empty() { None } else { Some(decisions_json.as_str()) },
-    ).map_err(|e| e.to_string())?;
+        if decisions.is_empty() {
+            None
+        } else {
+            Some(decisions_json.as_str())
+        },
+    )
+    .map_err(|e| e.to_string())?;
     let mut suggested_title = opt_string(v, "title");
     if update_title {
         if let Some(t) = &suggested_title {
             let _ = db::set_auto_title(conn, meeting_id, t);
         }
     } else {
-        suggested_title = state.rolling_state.get("suggested_title").and_then(|t| t.as_str()).map(String::from);
+        suggested_title = state
+            .rolling_state
+            .get("suggested_title")
+            .and_then(|t| t.as_str())
+            .map(String::from);
     }
     state.last_summary = summary.clone();
     state.rolling_state = json!({
@@ -252,12 +388,24 @@ fn apply_standard(conn: &Connection, meeting_id: &str, v: &Value, state: &mut Mo
     Ok(())
 }
 
-fn apply_meddpicc(conn: &Connection, meeting_id: &str, v: &Value, state: &mut ModeState, segments: usize) -> Result<(), String> {
+fn apply_meddpicc(
+    conn: &Connection,
+    meeting_id: &str,
+    v: &Value,
+    state: &mut ModeState,
+    segments: usize,
+) -> Result<(), String> {
     let mut fields = serde_json::Map::new();
     for k in MEDDPICC_KEYS {
-        fields.insert(k.into(), opt_string(v, k).map(|s| Value::String(strip_bullets(&s))).unwrap_or(Value::Null));
+        fields.insert(
+            k.into(),
+            opt_string(v, k)
+                .map(|s| Value::String(strip_bullets(&s)))
+                .unwrap_or(Value::Null),
+        );
     }
-    db::set_meddpicc(conn, meeting_id, &Value::Object(fields.clone()).to_string()).map_err(|e| e.to_string())?;
+    db::set_meddpicc(conn, meeting_id, &Value::Object(fields.clone()).to_string())
+        .map_err(|e| e.to_string())?;
     state.last_summary = opt_string(v, "summary").unwrap_or_default();
     state.rolling_state = json!({
         "summary": state.last_summary,
@@ -270,12 +418,32 @@ fn apply_meddpicc(conn: &Connection, meeting_id: &str, v: &Value, state: &mut Mo
     Ok(())
 }
 
-fn apply_questions(conn: &Connection, meeting_id: &str, v: &Value, state: &mut ModeState, segments: usize) -> Result<(), String> {
-    let questions: Vec<Value> = v.get("questions").and_then(|q| q.as_array()).cloned().unwrap_or_default()
+fn apply_questions(
+    conn: &Connection,
+    meeting_id: &str,
+    v: &Value,
+    state: &mut ModeState,
+    segments: usize,
+) -> Result<(), String> {
+    let questions: Vec<Value> = v
+        .get("questions")
+        .and_then(|q| q.as_array())
+        .cloned()
+        .unwrap_or_default()
         .into_iter()
-        .filter(|q| q.get("question").and_then(|s| s.as_str()).map(|s| !s.trim().is_empty()).unwrap_or(false))
+        .filter(|q| {
+            q.get("question")
+                .and_then(|s| s.as_str())
+                .map(|s| !s.trim().is_empty())
+                .unwrap_or(false)
+        })
         .collect();
-    db::set_questions(conn, meeting_id, &Value::Array(questions.clone()).to_string()).map_err(|e| e.to_string())?;
+    db::set_questions(
+        conn,
+        meeting_id,
+        &Value::Array(questions.clone()).to_string(),
+    )
+    .map_err(|e| e.to_string())?;
     state.rolling_state = json!({ "questions": questions });
     state.acked_segments = segments;
     Ok(())
@@ -284,16 +452,25 @@ fn apply_questions(conn: &Connection, meeting_id: &str, v: &Value, state: &mut M
 /// Merge inferred names, never overwriting manual renames (port of the
 /// inferred/override split).
 fn apply_speaker_names(conn: &Connection, meeting: &Meeting, v: &Value) -> Result<bool, String> {
-    let inferred = v.get("speakers").and_then(|s| s.as_object()).cloned().unwrap_or_default();
+    let inferred = v
+        .get("speakers")
+        .and_then(|s| s.as_object())
+        .cloned()
+        .unwrap_or_default();
     if inferred.is_empty() {
         return Ok(false);
     }
     let manual: Vec<i64> = serde_json::from_str(&meeting.manual_speaker_ids).unwrap_or_default();
-    let mut names: HashMap<String, String> = serde_json::from_str(&meeting.speaker_names).unwrap_or_default();
+    let mut names: HashMap<String, String> =
+        serde_json::from_str(&meeting.speaker_names).unwrap_or_default();
     let mut changed = false;
     for (id, name) in inferred {
-        let Some(name) = name.as_str().map(str::trim).filter(|n| !n.is_empty()) else { continue };
-        let Ok(id_num) = id.parse::<i64>() else { continue };
+        let Some(name) = name.as_str().map(str::trim).filter(|n| !n.is_empty()) else {
+            continue;
+        };
+        let Ok(id_num) = id.parse::<i64>() else {
+            continue;
+        };
         if manual.contains(&id_num) {
             continue;
         }
@@ -307,7 +484,12 @@ fn apply_speaker_names(conn: &Connection, meeting: &Meeting, v: &Value) -> Resul
         }
     }
     if changed {
-        db::set_speaker_names(conn, &meeting.id, &serde_json::to_string(&names).unwrap_or_default()).map_err(|e| e.to_string())?;
+        db::set_speaker_names(
+            conn,
+            &meeting.id,
+            &serde_json::to_string(&names).unwrap_or_default(),
+        )
+        .map_err(|e| e.to_string())?;
     }
     Ok(changed)
 }
@@ -324,7 +506,10 @@ pub struct DocTopic {
 }
 
 pub fn topic_slug(raw: &str) -> String {
-    raw.to_lowercase().split_whitespace().collect::<Vec<_>>().join(" ")
+    raw.to_lowercase()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 fn merge_doc_topics(existing: &[DocTopic], labels: &[String]) -> Vec<DocTopic> {
@@ -334,7 +519,12 @@ fn merge_doc_topics(existing: &[DocTopic], labels: &[String]) -> Vec<DocTopic> {
         if id.is_empty() || out.iter().any(|t| t.id == id) {
             continue;
         }
-        out.push(DocTopic { id, label: label.trim().to_string(), state: "pending".into(), error: None });
+        out.push(DocTopic {
+            id,
+            label: label.trim().to_string(),
+            state: "pending".into(),
+            error: None,
+        });
     }
     out
 }
@@ -368,11 +558,20 @@ fn load_snapshot(db: &Arc<Mutex<Connection>>, meeting_id: &str) -> Option<Snapsh
     let segments = db::list_segments(&conn, meeting_id).ok()?;
     let labels = labels_for(&meeting, &segments);
     let transcript = transcript_text(&segments, &labels);
-    Some(Snapshot { meeting, segments, labels, transcript })
+    Some(Snapshot {
+        meeting,
+        segments,
+        labels,
+        transcript,
+    })
 }
 
 impl LiveEngine {
-    pub fn spawn(app: AppHandle, db: Arc<Mutex<Connection>>, cfg: EngineConfig) -> (Arc<AtomicBool>, tauri::async_runtime::JoinHandle<()>) {
+    pub fn spawn(
+        app: AppHandle,
+        db: Arc<Mutex<Connection>>,
+        cfg: EngineConfig,
+    ) -> (Arc<AtomicBool>, tauri::async_runtime::JoinHandle<()>) {
         let stop = Arc::new(AtomicBool::new(false));
         let mut engine = LiveEngine {
             app,
@@ -404,35 +603,62 @@ impl LiveEngine {
     }
 
     async fn tick(&mut self) {
-        let Some(snap) = load_snapshot(&self.db, &self.cfg.meeting_id) else { return };
+        let Some(snap) = load_snapshot(&self.db, &self.cfg.meeting_id) else {
+            return;
+        };
         let now = Instant::now();
         let n = snap.segments.len();
         if n == 0 {
             return;
         }
         if self.cfg.live_enabled {
-            if self.standard.due(STANDARD_POLICY, FIRST_INSIGHT_THRESHOLD, n, now) {
+            if self
+                .standard
+                .due(STANDARD_POLICY, FIRST_INSIGHT_THRESHOLD, n, now)
+            {
                 self.standard.last_attempt = Some(now);
                 self.standard.last_fired_segments = n;
                 self.run_standard(&snap, false).await;
             }
             let standard_anchor = self.standard.anchor;
-            let after = |stagger: Duration| standard_anchor.map(|a| now.duration_since(a) >= stagger).unwrap_or(true);
+            let after = |stagger: Duration| {
+                standard_anchor
+                    .map(|a| now.duration_since(a) >= stagger)
+                    .unwrap_or(true)
+            };
 
-            if snap.meeting.sales_enabled && self.meddpicc.due(MEDDPICC_POLICY, FIRST_MEDDPICC_THRESHOLD, n, now) && (self.meddpicc.success_count == 0 || after(MEDDPICC_STAGGER)) {
+            if snap.meeting.sales_enabled
+                && self
+                    .meddpicc
+                    .due(MEDDPICC_POLICY, FIRST_MEDDPICC_THRESHOLD, n, now)
+                && (self.meddpicc.success_count == 0 || after(MEDDPICC_STAGGER))
+            {
                 self.meddpicc.last_attempt = Some(now);
                 self.meddpicc.last_fired_segments = n;
                 self.run_meddpicc(&snap, false).await;
             }
-            if self.questions.due(QUESTIONS_POLICY, FIRST_QUESTIONS_THRESHOLD, n, now) && (self.questions.success_count == 0 || after(QUESTIONS_STAGGER)) {
+            if self
+                .questions
+                .due(QUESTIONS_POLICY, FIRST_QUESTIONS_THRESHOLD, n, now)
+                && (self.questions.success_count == 0 || after(QUESTIONS_STAGGER))
+            {
                 self.questions.last_attempt = Some(now);
                 self.questions.last_fired_segments = n;
                 self.run_questions(&snap, false).await;
             }
             let names_due = !self.speaker_names.in_flight.load(Ordering::Relaxed)
                 && n >= FIRST_SPEAKER_NAMES_THRESHOLD
-                && n >= self.speaker_names.last_fired_segments + if self.speaker_names.last_fired_segments == 0 { 0 } else { SPEAKER_NAMES_UPDATE_THRESHOLD }
-                && self.speaker_names.last_attempt.map(|t| now.duration_since(t) >= SPEAKER_NAMES_MIN_INTERVAL).unwrap_or(true);
+                && n >= self.speaker_names.last_fired_segments
+                    + if self.speaker_names.last_fired_segments == 0 {
+                        0
+                    } else {
+                        SPEAKER_NAMES_UPDATE_THRESHOLD
+                    }
+                && self
+                    .speaker_names
+                    .last_attempt
+                    .map(|t| now.duration_since(t) >= SPEAKER_NAMES_MIN_INTERVAL)
+                    .unwrap_or(true);
             if names_due {
                 self.speaker_names.last_attempt = Some(now);
                 self.speaker_names.last_fired_segments = n;
@@ -443,7 +669,11 @@ impl LiveEngine {
             let due = !self.docs_topics.in_flight.load(Ordering::Relaxed)
                 && snap.transcript.chars().count() >= DOCS_MIN_TRANSCRIPT_CHARS
                 && n > self.docs_topics.last_fired_segments
-                && self.docs_topics.last_attempt.map(|t| now.duration_since(t) >= DOCS_TOPICS_MIN_INTERVAL).unwrap_or(true);
+                && self
+                    .docs_topics
+                    .last_attempt
+                    .map(|t| now.duration_since(t) >= DOCS_TOPICS_MIN_INTERVAL)
+                    .unwrap_or(true);
             if due {
                 self.docs_topics.last_attempt = Some(now);
                 self.docs_topics.last_fired_segments = n;
@@ -466,18 +696,59 @@ impl LiveEngine {
 
     async fn run_standard(&mut self, snap: &Snapshot, final_pass: bool) {
         let update_title = final_pass || self.should_update_title(snap.segments.len());
-        let incremental = if final_pass { None } else { incremental_payload(&self.standard, &snap.segments, &snap.labels, &snap.transcript) };
+        let incremental = if final_pass {
+            None
+        } else {
+            incremental_payload(
+                &self.standard,
+                &snap.segments,
+                &snap.labels,
+                &snap.transcript,
+            )
+        };
         self.standard.request_seq += 1;
-        let mut req = build_request(InsightMode::Standard, self.cfg.provider.app_mode(), &snap.transcript, &self.cfg.language, &attendees_of(&snap.meeting), incremental, Some(self.standard.request_seq));
-        req.existing_summary = Some(self.standard.last_summary.clone()).filter(|s| !s.is_empty()).or_else(|| Some(snap.meeting.summary.clone()).filter(|s| !s.is_empty()));
+        let mut req = build_request(
+            InsightMode::Standard,
+            self.cfg.provider.app_mode(),
+            &snap.transcript,
+            &self.cfg.language,
+            &attendees_of(&snap.meeting),
+            incremental,
+            Some(self.standard.request_seq),
+        );
+        req.existing_summary = Some(self.standard.last_summary.clone())
+            .filter(|s| !s.is_empty())
+            .or_else(|| Some(snap.meeting.summary.clone()).filter(|s| !s.is_empty()));
         if !update_title || !snap.meeting.title_auto {
             req.existing_title = Some(snap.meeting.display_title());
         }
         let n = snap.segments.len();
-        if let Some(v) = run_mode(&self.app, &self.cfg, &mut self.standard, "standard", req, InsightMode::Standard).await {
+        if let Some(v) = run_mode(
+            &self.app,
+            &self.cfg,
+            &mut self.standard,
+            "standard",
+            req,
+            InsightMode::Standard,
+        )
+        .await
+        {
             if let Ok(conn) = self.db.lock() {
-                if let Err(e) = apply_standard(&conn, &self.cfg.meeting_id, &v, &mut self.standard, n, update_title && snap.meeting.title_auto) {
-                    emit(&self.app, &self.cfg.meeting_id, "standard", "error", Some(e));
+                if let Err(e) = apply_standard(
+                    &conn,
+                    &self.cfg.meeting_id,
+                    &v,
+                    &mut self.standard,
+                    n,
+                    update_title && snap.meeting.title_auto,
+                ) {
+                    emit(
+                        &self.app,
+                        &self.cfg.meeting_id,
+                        "standard",
+                        "error",
+                        Some(e),
+                    );
                     return;
                 }
             }
@@ -486,16 +757,50 @@ impl LiveEngine {
     }
 
     async fn run_meddpicc(&mut self, snap: &Snapshot, final_pass: bool) {
-        let incremental = if final_pass { None } else { incremental_payload(&self.meddpicc, &snap.segments, &snap.labels, &snap.transcript) };
+        let incremental = if final_pass {
+            None
+        } else {
+            incremental_payload(
+                &self.meddpicc,
+                &snap.segments,
+                &snap.labels,
+                &snap.transcript,
+            )
+        };
         self.meddpicc.request_seq += 1;
-        let mut req = build_request(InsightMode::Meddpicc, self.cfg.provider.app_mode(), &snap.transcript, &self.cfg.language, &attendees_of(&snap.meeting), incremental, Some(self.meddpicc.request_seq));
+        let mut req = build_request(
+            InsightMode::Meddpicc,
+            self.cfg.provider.app_mode(),
+            &snap.transcript,
+            &self.cfg.language,
+            &attendees_of(&snap.meeting),
+            incremental,
+            Some(self.meddpicc.request_seq),
+        );
         req.existing_summary = Some(self.meddpicc.last_summary.clone()).filter(|s| !s.is_empty());
         req.existing_title = Some(snap.meeting.display_title());
         let n = snap.segments.len();
-        if let Some(v) = run_mode(&self.app, &self.cfg, &mut self.meddpicc, "meddpicc", req, InsightMode::Meddpicc).await {
+        if let Some(v) = run_mode(
+            &self.app,
+            &self.cfg,
+            &mut self.meddpicc,
+            "meddpicc",
+            req,
+            InsightMode::Meddpicc,
+        )
+        .await
+        {
             if let Ok(conn) = self.db.lock() {
-                if let Err(e) = apply_meddpicc(&conn, &self.cfg.meeting_id, &v, &mut self.meddpicc, n) {
-                    emit(&self.app, &self.cfg.meeting_id, "meddpicc", "error", Some(e));
+                if let Err(e) =
+                    apply_meddpicc(&conn, &self.cfg.meeting_id, &v, &mut self.meddpicc, n)
+                {
+                    emit(
+                        &self.app,
+                        &self.cfg.meeting_id,
+                        "meddpicc",
+                        "error",
+                        Some(e),
+                    );
                     return;
                 }
             }
@@ -504,70 +809,174 @@ impl LiveEngine {
     }
 
     async fn run_questions(&mut self, snap: &Snapshot, final_pass: bool) {
-        let incremental = if final_pass { None } else { incremental_payload(&self.questions, &snap.segments, &snap.labels, &snap.transcript) };
+        let incremental = if final_pass {
+            None
+        } else {
+            incremental_payload(
+                &self.questions,
+                &snap.segments,
+                &snap.labels,
+                &snap.transcript,
+            )
+        };
         self.questions.request_seq += 1;
-        let mut req = build_request(InsightMode::Questions, self.cfg.provider.app_mode(), &snap.transcript, &self.cfg.language, &attendees_of(&snap.meeting), incremental, Some(self.questions.request_seq));
+        let mut req = build_request(
+            InsightMode::Questions,
+            self.cfg.provider.app_mode(),
+            &snap.transcript,
+            &self.cfg.language,
+            &attendees_of(&snap.meeting),
+            incremental,
+            Some(self.questions.request_seq),
+        );
         req.existing_title = Some(snap.meeting.display_title());
         let n = snap.segments.len();
-        if let Some(v) = run_mode(&self.app, &self.cfg, &mut self.questions, "questions", req, InsightMode::Questions).await {
+        if let Some(v) = run_mode(
+            &self.app,
+            &self.cfg,
+            &mut self.questions,
+            "questions",
+            req,
+            InsightMode::Questions,
+        )
+        .await
+        {
             if let Ok(conn) = self.db.lock() {
-                if let Err(e) = apply_questions(&conn, &self.cfg.meeting_id, &v, &mut self.questions, n) {
-                    emit(&self.app, &self.cfg.meeting_id, "questions", "error", Some(e));
+                if let Err(e) =
+                    apply_questions(&conn, &self.cfg.meeting_id, &v, &mut self.questions, n)
+                {
+                    emit(
+                        &self.app,
+                        &self.cfg.meeting_id,
+                        "questions",
+                        "error",
+                        Some(e),
+                    );
                     return;
                 }
             }
-            emit(&self.app, &self.cfg.meeting_id, "questions", "applied", None);
+            emit(
+                &self.app,
+                &self.cfg.meeting_id,
+                "questions",
+                "applied",
+                None,
+            );
         }
     }
 
     async fn run_speaker_names(&mut self, snap: &Snapshot) {
         let transcript = transcript_with_speaker_ids(&snap.segments);
-        let candidates: Vec<String> = attendees_of(&snap.meeting).into_iter().map(|a| a.name).filter(|n| !n.is_empty()).collect();
-        let mut req = build_request(InsightMode::SpeakerNames, self.cfg.provider.app_mode(), &transcript, &self.cfg.language, &[], None, None);
+        let candidates: Vec<String> = attendees_of(&snap.meeting)
+            .into_iter()
+            .map(|a| a.name)
+            .filter(|n| !n.is_empty())
+            .collect();
+        let mut req = build_request(
+            InsightMode::SpeakerNames,
+            self.cfg.provider.app_mode(),
+            &transcript,
+            &self.cfg.language,
+            &[],
+            None,
+            None,
+        );
         req.candidates = candidates;
-        if let Some(v) = run_mode(&self.app, &self.cfg, &mut self.speaker_names, "speaker_names", req, InsightMode::SpeakerNames).await {
+        if let Some(v) = run_mode(
+            &self.app,
+            &self.cfg,
+            &mut self.speaker_names,
+            "speaker_names",
+            req,
+            InsightMode::SpeakerNames,
+        )
+        .await
+        {
             let changed = match self.db.lock() {
                 Ok(conn) => apply_speaker_names(&conn, &snap.meeting, &v).unwrap_or(false),
                 Err(_) => false,
             };
             if changed {
-                emit(&self.app, &self.cfg.meeting_id, "speaker_names", "applied", None);
+                emit(
+                    &self.app,
+                    &self.cfg.meeting_id,
+                    "speaker_names",
+                    "applied",
+                    None,
+                );
             }
         }
     }
 
     async fn run_docs_topics(&mut self, snap: &Snapshot) {
-        let req = build_request(InsightMode::DocsTopics, self.cfg.provider.app_mode(), &snap.transcript, &self.cfg.language, &[], None, None);
-        if let Some(v) = run_mode(&self.app, &self.cfg, &mut self.docs_topics, "docs_topics", req, InsightMode::DocsTopics).await {
+        let req = build_request(
+            InsightMode::DocsTopics,
+            self.cfg.provider.app_mode(),
+            &snap.transcript,
+            &self.cfg.language,
+            &[],
+            None,
+            None,
+        );
+        if let Some(v) = run_mode(
+            &self.app,
+            &self.cfg,
+            &mut self.docs_topics,
+            "docs_topics",
+            req,
+            InsightMode::DocsTopics,
+        )
+        .await
+        {
             let labels = string_array(&v, "topics");
             if labels.is_empty() {
                 return;
             }
             let changed = {
                 let Ok(conn) = self.db.lock() else { return };
-                let existing: Vec<DocTopic> = serde_json::from_str(&snap.meeting.doc_topics).unwrap_or_default();
+                let existing: Vec<DocTopic> =
+                    serde_json::from_str(&snap.meeting.doc_topics).unwrap_or_default();
                 let merged = merge_doc_topics(&existing, &labels);
                 if merged.len() != existing.len() {
-                    let _ = db::set_docs(&conn, &self.cfg.meeting_id, &snap.meeting.docs, &serde_json::to_string(&merged).unwrap_or_default());
+                    let _ = db::set_docs(
+                        &conn,
+                        &self.cfg.meeting_id,
+                        &snap.meeting.docs,
+                        &serde_json::to_string(&merged).unwrap_or_default(),
+                    );
                     true
                 } else {
                     false
                 }
             };
             if changed {
-                emit(&self.app, &self.cfg.meeting_id, "docs_topics", "applied", None);
+                emit(
+                    &self.app,
+                    &self.cfg.meeting_id,
+                    "docs_topics",
+                    "applied",
+                    None,
+                );
             }
         }
     }
 
     async fn auto_lookup_topics(&mut self, snap: &Snapshot) {
-        let topics: Vec<DocTopic> = serde_json::from_str(&snap.meeting.doc_topics).unwrap_or_default();
+        let topics: Vec<DocTopic> =
+            serde_json::from_str(&snap.meeting.doc_topics).unwrap_or_default();
         let in_flight = self.docs_in_flight.lock().map(|s| s.len()).unwrap_or(0);
         if in_flight >= MAX_CONCURRENT_DOCS_LOOKUPS {
             return;
         }
-        for t in topics.iter().filter(|t| t.state == "pending" || t.state == "busy") {
-            let already = self.docs_in_flight.lock().map(|s| s.contains(&t.id)).unwrap_or(true);
+        for t in topics
+            .iter()
+            .filter(|t| t.state == "pending" || t.state == "busy")
+        {
+            let already = self
+                .docs_in_flight
+                .lock()
+                .map(|s| s.contains(&t.id))
+                .unwrap_or(true);
             if already {
                 continue;
             }
@@ -594,7 +1003,14 @@ impl LiveEngine {
 
 /// Run one request with the shared in-flight / stale / degraded rules.
 /// Returns the value to apply, or None (error / stale / degraded — already reported).
-async fn run_mode(app: &AppHandle, cfg: &EngineConfig, state: &mut ModeState, name: &str, req: InsightRequest, mode: InsightMode) -> Option<Value> {
+async fn run_mode(
+    app: &AppHandle,
+    cfg: &EngineConfig,
+    state: &mut ModeState,
+    name: &str,
+    req: InsightRequest,
+    mode: InsightMode,
+) -> Option<Value> {
     if let Err(e) = validate(&req) {
         emit(app, &cfg.meeting_id, name, "error", Some(e));
         return None;
@@ -611,14 +1027,26 @@ async fn run_mode(app: &AppHandle, cfg: &EngineConfig, state: &mut ModeState, na
             }
             if let Some(seq) = r.meta.request_seq {
                 if seq < state.last_applied_seq {
-                    tracing::info!("{name}: out-of-order response {seq} < {} dropped", state.last_applied_seq);
+                    tracing::info!(
+                        "{name}: out-of-order response {seq} < {} dropped",
+                        state.last_applied_seq
+                    );
                     return None;
                 }
                 state.last_applied_seq = seq;
             }
             if r.meta.degraded {
-                tracing::info!("{name}: degraded response — not advancing cursor ({:?})", r.meta.fallback_reason);
-                emit(app, &cfg.meeting_id, name, "degraded", r.meta.fallback_reason);
+                tracing::info!(
+                    "{name}: degraded response — not advancing cursor ({:?})",
+                    r.meta.fallback_reason
+                );
+                emit(
+                    app,
+                    &cfg.meeting_id,
+                    name,
+                    "degraded",
+                    r.meta.fallback_reason,
+                );
                 // Still apply what came back (server preserved prior state), but keep the cursor.
                 return Some(r.value);
             }
@@ -635,33 +1063,69 @@ async fn run_mode(app: &AppHandle, cfg: &EngineConfig, state: &mut ModeState, na
 }
 
 /// Look one topic up (Playbook). Managed-free: metered by the backend.
-pub async fn lookup_topic(app: AppHandle, db: Arc<Mutex<Connection>>, cfg: EngineConfig, label: String) {
+pub async fn lookup_topic(
+    app: AppHandle,
+    db: Arc<Mutex<Connection>>,
+    cfg: EngineConfig,
+    label: String,
+) {
     let id = topic_slug(&label);
-    let set_state = |db: &Arc<Mutex<Connection>>, state: &str, error: Option<String>, card: Option<Value>| {
-        let Ok(conn) = db.lock() else { return };
-        let Ok(Some(m)) = db::get_meeting(&conn, &cfg.meeting_id) else { return };
-        let mut topics: Vec<DocTopic> = serde_json::from_str(&m.doc_topics).unwrap_or_default();
-        if let Some(t) = topics.iter_mut().find(|t| t.id == id) {
-            t.state = state.into();
-            t.error = error;
-        }
-        let mut docs: Vec<Value> = serde_json::from_str(&m.docs).unwrap_or_default();
-        if let Some(card) = card {
-            docs.retain(|d| d.get("topic").and_then(|t| t.as_str()).map(topic_slug) != Some(id.clone()));
-            docs.push(card);
-        }
-        let _ = db::set_docs(&conn, &cfg.meeting_id, &serde_json::to_string(&docs).unwrap_or_default(), &serde_json::to_string(&topics).unwrap_or_default());
-    };
+    let set_state =
+        |db: &Arc<Mutex<Connection>>, state: &str, error: Option<String>, card: Option<Value>| {
+            let Ok(conn) = db.lock() else { return };
+            let Ok(Some(m)) = db::get_meeting(&conn, &cfg.meeting_id) else {
+                return;
+            };
+            let mut topics: Vec<DocTopic> = serde_json::from_str(&m.doc_topics).unwrap_or_default();
+            if let Some(t) = topics.iter_mut().find(|t| t.id == id) {
+                t.state = state.into();
+                t.error = error;
+            }
+            let mut docs: Vec<Value> = serde_json::from_str(&m.docs).unwrap_or_default();
+            if let Some(card) = card {
+                docs.retain(|d| {
+                    d.get("topic").and_then(|t| t.as_str()).map(topic_slug) != Some(id.clone())
+                });
+                docs.push(card);
+            }
+            let _ = db::set_docs(
+                &conn,
+                &cfg.meeting_id,
+                &serde_json::to_string(&docs).unwrap_or_default(),
+                &serde_json::to_string(&topics).unwrap_or_default(),
+            );
+        };
     set_state(&db, "looking_up", None, None);
-    emit(&app, &cfg.meeting_id, "docs", "running", Some(label.clone()));
+    emit(
+        &app,
+        &cfg.meeting_id,
+        "docs",
+        "running",
+        Some(label.clone()),
+    );
 
-    let Some(snap) = load_snapshot(&db, &cfg.meeting_id) else { return };
-    let mut req = build_request(InsightMode::Docs, cfg.provider.app_mode(), &snap.transcript, &cfg.language, &[], None, None);
+    let Some(snap) = load_snapshot(&db, &cfg.meeting_id) else {
+        return;
+    };
+    let mut req = build_request(
+        InsightMode::Docs,
+        cfg.provider.app_mode(),
+        &snap.transcript,
+        &cfg.language,
+        &[],
+        None,
+        None,
+    );
     req.docs_mcp_url = cfg.docs_mcp_url.clone();
     req.topic = Some(label.clone());
     match cfg.provider.docs(&req).await {
         Ok(r) => {
-            let cards = r.value.get("docs").and_then(|d| d.as_array()).cloned().unwrap_or_default();
+            let cards = r
+                .value
+                .get("docs")
+                .and_then(|d| d.as_array())
+                .cloned()
+                .unwrap_or_default();
             if r.meta.degraded {
                 set_state(&db, "busy", r.meta.fallback_reason, None);
                 emit(&app, &cfg.meeting_id, "docs", "degraded", None);
@@ -675,7 +1139,12 @@ pub async fn lookup_topic(app: AppHandle, db: Arc<Mutex<Connection>>, cfg: Engin
         }
         Err(e) => {
             let limit = e.contains("docs lookups") || e.contains("limit");
-            set_state(&db, if limit { "pending" } else { "failed" }, Some(e.clone()), None);
+            set_state(
+                &db,
+                if limit { "pending" } else { "failed" },
+                Some(e.clone()),
+                None,
+            );
             emit(&app, &cfg.meeting_id, "docs", "error", Some(e));
         }
     }
@@ -683,7 +1152,12 @@ pub async fn lookup_topic(app: AppHandle, db: Arc<Mutex<Connection>>, cfg: Engin
 
 /// Background final pass after stop (or regenerate): standard, questions,
 /// MEDDPICC when enabled, speaker names. Never blocks the UI.
-pub async fn finalize_meeting(app: AppHandle, db: Arc<Mutex<Connection>>, cfg: EngineConfig, finishing: Finishing) {
+pub async fn finalize_meeting(
+    app: AppHandle,
+    db: Arc<Mutex<Connection>>,
+    cfg: EngineConfig,
+    finishing: Finishing,
+) {
     if let Ok(mut f) = finishing.lock() {
         f.insert(cfg.meeting_id.clone());
     }
@@ -722,19 +1196,51 @@ pub async fn finalize_meeting(app: AppHandle, db: Arc<Mutex<Connection>>, cfg: E
 }
 
 /// "I zoned out": recent window (180 s, at least 8 trailing segments) + full transcript as background.
-pub async fn catch_up(cfg: &EngineConfig, meeting: &Meeting, segments: &[TranscriptSegment]) -> Result<Value, String> {
+pub async fn catch_up(
+    cfg: &EngineConfig,
+    meeting: &Meeting,
+    segments: &[TranscriptSegment],
+) -> Result<Value, String> {
     if segments.len() < CATCHUP_MIN_SEGMENTS {
         return Err("Not enough transcript yet to catch up on.".into());
     }
     let labels = labels_for(meeting, segments);
     let full = transcript_text(segments, &labels);
     let last_end = segments.last().map(|s| s.end_s).unwrap_or(0.0);
-    let mut recent: Vec<&TranscriptSegment> = segments.iter().filter(|s| s.end_s >= last_end - CATCHUP_RECENT_WINDOW_SECS).collect();
+    let mut recent: Vec<&TranscriptSegment> = segments
+        .iter()
+        .filter(|s| s.end_s >= last_end - CATCHUP_RECENT_WINDOW_SECS)
+        .collect();
     if recent.len() < CATCHUP_FALLBACK_WINDOW_SEGMENTS {
-        recent = segments.iter().rev().take(CATCHUP_FALLBACK_WINDOW_SEGMENTS).collect::<Vec<_>>().into_iter().rev().collect();
+        recent = segments
+            .iter()
+            .rev()
+            .take(CATCHUP_FALLBACK_WINDOW_SEGMENTS)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect();
     }
-    let recent_text = recent.iter().map(|s| format!("[{}] {}", labels.get(&s.speaker).cloned().unwrap_or_default(), s.text)).collect::<Vec<_>>().join("\n");
-    let mut req = build_request(InsightMode::Catchup, cfg.provider.app_mode(), &recent_text, &cfg.language, &[], None, None);
+    let recent_text = recent
+        .iter()
+        .map(|s| {
+            format!(
+                "[{}] {}",
+                labels.get(&s.speaker).cloned().unwrap_or_default(),
+                s.text
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let mut req = build_request(
+        InsightMode::Catchup,
+        cfg.provider.app_mode(),
+        &recent_text,
+        &cfg.language,
+        &[],
+        None,
+        None,
+    );
     req.full_transcript = Some(super::trim_transcript(&full));
     let r = cfg.provider.run(&req, InsightMode::Catchup, None).await?;
     Ok(r.value)
@@ -749,7 +1255,14 @@ pub fn investigation_context(meeting: &Meeting, segments: &[TranscriptSegment]) 
     let mut lines: Vec<String> = Vec::new();
     let mut count = 0usize;
     for s in segments.iter().rev() {
-        let line: String = format!("{}: {}", labels.get(&s.speaker).cloned().unwrap_or_default(), s.text).chars().take(per_turn).collect();
+        let line: String = format!(
+            "{}: {}",
+            labels.get(&s.speaker).cloned().unwrap_or_default(),
+            s.text
+        )
+        .chars()
+        .take(per_turn)
+        .collect();
         if !lines.is_empty() && count + line.chars().count() > budget {
             break;
         }
@@ -762,7 +1275,10 @@ pub fn investigation_context(meeting: &Meeting, segments: &[TranscriptSegment]) 
     let mut ctx = format!("Meeting title\n{}", meeting.display_title());
     let notes = meeting.notes.trim();
     if !notes.is_empty() {
-        ctx.push_str(&format!("\n\nMeeting prep notes\n{}", notes.chars().take(2_000).collect::<String>()));
+        ctx.push_str(&format!(
+            "\n\nMeeting prep notes\n{}",
+            notes.chars().take(2_000).collect::<String>()
+        ));
     }
     if !lines.is_empty() {
         lines.reverse();
@@ -771,17 +1287,38 @@ pub fn investigation_context(meeting: &Meeting, segments: &[TranscriptSegment]) 
     ctx.chars().take(MAX).collect()
 }
 
-pub async fn investigate(cfg: &EngineConfig, meeting: &Meeting, segments: &[TranscriptSegment], scope: InvestigationScope, focus: &str, codebase: Option<(String, Vec<String>)>) -> Result<Value, String> {
+pub async fn investigate(
+    cfg: &EngineConfig,
+    meeting: &Meeting,
+    segments: &[TranscriptSegment],
+    scope: InvestigationScope,
+    focus: &str,
+    codebase: Option<(String, Vec<String>)>,
+) -> Result<Value, String> {
     let context = investigation_context(meeting, segments);
-    let mut req = build_request(InsightMode::Investigation, cfg.provider.app_mode(), &context, &cfg.language, &[], None, None);
+    let mut req = build_request(
+        InsightMode::Investigation,
+        cfg.provider.app_mode(),
+        &context,
+        &cfg.language,
+        &[],
+        None,
+        None,
+    );
     req.investigation_scope = Some(scope);
     req.focus = Some(focus.trim().chars().take(super::FOCUS_MAX_CHARS).collect());
     if let Some((ctx, files)) = codebase {
         req.codebase_context = Some(ctx);
-        req.referenced_files = files.into_iter().take(super::REFERENCED_FILES_MAX).collect();
+        req.referenced_files = files
+            .into_iter()
+            .take(super::REFERENCED_FILES_MAX)
+            .collect();
     }
     validate(&req)?;
-    let r = cfg.provider.run(&req, InsightMode::Investigation, None).await?;
+    let r = cfg
+        .provider
+        .run(&req, InsightMode::Investigation, None)
+        .await?;
     Ok(r.value)
 }
 
@@ -794,11 +1331,51 @@ pub fn detect_investigation_moment(text: &str) -> Option<String> {
         return None;
     }
     let n = trimmed.to_lowercase();
-    const EXPLICIT: &[&str] = &["investigate", "research", "look into", "find out", "check whether", "figure out", "verify whether", "is it possible", "would it be possible", "what would it take", "would be cool if"];
-    const CAPABILITY: &[&str] = &["can we build", "could we build", "can we implement", "could we implement", "can we integrate", "could we integrate", "can we automate", "could we automate", "can we support", "could we support", "can we fix", "could we fix", "is there a way", "is there some way"];
-    const DIAGNOSTIC: &[&str] = &["why does", "why is", "how could", "how can", "what causes", "feasible", "feasibility", "possible", "tradeoff", "cost", "impact"];
+    const EXPLICIT: &[&str] = &[
+        "investigate",
+        "research",
+        "look into",
+        "find out",
+        "check whether",
+        "figure out",
+        "verify whether",
+        "is it possible",
+        "would it be possible",
+        "what would it take",
+        "would be cool if",
+    ];
+    const CAPABILITY: &[&str] = &[
+        "can we build",
+        "could we build",
+        "can we implement",
+        "could we implement",
+        "can we integrate",
+        "could we integrate",
+        "can we automate",
+        "could we automate",
+        "can we support",
+        "could we support",
+        "can we fix",
+        "could we fix",
+        "is there a way",
+        "is there some way",
+    ];
+    const DIAGNOSTIC: &[&str] = &[
+        "why does",
+        "why is",
+        "how could",
+        "how can",
+        "what causes",
+        "feasible",
+        "feasibility",
+        "possible",
+        "tradeoff",
+        "cost",
+        "impact",
+    ];
     let explicit = EXPLICIT.iter().chain(CAPABILITY).any(|p| n.contains(p));
-    let diagnostic = (n.contains('?') || n.starts_with("why") || n.starts_with("how")) && DIAGNOSTIC.iter().any(|p| n.contains(p));
+    let diagnostic = (n.contains('?') || n.starts_with("why") || n.starts_with("how"))
+        && DIAGNOSTIC.iter().any(|p| n.contains(p));
     if explicit || diagnostic {
         Some(trimmed.chars().take(280).collect())
     } else {
@@ -809,7 +1386,32 @@ pub fn detect_investigation_moment(text: &str) -> Option<String> {
 /// Local default-on Sales suggestion: enough distinct commercial vocabulary in
 /// the early transcript. Never enables Sales by itself.
 pub fn sounds_commercial(transcript: &str) -> bool {
-    const TERMS: &[&str] = &["pricing", "price", "budget", "contract", "procurement", "renewal", "quote", "proposal", "discount", "vendor", "stakeholder", "decision maker", "purchase", "buy", "trial", "pilot", "seats", "licence", "license", "roi", "invoice", "onboarding", "competitor", "evaluation"];
+    const TERMS: &[&str] = &[
+        "pricing",
+        "price",
+        "budget",
+        "contract",
+        "procurement",
+        "renewal",
+        "quote",
+        "proposal",
+        "discount",
+        "vendor",
+        "stakeholder",
+        "decision maker",
+        "purchase",
+        "buy",
+        "trial",
+        "pilot",
+        "seats",
+        "licence",
+        "license",
+        "roi",
+        "invoice",
+        "onboarding",
+        "competitor",
+        "evaluation",
+    ];
     let t = transcript.to_lowercase();
     TERMS.iter().filter(|w| t.contains(*w)).count() >= 4
 }
@@ -817,16 +1419,69 @@ pub fn sounds_commercial(transcript: &str) -> bool {
 /// Port of `buildCodebaseSnapshot`: pick up to 8 files under `root` that best
 /// match the focus, bounded to ~40k characters of excerpts.
 pub fn build_codebase_snapshot(root: &std::path::Path, focus: &str) -> (String, Vec<String>) {
-    const ALLOWED: &[&str] = &["swift", "m", "mm", "h", "c", "cc", "cpp", "hpp", "ts", "tsx", "js", "jsx", "py", "go", "rs", "java", "kt", "kts", "rb", "php", "cs", "sql", "graphql", "json", "yaml", "yml", "toml", "md"];
-    const EXCLUDED: &[&str] = &[".git", ".build", ".swiftpm", "DerivedData", "node_modules", "Pods", "vendor", "dist", "build", "target"];
+    const ALLOWED: &[&str] = &[
+        "swift", "m", "mm", "h", "c", "cc", "cpp", "hpp", "ts", "tsx", "js", "jsx", "py", "go",
+        "rs", "java", "kt", "kts", "rb", "php", "cs", "sql", "graphql", "json", "yaml", "yml",
+        "toml", "md",
+    ];
+    const EXCLUDED: &[&str] = &[
+        ".git",
+        ".build",
+        ".swiftpm",
+        "DerivedData",
+        "node_modules",
+        "Pods",
+        "vendor",
+        "dist",
+        "build",
+        "target",
+    ];
     const STOP: &[&str] = &[
-        "could", "would", "should", "there", "their", "about", "which", "this", "that", "with", "from",
-        "have", "what", "when", "where", "into", "some", "investigate", "the", "and", "for", "why",
-        "does", "how", "can", "are", "was", "not", "but", "you", "our", "its", "fail", "work",
+        "could",
+        "would",
+        "should",
+        "there",
+        "their",
+        "about",
+        "which",
+        "this",
+        "that",
+        "with",
+        "from",
+        "have",
+        "what",
+        "when",
+        "where",
+        "into",
+        "some",
+        "investigate",
+        "the",
+        "and",
+        "for",
+        "why",
+        "does",
+        "how",
+        "can",
+        "are",
+        "was",
+        "not",
+        "but",
+        "you",
+        "our",
+        "its",
+        "fail",
+        "work",
     ];
     const MAX_CHARS: usize = 40_000;
     const MAX_FILES: usize = 8;
-    let tokens: Vec<String> = focus.to_lowercase().split(|c: char| !c.is_alphanumeric()).filter(|t| t.len() >= 3 && !STOP.contains(t)).map(String::from).collect::<HashSet<_>>().into_iter().collect();
+    let tokens: Vec<String> = focus
+        .to_lowercase()
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|t| t.len() >= 3 && !STOP.contains(t))
+        .map(String::from)
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .collect();
     if tokens.is_empty() {
         return (String::new(), Vec::new());
     }
@@ -834,7 +1489,9 @@ pub fn build_codebase_snapshot(root: &std::path::Path, focus: &str) -> (String, 
     let mut inspected = 0usize;
     let mut stack = vec![root.to_path_buf()];
     while let Some(dir) = stack.pop() {
-        let Ok(entries) = std::fs::read_dir(&dir) else { continue };
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
         for entry in entries.flatten() {
             let path = entry.path();
             let name = entry.file_name().to_string_lossy().to_string();
@@ -851,7 +1508,11 @@ pub fn build_codebase_snapshot(root: &std::path::Path, focus: &str) -> (String, 
             if !meta.is_file() || meta.len() > 300_000 {
                 continue;
             }
-            let ext = path.extension().and_then(|e| e.to_str()).unwrap_or_default().to_lowercase();
+            let ext = path
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or_default()
+                .to_lowercase();
             if !ALLOWED.contains(&ext.as_str()) {
                 continue;
             }
@@ -859,8 +1520,13 @@ pub fn build_codebase_snapshot(root: &std::path::Path, focus: &str) -> (String, 
             if inspected > 1_200 {
                 break;
             }
-            let Ok(content) = std::fs::read_to_string(&path) else { continue };
-            let rel = path.strip_prefix(root).map(|p| p.to_string_lossy().to_string()).unwrap_or_else(|_| path.to_string_lossy().to_string());
+            let Ok(content) = std::fs::read_to_string(&path) else {
+                continue;
+            };
+            let rel = path
+                .strip_prefix(root)
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_else(|_| path.to_string_lossy().to_string());
             let lower_path = rel.to_lowercase();
             let lower = content.to_lowercase();
             let mut score = 0i64;
@@ -880,8 +1546,17 @@ pub fn build_codebase_snapshot(root: &std::path::Path, focus: &str) -> (String, 
     let mut files = Vec::new();
     for (_, rel, content) in candidates.into_iter().take(MAX_FILES) {
         let lower = content.to_lowercase();
-        let first = tokens.iter().filter_map(|t| lower.find(t.as_str())).min().unwrap_or(0);
-        let start = content[..first].char_indices().rev().nth(1_500).map(|(i, _)| i).unwrap_or(0);
+        let first = tokens
+            .iter()
+            .filter_map(|t| lower.find(t.as_str()))
+            .min()
+            .unwrap_or(0);
+        let start = content[..first]
+            .char_indices()
+            .rev()
+            .nth(1_500)
+            .map(|(i, _)| i)
+            .unwrap_or(0);
         let excerpt: String = content[start..].chars().take(5_000).collect();
         let block = format!("\n\n=== {rel} ===\n{excerpt}");
         if out.chars().count() + block.chars().count() > MAX_CHARS {
@@ -908,18 +1583,33 @@ mod tests {
         assert!(!s.due(STANDARD_POLICY, 3, 2, t0), "below first threshold");
         assert!(s.due(STANDARD_POLICY, 3, 3, t0), "first pass at threshold");
         s.last_attempt = Some(t0);
-        assert!(!s.due(STANDARD_POLICY, 3, 5, t0 + Duration::from_secs(10)), "warm-up retry waits 30s");
+        assert!(
+            !s.due(STANDARD_POLICY, 3, 5, t0 + Duration::from_secs(10)),
+            "warm-up retry waits 30s"
+        );
         assert!(s.due(STANDARD_POLICY, 3, 5, t0 + Duration::from_secs(31)));
 
         s.success_count = 1;
         s.anchor = Some(t0);
         s.last_fired_segments = 5;
-        assert!(!s.due(STANDARD_POLICY, 3, 5, t0 + Duration::from_secs(200)), "no new finals → never");
-        assert!(!s.due(STANDARD_POLICY, 3, 7, t0 + Duration::from_secs(70)), "min interval needs ≥4 new");
+        assert!(
+            !s.due(STANDARD_POLICY, 3, 5, t0 + Duration::from_secs(200)),
+            "no new finals → never"
+        );
+        assert!(
+            !s.due(STANDARD_POLICY, 3, 7, t0 + Duration::from_secs(70)),
+            "min interval needs ≥4 new"
+        );
         assert!(s.due(STANDARD_POLICY, 3, 9, t0 + Duration::from_secs(70)));
-        assert!(s.due(STANDARD_POLICY, 3, 6, t0 + Duration::from_secs(121)), "max interval with any new content");
+        assert!(
+            s.due(STANDARD_POLICY, 3, 6, t0 + Duration::from_secs(121)),
+            "max interval with any new content"
+        );
         s.in_flight.store(true, Ordering::Relaxed);
-        assert!(!s.due(STANDARD_POLICY, 3, 20, t0 + Duration::from_secs(300)), "never overlap requests");
+        assert!(
+            !s.due(STANDARD_POLICY, 3, 20, t0 + Duration::from_secs(300)),
+            "never overlap requests"
+        );
     }
 
     #[test]
@@ -927,17 +1617,28 @@ mod tests {
         let m = Meeting::new("t", "en");
         let segs = vec![seg(1000, "hi", 0.0), seg(0, "hello", 1.0)];
         let labels = labels_for(&m, &segs);
-        assert_eq!(transcript_text(&segs, &labels), "[You] hi\n[Speaker 1] hello");
-        assert_eq!(transcript_with_speaker_ids(&segs), "[SpeakerID:1000] hi\n[SpeakerID:0] hello");
+        assert_eq!(
+            transcript_text(&segs, &labels),
+            "[You] hi\n[Speaker 1] hello"
+        );
+        assert_eq!(
+            transcript_with_speaker_ids(&segs),
+            "[SpeakerID:1000] hi\n[SpeakerID:0] hello"
+        );
     }
 
     #[test]
     fn incremental_payload_uses_ack_cursor_and_recent_window() {
         let mut s = ModeState::new();
-        let segs: Vec<_> = (0..6).map(|i| seg(1000, &format!("line {i}"), i as f64)).collect();
+        let segs: Vec<_> = (0..6)
+            .map(|i| seg(1000, &format!("line {i}"), i as f64))
+            .collect();
         let labels = labels_for(&Meeting::new("t", "en"), &segs);
         let full = transcript_text(&segs, &labels);
-        assert!(incremental_payload(&s, &segs, &labels, &full).is_none(), "first pass is never incremental");
+        assert!(
+            incremental_payload(&s, &segs, &labels, &full).is_none(),
+            "first pass is never incremental"
+        );
         s.success_count = 1;
         s.rolling_state = json!({"summary": "s"});
         s.acked_segments = 4;
@@ -978,7 +1679,10 @@ mod tests {
         let med: Value = serde_json::from_str(&got.meddpicc).unwrap();
         assert_eq!(med["metrics"], "20% faster\nsaves 3h");
         assert!(med["champion"].is_null());
-        assert!(med["competition"].is_null(), "literal 'null' strings are nulls");
+        assert!(
+            med["competition"].is_null(),
+            "literal 'null' strings are nulls"
+        );
         assert!(med.get("paper_process").is_some());
     }
 
@@ -1002,7 +1706,12 @@ mod tests {
 
     #[test]
     fn doc_topics_merge_preserves_state_and_dedupes() {
-        let existing = vec![DocTopic { id: "sso / saml".into(), label: "SSO / SAML".into(), state: "answered".into(), error: None }];
+        let existing = vec![DocTopic {
+            id: "sso / saml".into(),
+            label: "SSO / SAML".into(),
+            state: "answered".into(),
+            error: None,
+        }];
         let merged = merge_doc_topics(&existing, &["sso /  saml".into(), "Data retention".into()]);
         assert_eq!(merged.len(), 2);
         assert_eq!(merged[0].state, "answered");
@@ -1012,18 +1721,29 @@ mod tests {
 
     #[test]
     fn investigation_moment_heuristic() {
-        assert!(detect_investigation_moment("Can we integrate this with Salesforce next quarter?").is_some());
-        assert!(detect_investigation_moment("Why does the export take so long, what causes it?").is_some());
+        assert!(
+            detect_investigation_moment("Can we integrate this with Salesforce next quarter?")
+                .is_some()
+        );
+        assert!(
+            detect_investigation_moment("Why does the export take so long, what causes it?")
+                .is_some()
+        );
         assert!(detect_investigation_moment("ok sounds good").is_none());
         assert!(detect_investigation_moment("we should look into it").is_some());
-        assert!(detect_investigation_moment("How was your weekend?").is_none(), "question without diagnostic term");
+        assert!(
+            detect_investigation_moment("How was your weekend?").is_none(),
+            "question without diagnostic term"
+        );
     }
 
     #[test]
     fn investigation_context_is_bounded_and_recent_first() {
         let mut m = Meeting::new("Roadmap", "en");
         m.notes = "prep".into();
-        let segs: Vec<_> = (0..30).map(|i| seg(1000, &format!("turn {i}"), i as f64)).collect();
+        let segs: Vec<_> = (0..30)
+            .map(|i| seg(1000, &format!("turn {i}"), i as f64))
+            .collect();
         let ctx = investigation_context(&m, &segs);
         assert!(ctx.starts_with("Meeting title\nRoadmap"));
         assert!(ctx.contains("Meeting prep notes\nprep"));
@@ -1035,7 +1755,9 @@ mod tests {
     #[test]
     fn commercial_heuristic_needs_several_terms() {
         assert!(!sounds_commercial("let's talk about the budget"));
-        assert!(sounds_commercial("pricing and budget for the contract, procurement wants a quote and a proposal"));
+        assert!(sounds_commercial(
+            "pricing and budget for the contract, procurement wants a quote and a proposal"
+        ));
     }
 
     #[test]
@@ -1043,9 +1765,17 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(dir.path().join("src")).unwrap();
         std::fs::create_dir_all(dir.path().join("node_modules/x")).unwrap();
-        std::fs::write(dir.path().join("src/billing.rs"), "fn invoice() { /* stripe webhook */ }").unwrap();
+        std::fs::write(
+            dir.path().join("src/billing.rs"),
+            "fn invoice() { /* stripe webhook */ }",
+        )
+        .unwrap();
         std::fs::write(dir.path().join("src/other.rs"), "fn nothing() {}").unwrap();
-        std::fs::write(dir.path().join("node_modules/x/stripe.js"), "stripe stripe stripe").unwrap();
+        std::fs::write(
+            dir.path().join("node_modules/x/stripe.js"),
+            "stripe stripe stripe",
+        )
+        .unwrap();
         let (ctx, files) = build_codebase_snapshot(dir.path(), "why does the stripe webhook fail?");
         assert_eq!(files, vec!["src/billing.rs"]);
         assert!(ctx.contains("=== src/billing.rs ==="));

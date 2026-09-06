@@ -71,13 +71,21 @@ impl SourceEnergyLog {
                 overlap_total += sec;
                 continue;
             }
-            let d = if mid < s.start { s.start - mid } else if mid > s.end { mid - s.end } else { 0.0 };
+            let d = if mid < s.start {
+                s.start - mid
+            } else if mid > s.end {
+                mid - s.end
+            } else {
+                0.0
+            };
             if nearest.map(|(nd, _)| d < nd).unwrap_or(true) {
                 nearest = Some((d, *s));
             }
         }
         if overlap_total <= 0.0 {
-            let Some((d, s)) = nearest else { return Source::Unknown };
+            let Some((d, s)) = nearest else {
+                return Source::Unknown;
+            };
             if d > 1.5 {
                 return Source::Unknown;
             }
@@ -85,11 +93,19 @@ impl SourceEnergyLog {
             sys_w = s.sys_energy as f64;
             overlap_total = s.end - s.start;
         }
-        let avg_mic = if overlap_total > 0.0 { mic_w / overlap_total } else { 0.0 };
+        let avg_mic = if overlap_total > 0.0 {
+            mic_w / overlap_total
+        } else {
+            0.0
+        };
         if avg_mic < 200.0 {
             return Source::System;
         }
-        if mic_w > sys_w * 2.0 { Source::Mic } else { Source::System }
+        if mic_w > sys_w * 2.0 {
+            Source::Mic
+        } else {
+            Source::System
+        }
     }
 }
 
@@ -221,19 +237,46 @@ mod tests {
         assert!((m.elapsed() - 0.1).abs() < 1e-9);
         assert_eq!(m.log.dominant_source(0.0, 0.05), Source::System);
         assert_eq!(m.log.dominant_source(0.05, 0.1), Source::Mic);
-        assert_eq!(m.log.dominant_source(5.0, 5.1), Source::Unknown, "too far from any sample");
+        assert_eq!(
+            m.log.dominant_source(5.0, 5.1),
+            Source::Unknown,
+            "too far from any sample"
+        );
     }
 
     #[test]
     fn dominance_needs_speech_floor_and_2x_margin() {
         let mut log = SourceEnergyLog::default();
-        log.push(SourceSample { start: 0.0, end: 1.0, mic_energy: 150.0, sys_energy: 0.0 });
-        assert_eq!(log.dominant_source(0.0, 1.0), Source::System, "keyboard-level mic is not speech");
+        log.push(SourceSample {
+            start: 0.0,
+            end: 1.0,
+            mic_energy: 150.0,
+            sys_energy: 0.0,
+        });
+        assert_eq!(
+            log.dominant_source(0.0, 1.0),
+            Source::System,
+            "keyboard-level mic is not speech"
+        );
         log.clear();
-        log.push(SourceSample { start: 0.0, end: 1.0, mic_energy: 1_000.0, sys_energy: 600.0 });
-        assert_eq!(log.dominant_source(0.0, 1.0), Source::System, "not clearly louder");
+        log.push(SourceSample {
+            start: 0.0,
+            end: 1.0,
+            mic_energy: 1_000.0,
+            sys_energy: 600.0,
+        });
+        assert_eq!(
+            log.dominant_source(0.0, 1.0),
+            Source::System,
+            "not clearly louder"
+        );
         log.clear();
-        log.push(SourceSample { start: 0.0, end: 1.0, mic_energy: 2_000.0, sys_energy: 600.0 });
+        log.push(SourceSample {
+            start: 0.0,
+            end: 1.0,
+            mic_energy: 2_000.0,
+            sys_energy: 600.0,
+        });
         assert_eq!(log.dominant_source(0.0, 1.0), Source::Mic);
         // Fallback to the nearest sample within 1.5 s.
         assert_eq!(log.dominant_source(2.0, 2.2), Source::Mic);

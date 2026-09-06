@@ -105,7 +105,11 @@ pub fn training_data(metrics: &TrainingMetrics) -> TrainingData {
                 words_per_minute: s.words_per_minute,
                 fillers_per_minute: s.fillers_per_minute,
                 total_fillers: s.total_fillers,
-                fillers: s.fillers.iter().map(|f| (f.word.clone(), f.count)).collect(),
+                fillers: s
+                    .fillers
+                    .iter()
+                    .map(|f| (f.word.clone(), f.count))
+                    .collect(),
                 longest_monologue_words: s.longest_monologue_words,
                 questions_asked: s.questions_asked,
                 avg_words_per_turn: s.avg_words_per_turn,
@@ -154,7 +158,11 @@ pub fn payload_from_meeting(
     let self_slice = self_ids.as_deref();
 
     let mut finals: Vec<&TranscriptSegment> = segments.iter().collect();
-    finals.sort_by(|a, b| a.start_s.partial_cmp(&b.start_s).unwrap_or(std::cmp::Ordering::Equal));
+    finals.sort_by(|a, b| {
+        a.start_s
+            .partial_cmp(&b.start_s)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     let transcript: Vec<TranscriptEntry> = finals
         .iter()
@@ -184,14 +192,23 @@ pub fn payload_from_meeting(
             timestamp: s.start_s,
         })
         .collect();
-    let metrics = coaching::compute(&coaching_segments, duration as f64, fillers, names_opt, self_slice);
+    let metrics = coaching::compute(
+        &coaching_segments,
+        duration as f64,
+        fillers,
+        names_opt,
+        self_slice,
+    );
 
     WebhookPayload {
         event: event.to_string(),
         meeting: MeetingData {
             id: meeting.id.clone(),
             title: meeting.display_title(),
-            date: meeting.started_at.map(iso).unwrap_or_else(|| iso(meeting.created_at)),
+            date: meeting
+                .started_at
+                .map(iso)
+                .unwrap_or_else(|| iso(meeting.created_at)),
             end_time: meeting.ended_at.map(iso),
             duration_seconds: duration,
             language: meeting.language.clone(),
@@ -261,15 +278,34 @@ mod tests {
             TranscriptSegment::new(&m.id, 1000, "um hello", 0.0, 1.0, "microphone"),
             TranscriptSegment::new(&m.id, 0, "hi there", 1.0, 2.0, "system"),
         ];
-        let fillers: Vec<String> = coaching::default_fillers("en").into_iter().map(String::from).collect();
-        let json = serde_json::to_value(payload_from_meeting("meeting.saved", &m, &segs, &fillers)).unwrap();
+        let fillers: Vec<String> = coaching::default_fillers("en")
+            .into_iter()
+            .map(String::from)
+            .collect();
+        let json = serde_json::to_value(payload_from_meeting("meeting.saved", &m, &segs, &fillers))
+            .unwrap();
 
         assert_eq!(json["event"], "meeting.saved");
         let mt = &json["meeting"];
         for key in [
-            "id", "title", "date", "end_time", "duration_seconds", "language", "summary",
-            "action_items", "key_decisions", "topics", "discussion_flow", "notes", "meddpicc",
-            "training", "speaker_count", "speaker_names", "transcript", "insights_stale",
+            "id",
+            "title",
+            "date",
+            "end_time",
+            "duration_seconds",
+            "language",
+            "summary",
+            "action_items",
+            "key_decisions",
+            "topics",
+            "discussion_flow",
+            "notes",
+            "meddpicc",
+            "training",
+            "speaker_count",
+            "speaker_names",
+            "transcript",
+            "insights_stale",
         ] {
             assert!(mt.get(key).is_some(), "missing key {key}");
         }
@@ -280,12 +316,18 @@ mod tests {
         assert_eq!(mt["transcript"][0]["speaker"], "You");
         assert_eq!(mt["transcript"][1]["speaker"], "Alex");
         assert_eq!(mt["transcript"][0]["timestamp"], 0.0);
-        assert!(mt["transcript"][0].get("source").is_none(), "Apple entries carry no source");
+        assert!(
+            mt["transcript"][0].get("source").is_none(),
+            "Apple entries carry no source"
+        );
         assert_eq!(mt["meddpicc"]["champion"], "Sam");
         assert_eq!(mt["training"]["speakers"][0]["speaker"], "You");
         assert_eq!(mt["training"]["speakers"][0]["is_you"], true);
         assert_eq!(mt["training"]["speakers"][0]["total_fillers"], 1);
-        assert!(mt.get("questions").is_none(), "empty arrays are omitted like Apple's nil");
+        assert!(
+            mt.get("questions").is_none(),
+            "empty arrays are omitted like Apple's nil"
+        );
         assert!(mt.get("attendees").is_none());
         assert!(mt.get("calendar_event_id").is_none());
     }
@@ -295,7 +337,8 @@ mod tests {
         let mut m = meeting();
         m.summary = String::new();
         m.meddpicc = r#"{"metrics":"","champion":""}"#.into();
-        let json = serde_json::to_value(payload_from_meeting("meeting.updated", &m, &[], &[])).unwrap();
+        let json =
+            serde_json::to_value(payload_from_meeting("meeting.updated", &m, &[], &[])).unwrap();
         assert!(json["meeting"].get("summary").is_none());
         assert!(json["meeting"].get("meddpicc").is_none());
         assert_eq!(json["meeting"]["speaker_count"], 0);

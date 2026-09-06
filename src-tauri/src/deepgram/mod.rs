@@ -433,7 +433,11 @@ fn make_segment(
     source: SegmentSource,
 ) -> TranscriptEvent {
     TranscriptEvent {
-        text: words.iter().map(|w| w.text.as_str()).collect::<Vec<_>>().join(" "),
+        text: words
+            .iter()
+            .map(|w| w.text.as_str())
+            .collect::<Vec<_>>()
+            .join(" "),
         speaker_id: speaker,
         start,
         end: words.last().map(|w| w.end).unwrap_or(start),
@@ -629,7 +633,9 @@ impl Processor {
         if is_final {
             for s in &segments {
                 self.segmentation.confirmed_speaker_ids.insert(s.speaker_id);
-                self.segmentation.pending_speaker_evidence.remove(&s.speaker_id);
+                self.segmentation
+                    .pending_speaker_evidence
+                    .remove(&s.speaker_id);
             }
         }
         for s in &mut segments {
@@ -717,9 +723,15 @@ mod tests {
         ] {
             assert!(url.contains(p), "missing {p} in {url}");
         }
-        assert!(!url.contains("punctuate="), "must not send punctuate with smart_format");
+        assert!(
+            !url.contains("punctuate="),
+            "must not send punctuate with smart_format"
+        );
         assert!(url.contains("diarize_model=latest"));
-        assert!(!url.contains("diarize=true"), "deprecated diarize=true with diarize_model → 400");
+        assert!(
+            !url.contains("diarize=true"),
+            "deprecated diarize=true with diarize_model → 400"
+        );
     }
 
     #[test]
@@ -768,10 +780,22 @@ mod tests {
             response_source(true, Some(0), SegmentSource::Microphone),
             SegmentSource::Microphone
         );
-        assert_eq!(response_source(true, Some(1), SegmentSource::Microphone), SegmentSource::System);
-        assert_eq!(response_source(true, Some(7), SegmentSource::Microphone), SegmentSource::Unknown);
-        assert_eq!(response_source(true, None, SegmentSource::Microphone), SegmentSource::Unknown);
-        assert_eq!(response_source(false, None, SegmentSource::System), SegmentSource::System);
+        assert_eq!(
+            response_source(true, Some(1), SegmentSource::Microphone),
+            SegmentSource::System
+        );
+        assert_eq!(
+            response_source(true, Some(7), SegmentSource::Microphone),
+            SegmentSource::Unknown
+        );
+        assert_eq!(
+            response_source(true, None, SegmentSource::Microphone),
+            SegmentSource::Unknown
+        );
+        assert_eq!(
+            response_source(false, None, SegmentSource::System),
+            SegmentSource::System
+        );
     }
 
     // ---- SpeakerIdentityState ----
@@ -782,7 +806,11 @@ mod tests {
         let mut ids = SpeakerIdentityState::default();
         assert_eq!(ids.app_speaker_id(SegmentSource::Microphone, 0), 1000);
         assert_eq!(ids.app_speaker_id(SegmentSource::Microphone, 1), 1001);
-        assert_eq!(ids.app_speaker_id(SegmentSource::Microphone, 0), 1000, "stable");
+        assert_eq!(
+            ids.app_speaker_id(SegmentSource::Microphone, 0),
+            1000,
+            "stable"
+        );
     }
 
     #[test]
@@ -802,8 +830,16 @@ mod tests {
 
         ids.begin_connection(true);
         // Provider numbers restart at 0 on the new socket.
-        assert_eq!(ids.app_speaker_id(SegmentSource::Microphone, 0), 1000, "single mic continuity");
-        assert_eq!(ids.app_speaker_id(SegmentSource::System, 0), 2, "fresh system id, no collision");
+        assert_eq!(
+            ids.app_speaker_id(SegmentSource::Microphone, 0),
+            1000,
+            "single mic continuity"
+        );
+        assert_eq!(
+            ids.app_speaker_id(SegmentSource::System, 0),
+            2,
+            "fresh system id, no collision"
+        );
         assert_eq!(ids.app_speaker_id(SegmentSource::Microphone, 1), 1001);
     }
 
@@ -892,7 +928,11 @@ mod tests {
             .collect();
         words.extend(shaky);
         let segs = segment_by_speaker(&words, true, 0.9, Some(1), SegmentSource::System, &mut st);
-        assert_eq!(segs.len(), 1, "low speaker_confidence must not flip speakers");
+        assert_eq!(
+            segs.len(),
+            1,
+            "low speaker_confidence must not flip speakers"
+        );
     }
 
     #[test]
@@ -943,7 +983,11 @@ mod tests {
     #[test]
     fn processor_mono_maps_to_mic_range_and_uses_punctuated_words() {
         let mut p = Processor::new(false, SegmentSource::Microphone);
-        let res = results(&results_json("[0]", true, &[("Hello", 1.0, 0), ("there", 1.3, 0)]));
+        let res = results(&results_json(
+            "[0]",
+            true,
+            &[("Hello", 1.0, 0), ("there", 1.3, 0)],
+        ));
         let evs = p.process(&res, 0.0);
         assert_eq!(evs.len(), 1);
         assert_eq!(evs[0].speaker_id, 1000);
@@ -979,7 +1023,10 @@ mod tests {
 
         let interim = results(&results_json("[0]", false, &[("a", 0.0, 0)]));
         p.process(&interim, 0.0);
-        assert!(p.segmentation.confirmed_speaker_ids.is_empty(), "interims never confirm");
+        assert!(
+            p.segmentation.confirmed_speaker_ids.is_empty(),
+            "interims never confirm"
+        );
 
         let fin = results(&results_json("[0]", true, &[("a", 0.0, 0)]));
         p.process(&fin, 0.0);

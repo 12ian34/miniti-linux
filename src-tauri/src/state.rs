@@ -57,7 +57,12 @@ impl Levels {
         }
     }
     pub fn audio_gap(&self) -> f64 {
-        self.last_activity.lock().ok().and_then(|t| *t).map(|t| t.elapsed().as_secs_f64()).unwrap_or(f64::INFINITY)
+        self.last_activity
+            .lock()
+            .ok()
+            .and_then(|t| *t)
+            .map(|t| t.elapsed().as_secs_f64())
+            .unwrap_or(f64::INFINITY)
     }
     fn get(slot: &AtomicU32) -> f32 {
         f32::from_bits(slot.load(Ordering::Relaxed))
@@ -100,7 +105,12 @@ impl ActivityTrack {
         }
     }
     pub fn transcript_gap(&self) -> f64 {
-        self.last_final_at.lock().ok().and_then(|t| *t).map(|t| t.elapsed().as_secs_f64()).unwrap_or(f64::INFINITY)
+        self.last_final_at
+            .lock()
+            .ok()
+            .and_then(|t| *t)
+            .map(|t| t.elapsed().as_secs_f64())
+            .unwrap_or(f64::INFINITY)
     }
 }
 
@@ -183,7 +193,10 @@ pub struct RecordingSession {
     dg_task: Option<tauri::async_runtime::JoinHandle<()>>,
     consumer_tasks: Vec<tauri::async_runtime::JoinHandle<()>>,
     credential: Option<Credential>,
-    engine: Option<(Arc<std::sync::atomic::AtomicBool>, tauri::async_runtime::JoinHandle<()>)>,
+    engine: Option<(
+        Arc<std::sync::atomic::AtomicBool>,
+        tauri::async_runtime::JoinHandle<()>,
+    )>,
     engine_cfg: Option<EngineConfig>,
 }
 
@@ -194,7 +207,10 @@ struct StopParts {
     dg_task: Option<tauri::async_runtime::JoinHandle<()>>,
     consumer_tasks: Vec<tauri::async_runtime::JoinHandle<()>>,
     credential: Option<Credential>,
-    engine: Option<(Arc<std::sync::atomic::AtomicBool>, tauri::async_runtime::JoinHandle<()>)>,
+    engine: Option<(
+        Arc<std::sync::atomic::AtomicBool>,
+        tauri::async_runtime::JoinHandle<()>,
+    )>,
     engine_cfg: Option<EngineConfig>,
 }
 
@@ -212,11 +228,16 @@ impl RecordingSession {
         engine_cfg: Option<EngineConfig>,
         activity: Arc<ActivityTrack>,
     ) -> Result<String, String> {
-        let title = opts.title.clone().map(|t| t.trim().to_string()).filter(|t| !t.is_empty()).unwrap_or_else(|| "New meeting".to_string());
+        let title = opts
+            .title
+            .clone()
+            .map(|t| t.trim().to_string())
+            .filter(|t| !t.is_empty())
+            .unwrap_or_else(|| "New meeting".to_string());
         // Microphone first: without it there is nothing to transcribe.
         let (mic_tx, mic_rx) = audio::frame_channel();
-        let mic = audio::start_microphone(mic_tx)
-            .map_err(|e| format!("microphone unavailable: {e}"))?;
+        let mic =
+            audio::start_microphone(mic_tx).map_err(|e| format!("microphone unavailable: {e}"))?;
 
         // System audio decides the Deepgram channel layout, so start it before
         // the socket. Failure degrades to mono mic with a log line.
@@ -271,12 +292,21 @@ impl RecordingSession {
         let (pcm_tx, pcm_rx) = tokio::sync::mpsc::channel::<Vec<u8>>(256);
         let (ev_tx, mut ev_rx) = tokio::sync::mpsc::channel::<TranscriptEvent>(512);
         let (st_tx, mut st_rx) = tokio::sync::mpsc::channel::<StreamStatus>(32);
-        let mixer: Arc<Mutex<audio::dual::DualMixer>> = Arc::new(Mutex::new(audio::dual::DualMixer::new()));
+        let mixer: Arc<Mutex<audio::dual::DualMixer>> =
+            Arc::new(Mutex::new(audio::dual::DualMixer::new()));
 
         let auth_provider = credential.clone().into_auth_provider();
         self.dg_task = Some(tauri::async_runtime::spawn(async move {
-            deepgram::live::run_stream(cfg, auth_provider, pcm_rx, ev_tx, st_tx, processor, started_at)
-                .await;
+            deepgram::live::run_stream(
+                cfg,
+                auth_provider,
+                pcm_rx,
+                ev_tx,
+                st_tx,
+                processor,
+                started_at,
+            )
+            .await;
         }));
 
         // ---- Persist finals + emit every event to the UI (dual: via the echo
@@ -359,14 +389,15 @@ impl RecordingSession {
         // ---- Connection status → UI
         let status_app = app.clone();
         let status_slot = last_status.clone();
-        self.consumer_tasks.push(tauri::async_runtime::spawn(async move {
-            while let Some(st) = st_rx.recv().await {
-                if let Ok(mut s) = status_slot.lock() {
-                    *s = Some(st.clone());
+        self.consumer_tasks
+            .push(tauri::async_runtime::spawn(async move {
+                while let Some(st) = st_rx.recv().await {
+                    if let Ok(mut s) = status_slot.lock() {
+                        *s = Some(st.clone());
+                    }
+                    let _ = status_app.emit("transcription_status", &st);
                 }
-                let _ = status_app.emit("transcription_status", &st);
-            }
-        }));
+            }));
 
         // ---- Mic reader: meter + forward PCM (interleaved with system when dual).
         // Owns the only pcm sender, so when capture stops the channel closes and
@@ -485,29 +516,43 @@ impl AppState {
     /// Insights provider for the current mode, or a user-facing reason why not.
     fn insights_provider(&self, prefs: &Prefs) -> Result<Provider, String> {
         match prefs.app_mode {
-            AppMode::Managed => self.api_client(prefs).map(Provider::Managed).map_err(|e| e.to_string()),
+            AppMode::Managed => self
+                .api_client(prefs)
+                .map(Provider::Managed)
+                .map_err(|e| e.to_string()),
             AppMode::Byok => prefs
                 .byok_openai_key
                 .as_deref()
                 .map(str::trim)
                 .filter(|k| !k.is_empty())
                 .map(|k| Provider::byok(k.to_string()))
-                .ok_or_else(|| "Add your OpenAI API key in Settings (BYOK) for live insights.".to_string()),
+                .ok_or_else(|| {
+                    "Add your OpenAI API key in Settings (BYOK) for live insights.".to_string()
+                }),
         }
     }
 
     /// Engine config for a meeting; `None` when insights are unavailable in
     /// this mode (the reason is emitted once so the UI can say why).
-    async fn engine_config(&self, app: &AppHandle, prefs: &Prefs, meeting_id: &str, live: bool) -> Option<EngineConfig> {
+    async fn engine_config(
+        &self,
+        app: &AppHandle,
+        prefs: &Prefs,
+        meeting_id: &str,
+        live: bool,
+    ) -> Option<EngineConfig> {
         let provider = match self.insights_provider(prefs) {
             Ok(p) => p,
             Err(reason) => {
-                let _ = app.emit("insights_status", insights_engine::InsightsEvent {
-                    meeting_id: meeting_id.to_string(),
-                    mode: "standard".into(),
-                    state: "error",
-                    message: Some(reason),
-                });
+                let _ = app.emit(
+                    "insights_status",
+                    insights_engine::InsightsEvent {
+                        meeting_id: meeting_id.to_string(),
+                        mode: "standard".into(),
+                        state: "error",
+                        message: Some(reason),
+                    },
+                );
                 return None;
             }
         };
@@ -523,20 +568,34 @@ impl AppState {
             meeting_id: meeting_id.to_string(),
             language: prefs.language.clone(),
             provider,
-            docs_mcp_url: prefs.docs_mcp_url.as_deref().map(str::trim).filter(|u| !u.is_empty()).map(String::from),
+            docs_mcp_url: prefs
+                .docs_mcp_url
+                .as_deref()
+                .map(str::trim)
+                .filter(|u| !u.is_empty())
+                .map(String::from),
             auto_docs_lookup,
             live_enabled: live && prefs.live_insights_enabled,
         })
     }
 
-    fn engine_config_blocking(&self, prefs: &Prefs, meeting_id: &str) -> Result<EngineConfig, String> {
+    fn engine_config_blocking(
+        &self,
+        prefs: &Prefs,
+        meeting_id: &str,
+    ) -> Result<EngineConfig, String> {
         let provider = self.insights_provider(prefs)?;
         let auto_docs_lookup = matches!(provider, Provider::Byok { .. });
         Ok(EngineConfig {
             meeting_id: meeting_id.to_string(),
             language: prefs.language.clone(),
             provider,
-            docs_mcp_url: prefs.docs_mcp_url.as_deref().map(str::trim).filter(|u| !u.is_empty()).map(String::from),
+            docs_mcp_url: prefs
+                .docs_mcp_url
+                .as_deref()
+                .map(str::trim)
+                .filter(|u| !u.is_empty())
+                .map(String::from),
             auto_docs_lookup,
             live_enabled: false,
         })
@@ -546,7 +605,12 @@ impl AppState {
     fn spawn_finalize(&self, app: AppHandle, prefs: &Prefs, cfg: EngineConfig) {
         let db = self.db.clone();
         let finishing = self.finishing.clone();
-        let webhook_url = prefs.webhook_url.as_deref().map(str::trim).filter(|u| !u.is_empty()).map(String::from);
+        let webhook_url = prefs
+            .webhook_url
+            .as_deref()
+            .map(str::trim)
+            .filter(|u| !u.is_empty())
+            .map(String::from);
         let fillers = self.fillers(prefs);
         tauri::async_runtime::spawn(async move {
             let meeting_id = cfg.meeting_id.clone();
@@ -555,9 +619,16 @@ impl AppState {
             if let Some(url) = webhook_url {
                 let payload = {
                     let Ok(conn) = db.lock() else { return };
-                    let Ok(Some(meeting)) = db::get_meeting(&conn, &meeting_id) else { return };
+                    let Ok(Some(meeting)) = db::get_meeting(&conn, &meeting_id) else {
+                        return;
+                    };
                     let segments = db::list_segments(&conn, &meeting_id).unwrap_or_default();
-                    crate::webhook::payload_from_meeting("meeting.updated", &meeting, &segments, &fillers)
+                    crate::webhook::payload_from_meeting(
+                        "meeting.updated",
+                        &meeting,
+                        &segments,
+                        &fillers,
+                    )
                 };
                 crate::webhook::send(&url, &payload).await;
             }
@@ -685,7 +756,10 @@ pub struct CoachingOverview {
     pub snapshots: Vec<CoachingSnapshot>,
 }
 
-fn speaker_labels_for(meeting: &Meeting, segments: &[TranscriptSegment]) -> HashMap<String, String> {
+fn speaker_labels_for(
+    meeting: &Meeting,
+    segments: &[TranscriptSegment],
+) -> HashMap<String, String> {
     let names: HashMap<String, String> =
         serde_json::from_str(&meeting.speaker_names).unwrap_or_default();
     let names_opt = if names.is_empty() { None } else { Some(&names) };
@@ -703,7 +777,11 @@ fn speaker_labels_for(meeting: &Meeting, segments: &[TranscriptSegment]) -> Hash
         .collect()
 }
 
-fn metrics_for(meeting: &Meeting, segments: &[TranscriptSegment], fillers: &[String]) -> TrainingMetrics {
+fn metrics_for(
+    meeting: &Meeting,
+    segments: &[TranscriptSegment],
+    fillers: &[String],
+) -> TrainingMetrics {
     let names: HashMap<String, String> =
         serde_json::from_str(&meeting.speaker_names).unwrap_or_default();
     let names_opt = if names.is_empty() { None } else { Some(&names) };
@@ -776,7 +854,10 @@ pub async fn launch_gate(state: State<'_, AppState>) -> Result<LaunchGate, Strin
         };
     let gate = gates::route(&GateInputs {
         current_version: APP_VERSION.to_string(),
-        min_version: version.as_ref().map(|v| v.min_version.clone()).unwrap_or_default(),
+        min_version: version
+            .as_ref()
+            .map(|v| v.min_version.clone())
+            .unwrap_or_default(),
         accepted_terms_version: prefs.accepted_terms_version.clone(),
         current_terms_version: CURRENT_TERMS_VERSION.to_string(),
         first_launch: !prefs.onboarding_complete,
@@ -832,10 +913,16 @@ pub async fn portal_url(state: State<'_, AppState>) -> Result<String, String> {
 }
 
 #[tauri::command]
-pub async fn restore_license(state: State<'_, AppState>, license_key: String) -> Result<serde_json::Value, String> {
+pub async fn restore_license(
+    state: State<'_, AppState>,
+    license_key: String,
+) -> Result<serde_json::Value, String> {
     let prefs = state.prefs_snapshot()?;
     let client = state.api_client(&prefs).map_err(|e| e.to_string())?;
-    client.restore(license_key.trim()).await.map_err(|e| e.to_string())
+    client
+        .restore(license_key.trim())
+        .await
+        .map_err(|e| e.to_string())
 }
 
 async fn resolve_credential(state: &AppState, prefs: &Prefs) -> Result<Credential, String> {
@@ -843,7 +930,9 @@ async fn resolve_credential(state: &AppState, prefs: &Prefs) -> Result<Credentia
         AppMode::Byok => prefs
             .byok_deepgram_key()
             .map(|k| Credential::Byok(k.to_string()))
-            .ok_or_else(|| "Add your Deepgram API key in Settings (BYOK) to transcribe.".to_string()),
+            .ok_or_else(|| {
+                "Add your Deepgram API key in Settings (BYOK) to transcribe.".to_string()
+            }),
         AppMode::Managed => {
             let client = state.api_client(prefs).map_err(|e| e.to_string())?;
             let session = client
@@ -867,9 +956,18 @@ async fn resolve_credential(state: &AppState, prefs: &Prefs) -> Result<Credentia
 }
 
 /// Start a meeting (shared by the Home button, tray, calendar and call prompts).
-pub async fn start_meeting(app: AppHandle, state: State<'_, AppState>, opts: StartOptions) -> Result<String, String> {
+pub async fn start_meeting(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    opts: StartOptions,
+) -> Result<String, String> {
     let prefs = state.prefs_snapshot()?;
-    if state.session.lock().map_err(|_| "session poisoned")?.running {
+    if state
+        .session
+        .lock()
+        .map_err(|_| "session poisoned")?
+        .running
+    {
         return Err("already recording".into());
     }
     let credential = resolve_credential(&state, &prefs).await?;
@@ -882,7 +980,17 @@ pub async fn start_meeting(app: AppHandle, state: State<'_, AppState>, opts: Sta
     if session.running {
         return Err("already recording".into());
     }
-    let id = session.start(app.clone(), db.clone(), levels, last_status, &prefs, opts, credential, None, activity)?;
+    let id = session.start(
+        app.clone(),
+        db.clone(),
+        levels,
+        last_status,
+        &prefs,
+        opts,
+        credential,
+        None,
+        activity,
+    )?;
     if let Some(mut cfg) = engine_cfg {
         cfg.meeting_id = id.clone();
         session.engine = Some(LiveEngine::spawn(app, db, cfg.clone()));
@@ -897,7 +1005,15 @@ pub async fn start_recording(
     state: State<'_, AppState>,
     title: Option<String>,
 ) -> Result<String, String> {
-    start_meeting(app, state, StartOptions { title, ..Default::default() }).await
+    start_meeting(
+        app,
+        state,
+        StartOptions {
+            title,
+            ..Default::default()
+        },
+    )
+    .await
 }
 
 #[tauri::command]
@@ -968,7 +1084,12 @@ pub async fn stop_recording(
     }
 
     // Webhook (fire-and-forget, same payload shape as macOS).
-    if let Some(url) = prefs.webhook_url.as_deref().map(str::trim).filter(|u| !u.is_empty()) {
+    if let Some(url) = prefs
+        .webhook_url
+        .as_deref()
+        .map(str::trim)
+        .filter(|u| !u.is_empty())
+    {
         let payload = crate::webhook::payload_from_meeting(
             "meeting.saved",
             &meeting,
@@ -1002,9 +1123,11 @@ pub async fn toggle_recording_from_shell(app: AppHandle) {
     let result = if running {
         stop_recording(app.clone(), state.clone()).await.map(|_| ())
     } else {
-        start_meeting(app.clone(), state.clone(), StartOptions::default()).await.map(|id| {
-            let _ = app.emit("navigate_meeting", &id);
-        })
+        start_meeting(app.clone(), state.clone(), StartOptions::default())
+            .await
+            .map(|id| {
+                let _ = app.emit("navigate_meeting", &id);
+            })
     };
     if let Err(e) = result {
         crate::shell::notify(&app, "Miniti", &e);
@@ -1024,7 +1147,14 @@ pub fn spawn_shell_ticker(app: AppHandle) {
             let (recording, elapsed) = state
                 .session
                 .lock()
-                .map(|s| (s.running, s.started_at.map(|t| t.elapsed().as_secs_f64()).unwrap_or(0.0)))
+                .map(|s| {
+                    (
+                        s.running,
+                        s.started_at
+                            .map(|t| t.elapsed().as_secs_f64())
+                            .unwrap_or(0.0),
+                    )
+                })
                 .unwrap_or((false, 0.0));
             let stream = state.last_status.lock().ok().and_then(|s| s.clone());
             let stream_state = stream.as_ref().map(|s| match s {
@@ -1036,7 +1166,11 @@ pub fn spawn_shell_ticker(app: AppHandle) {
             });
             crate::shell::update_tray(&app, recording, elapsed, stream_state);
             if recording != was_recording {
-                let surface = state.prefs.lock().map(|p| p.show_floating_indicator).unwrap_or(true);
+                let surface = state
+                    .prefs
+                    .lock()
+                    .map(|p| p.show_floating_indicator)
+                    .unwrap_or(true);
                 if recording && surface {
                     crate::shell::show_presence(&app);
                 } else {
@@ -1081,9 +1215,13 @@ async fn perform_smart_action(app: &AppHandle, action: crate::smart::Action) {
         Action::StartFromEvent(event) => start_from_event(app, &state, &event).await.map(|id| {
             let _ = app.emit("navigate_meeting", &id);
         }),
-        Action::StartFromCall(_) => start_meeting(app.clone(), state.clone(), StartOptions::default()).await.map(|id| {
-            let _ = app.emit("navigate_meeting", &id);
-        }),
+        Action::StartFromCall(_) => {
+            start_meeting(app.clone(), state.clone(), StartOptions::default())
+                .await
+                .map(|id| {
+                    let _ = app.emit("navigate_meeting", &id);
+                })
+        }
         Action::EndAndStartEvent(event) => {
             let stopped = stop_recording(app.clone(), state.clone()).await.map(|_| ());
             match stopped {
@@ -1096,9 +1234,11 @@ async fn perform_smart_action(app: &AppHandle, action: crate::smart::Action) {
         Action::EndAndStartNew => {
             let stopped = stop_recording(app.clone(), state.clone()).await.map(|_| ());
             match stopped {
-                Ok(()) => start_meeting(app.clone(), state.clone(), StartOptions::default()).await.map(|id| {
-                    let _ = app.emit("navigate_meeting", &id);
-                }),
+                Ok(()) => start_meeting(app.clone(), state.clone(), StartOptions::default())
+                    .await
+                    .map(|id| {
+                        let _ = app.emit("navigate_meeting", &id);
+                    }),
                 Err(e) => Err(e),
             }
         }
@@ -1109,7 +1249,11 @@ async fn perform_smart_action(app: &AppHandle, action: crate::smart::Action) {
     }
 }
 
-async fn start_from_event(app: &AppHandle, state: &State<'_, AppState>, event: &crate::integrations::CalendarEvent) -> Result<String, String> {
+async fn start_from_event(
+    app: &AppHandle,
+    state: &State<'_, AppState>,
+    event: &crate::integrations::CalendarEvent,
+) -> Result<String, String> {
     let notes = {
         let conn = state.db.lock().map_err(|_| "db poisoned")?;
         db::get_prep_notes(&conn, &event.id).unwrap_or_default()
@@ -1134,16 +1278,22 @@ pub fn spawn_smart_monitor(app: AppHandle) {
         loop {
             tick.tick().await;
             let state = app.state::<AppState>();
-            let Ok(prefs) = state.prefs_snapshot() else { continue };
+            let Ok(prefs) = state.prefs_snapshot() else {
+                continue;
+            };
             let (recording, elapsed, meeting_id, event_id) = state
                 .session
                 .lock()
-                .map(|s| (
-                    s.running,
-                    s.started_at.map(|t| t.elapsed().as_secs_f64()).unwrap_or(0.0),
-                    s.meeting.as_ref().map(|m| m.id.clone()),
-                    s.meeting.as_ref().and_then(|m| m.calendar_event_id.clone()),
-                ))
+                .map(|s| {
+                    (
+                        s.running,
+                        s.started_at
+                            .map(|t| t.elapsed().as_secs_f64())
+                            .unwrap_or(0.0),
+                        s.meeting.as_ref().map(|m| m.id.clone()),
+                        s.meeting.as_ref().and_then(|m| m.calendar_event_id.clone()),
+                    )
+                })
                 .unwrap_or((false, 0.0, None, None));
             let activity = crate::smart::Activity {
                 recording,
@@ -1155,15 +1305,28 @@ pub fn spawn_smart_monitor(app: AppHandle) {
             };
             let events = calendar_snapshot(&app);
             let sensor = if prefs.smart_meetings_enabled {
-                tokio::task::spawn_blocking(crate::call_sensor::snapshot_capture_clients).await.ok().flatten()
+                tokio::task::spawn_blocking(crate::call_sensor::snapshot_capture_clients)
+                    .await
+                    .ok()
+                    .flatten()
             } else {
                 None
             };
             let actions = {
-                let Some(slot) = crate::smart::slot(&app) else { continue };
+                let Some(slot) = crate::smart::slot(&app) else {
+                    continue;
+                };
                 let Ok(mut m) = slot.lock() else { continue };
                 m.current_meeting = meeting_id.clone();
-                m.tick(&app, &prefs, activity, event_id.as_deref(), &events, sensor, Instant::now())
+                m.tick(
+                    &app,
+                    &prefs,
+                    activity,
+                    event_id.as_deref(),
+                    &events,
+                    sensor,
+                    Instant::now(),
+                )
             };
             for a in actions {
                 perform_smart_action(&app, a).await;
@@ -1181,22 +1344,44 @@ fn evaluate_live_guidance(app: &AppHandle, prefs: &Prefs, meeting_id: &str, elap
     use crate::smart::YouSegment;
     let state = app.state::<AppState>();
     let fillers = state.fillers(prefs);
-    let filler_tokens: Vec<Vec<String>> = fillers.iter().map(|f| coaching::tokenize(f)).filter(|t| !t.is_empty()).collect();
+    let filler_tokens: Vec<Vec<String>> = fillers
+        .iter()
+        .map(|f| coaching::tokenize(f))
+        .filter(|t| !t.is_empty())
+        .collect();
     let (meeting, segments) = {
         let Ok(conn) = state.db.lock() else { return };
-        let Ok(Some(meeting)) = db::get_meeting(&conn, meeting_id) else { return };
-        let Ok(segments) = db::list_segments_since(&conn, meeting_id, (elapsed - 400.0).max(0.0)) else { return };
+        let Ok(Some(meeting)) = db::get_meeting(&conn, meeting_id) else {
+            return;
+        };
+        let Ok(segments) = db::list_segments_since(&conn, meeting_id, (elapsed - 400.0).max(0.0))
+        else {
+            return;
+        };
         (meeting, segments)
     };
-    let self_ids = meeting.self_speaker_ids().unwrap_or_else(|| vec![deepgram::MIC_SPEAKER_ID]);
+    let self_ids = meeting
+        .self_speaker_ids()
+        .unwrap_or_else(|| vec![deepgram::MIC_SPEAKER_ID]);
     let you: Vec<(usize, YouSegment)> = segments
         .iter()
         .enumerate()
         .filter(|(_, s)| self_ids.contains(&s.speaker))
         .map(|(i, s)| {
             let toks = coaching::tokenize(&s.text);
-            let fillers = filler_tokens.iter().map(|p| coaching::count_phrase_occurrences(p, &toks)).sum();
-            (i, YouSegment { start: s.start_s, end: s.end_s, words: toks.len(), fillers })
+            let fillers = filler_tokens
+                .iter()
+                .map(|p| coaching::count_phrase_occurrences(p, &toks))
+                .sum();
+            (
+                i,
+                YouSegment {
+                    start: s.start_s,
+                    end: s.end_s,
+                    words: toks.len(),
+                    fillers,
+                },
+            )
         })
         .collect();
     // Trailing uninterrupted "You" run.
@@ -1212,22 +1397,35 @@ fn evaluate_live_guidance(app: &AppHandle, prefs: &Prefs, meeting_id: &str, elap
     }
     run.reverse();
     let recent: Vec<YouSegment> = you.iter().map(|(_, y)| y.clone()).collect();
-    let high: Vec<String> = serde_json::from_str::<Vec<serde_json::Value>>(&meeting.suggested_questions)
-        .unwrap_or_default()
-        .into_iter()
-        .filter(|q| q.get("priority").and_then(|p| p.as_str()) == Some("high"))
-        .filter_map(|q| q.get("question").and_then(|s| s.as_str()).map(String::from))
-        .collect();
+    let high: Vec<String> =
+        serde_json::from_str::<Vec<serde_json::Value>>(&meeting.suggested_questions)
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|q| q.get("priority").and_then(|p| p.as_str()) == Some("high"))
+            .filter_map(|q| q.get("question").and_then(|s| s.as_str()).map(String::from))
+            .collect();
     let transcript_end = segments.last().map(|s| s.end_s).unwrap_or(elapsed);
     if let Some(slot) = crate::smart::slot(app) {
         if let Ok(mut m) = slot.lock() {
-            m.evaluate_nudges(app, prefs, &recent, &run, &high, transcript_end, Instant::now());
+            m.evaluate_nudges(
+                app,
+                prefs,
+                &recent,
+                &run,
+                &high,
+                transcript_end,
+                Instant::now(),
+            );
         }
     }
 }
 
 #[tauri::command]
-pub async fn smart_decision(app: AppHandle, prompt_id: String, choice: String) -> Result<(), String> {
+pub async fn smart_decision(
+    app: AppHandle,
+    prompt_id: String,
+    choice: String,
+) -> Result<(), String> {
     let actions = {
         let slot = crate::smart::slot(&app).ok_or("smart monitor unavailable")?;
         let mut m = slot.lock().map_err(|_| "monitor poisoned")?;
@@ -1243,15 +1441,20 @@ pub async fn smart_decision(app: AppHandle, prompt_id: String, choice: String) -
 
 async fn refresh_calendar(app: &AppHandle) {
     let state = app.state::<AppState>();
-    let Ok(prefs) = state.prefs_snapshot() else { return };
-    let Ok(client) = state.api_client(&prefs) else { return };
+    let Ok(prefs) = state.prefs_snapshot() else {
+        return;
+    };
+    let Ok(client) = state.api_client(&prefs) else {
+        return;
+    };
     let status = client.google_status().await;
     let slot = app.state::<crate::integrations::CalendarSlot>();
     match status {
         Ok(st) if st.connected => {
             let now = chrono::Utc::now();
             let min = now.to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
-            let max = (now + chrono::Duration::days(7)).to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+            let max = (now + chrono::Duration::days(7))
+                .to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
             match client.google_events(&min, &max, 50).await {
                 Ok(ev) => {
                     if let Ok(mut c) = slot.lock() {
@@ -1315,7 +1518,11 @@ pub struct CalendarView {
 }
 
 #[tauri::command]
-pub async fn calendar_events(app: AppHandle, state: State<'_, AppState>, refresh: Option<bool>) -> Result<CalendarView, String> {
+pub async fn calendar_events(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    refresh: Option<bool>,
+) -> Result<CalendarView, String> {
     if refresh.unwrap_or(false) && state.enrolled() {
         refresh_calendar(&app).await;
     }
@@ -1333,7 +1540,9 @@ pub async fn calendar_events(app: AppHandle, state: State<'_, AppState>, refresh
 }
 
 #[tauri::command]
-pub async fn google_status(state: State<'_, AppState>) -> Result<crate::integrations::GoogleStatus, String> {
+pub async fn google_status(
+    state: State<'_, AppState>,
+) -> Result<crate::integrations::GoogleStatus, String> {
     let prefs = state.prefs_snapshot()?;
     let client = state.api_client(&prefs).map_err(|e| e.to_string())?;
     client.google_status().await.map_err(|e| e.to_string())
@@ -1345,14 +1554,21 @@ pub async fn google_status(state: State<'_, AppState>) -> Result<crate::integrat
 pub async fn google_connect(state: State<'_, AppState>) -> Result<String, String> {
     let prefs = state.prefs_snapshot()?;
     let client = state.api_client(&prefs).map_err(|e| e.to_string())?;
-    client.google_connect_start().await.map(|c| c.auth_url).map_err(|e| e.to_string())
+    client
+        .google_connect_start()
+        .await
+        .map(|c| c.auth_url)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub async fn google_disconnect(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
     let prefs = state.prefs_snapshot()?;
     let client = state.api_client(&prefs).map_err(|e| e.to_string())?;
-    client.google_disconnect().await.map_err(|e| e.to_string())?;
+    client
+        .google_disconnect()
+        .await
+        .map_err(|e| e.to_string())?;
     refresh_calendar(&app).await;
     Ok(())
 }
@@ -1364,14 +1580,25 @@ pub fn get_prep_notes(state: State<AppState>, event_id: String) -> Result<String
 }
 
 #[tauri::command]
-pub fn set_prep_notes(state: State<AppState>, event_id: String, notes: String) -> Result<(), String> {
+pub fn set_prep_notes(
+    state: State<AppState>,
+    event_id: String,
+    notes: String,
+) -> Result<(), String> {
     let conn = state.db.lock().map_err(|_| "db poisoned")?;
     db::set_prep_notes(&conn, &event_id, &notes).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn start_meeting_from_event(app: AppHandle, state: State<'_, AppState>, event_id: String) -> Result<String, String> {
-    let event = calendar_snapshot(&app).into_iter().find(|e| e.id == event_id).ok_or("event not found")?;
+pub async fn start_meeting_from_event(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    event_id: String,
+) -> Result<String, String> {
+    let event = calendar_snapshot(&app)
+        .into_iter()
+        .find(|e| e.id == event_id)
+        .ok_or("event not found")?;
     if let Some(slot) = crate::smart::slot(&app) {
         if let Ok(mut m) = slot.lock() {
             m.clear_prompt(&app);
@@ -1381,27 +1608,45 @@ pub async fn start_meeting_from_event(app: AppHandle, state: State<'_, AppState>
 }
 
 #[tauri::command]
-pub async fn crm_status(state: State<'_, AppState>, provider: crate::integrations::CrmProvider) -> Result<crate::integrations::CrmStatus, String> {
+pub async fn crm_status(
+    state: State<'_, AppState>,
+    provider: crate::integrations::CrmProvider,
+) -> Result<crate::integrations::CrmStatus, String> {
     let prefs = state.prefs_snapshot()?;
     let client = state.api_client(&prefs).map_err(|e| e.to_string())?;
     client.crm_status(provider).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn crm_connect(state: State<'_, AppState>, provider: crate::integrations::CrmProvider) -> Result<String, String> {
+pub async fn crm_connect(
+    state: State<'_, AppState>,
+    provider: crate::integrations::CrmProvider,
+) -> Result<String, String> {
     let prefs = state.prefs_snapshot()?;
     let client = state.api_client(&prefs).map_err(|e| e.to_string())?;
-    client.crm_connect_start(provider).await.map(|c| c.auth_url).map_err(|e| e.to_string())
+    client
+        .crm_connect_start(provider)
+        .await
+        .map(|c| c.auth_url)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn crm_search(state: State<'_, AppState>, provider: crate::integrations::CrmProvider, query: String) -> Result<Vec<crate::integrations::CrmRecord>, String> {
+pub async fn crm_search(
+    state: State<'_, AppState>,
+    provider: crate::integrations::CrmProvider,
+    query: String,
+) -> Result<Vec<crate::integrations::CrmRecord>, String> {
     let prefs = state.prefs_snapshot()?;
     let client = state.api_client(&prefs).map_err(|e| e.to_string())?;
     if query.trim().chars().count() < 2 {
         return Ok(Vec::new());
     }
-    client.crm_search(provider, query.trim(), provider.objects()).await.map(|r| r.data).map_err(|e| e.to_string())
+    client
+        .crm_search(provider, query.trim(), provider.objects())
+        .await
+        .map(|r| r.data)
+        .map_err(|e| e.to_string())
 }
 
 #[derive(Serialize)]
@@ -1413,7 +1658,9 @@ pub struct CrmPreview {
 #[tauri::command]
 pub fn crm_preview(state: State<AppState>, meeting_id: String) -> Result<CrmPreview, String> {
     let conn = state.db.lock().map_err(|_| "db poisoned")?;
-    let meeting = db::get_meeting(&conn, &meeting_id).map_err(|e| e.to_string())?.ok_or("meeting not found")?;
+    let meeting = db::get_meeting(&conn, &meeting_id)
+        .map_err(|e| e.to_string())?
+        .ok_or("meeting not found")?;
     let segments = db::list_segments(&conn, &meeting_id).map_err(|e| e.to_string())?;
     let today = chrono::Local::now().format("%Y-%m-%d").to_string();
     Ok(CrmPreview {
@@ -1435,7 +1682,9 @@ pub async fn crm_send(
     let client = state.api_client(&prefs).map_err(|e| e.to_string())?;
     let payload = {
         let conn = state.db.lock().map_err(|_| "db poisoned")?;
-        let meeting = db::get_meeting(&conn, &meeting_id).map_err(|e| e.to_string())?.ok_or("meeting not found")?;
+        let meeting = db::get_meeting(&conn, &meeting_id)
+            .map_err(|e| e.to_string())?
+            .ok_or("meeting not found")?;
         let segments = db::list_segments(&conn, &meeting_id).map_err(|e| e.to_string())?;
         crate::integrations::crm_meeting_payload(&meeting, &segments)
     };
@@ -1445,28 +1694,48 @@ pub async fn crm_send(
         "meeting": payload,
         "tasks": tasks,
     });
-    client.crm_send(provider, &body).await.map_err(|e| e.to_string())
+    client
+        .crm_send(provider, &body)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 // ---- Insights commands -----------------------------------------------------
 
 #[tauri::command]
 pub fn insights_finishing(state: State<AppState>) -> Vec<String> {
-    state.finishing.lock().map(|f| f.iter().cloned().collect()).unwrap_or_default()
+    state
+        .finishing
+        .lock()
+        .map(|f| f.iter().cloned().collect())
+        .unwrap_or_default()
 }
 
 #[tauri::command]
-pub fn set_sales_enabled(state: State<AppState>, meeting_id: String, enabled: bool) -> Result<(), String> {
+pub fn set_sales_enabled(
+    state: State<AppState>,
+    meeting_id: String,
+    enabled: bool,
+) -> Result<(), String> {
     let conn = state.db.lock().map_err(|_| "db poisoned")?;
     db::set_sales_enabled(&conn, &meeting_id, enabled).map_err(|e| e.to_string())
 }
 
 /// Re-run the final pass for a saved meeting (after trim, or on demand).
 #[tauri::command]
-pub fn regenerate_insights(app: AppHandle, state: State<AppState>, meeting_id: String) -> Result<(), String> {
+pub fn regenerate_insights(
+    app: AppHandle,
+    state: State<AppState>,
+    meeting_id: String,
+) -> Result<(), String> {
     let prefs = state.prefs_snapshot()?;
     let cfg = state.engine_config_blocking(&prefs, &meeting_id)?;
-    if state.finishing.lock().map(|f| f.contains(&meeting_id)).unwrap_or(false) {
+    if state
+        .finishing
+        .lock()
+        .map(|f| f.contains(&meeting_id))
+        .unwrap_or(false)
+    {
         return Err("Insights are already being generated for this meeting.".into());
     }
     state.spawn_finalize(app, &prefs, cfg);
@@ -1474,12 +1743,17 @@ pub fn regenerate_insights(app: AppHandle, state: State<AppState>, meeting_id: S
 }
 
 #[tauri::command]
-pub async fn catch_up(state: State<'_, AppState>, meeting_id: String) -> Result<serde_json::Value, String> {
+pub async fn catch_up(
+    state: State<'_, AppState>,
+    meeting_id: String,
+) -> Result<serde_json::Value, String> {
     let prefs = state.prefs_snapshot()?;
     let cfg = state.engine_config_blocking(&prefs, &meeting_id)?;
     let (meeting, segments) = {
         let conn = state.db.lock().map_err(|_| "db poisoned")?;
-        let meeting = db::get_meeting(&conn, &meeting_id).map_err(|e| e.to_string())?.ok_or("meeting not found")?;
+        let meeting = db::get_meeting(&conn, &meeting_id)
+            .map_err(|e| e.to_string())?
+            .ok_or("meeting not found")?;
         let segments = db::list_segments(&conn, &meeting_id).map_err(|e| e.to_string())?;
         (meeting, segments)
     };
@@ -1497,16 +1771,23 @@ pub async fn investigate(
     let cfg = state.engine_config_blocking(&prefs, &meeting_id)?;
     let (meeting, segments) = {
         let conn = state.db.lock().map_err(|_| "db poisoned")?;
-        let meeting = db::get_meeting(&conn, &meeting_id).map_err(|e| e.to_string())?.ok_or("meeting not found")?;
+        let meeting = db::get_meeting(&conn, &meeting_id)
+            .map_err(|e| e.to_string())?
+            .ok_or("meeting not found")?;
         let segments = db::list_segments(&conn, &meeting_id).map_err(|e| e.to_string())?;
         (meeting, segments)
     };
     let codebase = if scope == InvestigationScope::Codebase {
-        let root = prefs.codebase_root.clone().ok_or("Choose a codebase folder in Settings first.")?;
+        let root = prefs
+            .codebase_root
+            .clone()
+            .ok_or("Choose a codebase folder in Settings first.")?;
         let focus_c = focus.clone();
-        let (ctx, files) = tokio::task::spawn_blocking(move || insights_engine::build_codebase_snapshot(std::path::Path::new(&root), &focus_c))
-            .await
-            .map_err(|e| e.to_string())?;
+        let (ctx, files) = tokio::task::spawn_blocking(move || {
+            insights_engine::build_codebase_snapshot(std::path::Path::new(&root), &focus_c)
+        })
+        .await
+        .map_err(|e| e.to_string())?;
         if ctx.is_empty() {
             return Err("No files in the codebase folder matched this question.".into());
         }
@@ -1514,10 +1795,12 @@ pub async fn investigate(
     } else {
         None
     };
-    let result = insights_engine::investigate(&cfg, &meeting, &segments, scope, &focus, codebase).await?;
+    let result =
+        insights_engine::investigate(&cfg, &meeting, &segments, scope, &focus, codebase).await?;
     // Persist for the saved-meeting view.
     let conn = state.db.lock().map_err(|_| "db poisoned")?;
-    let mut list: Vec<serde_json::Value> = serde_json::from_str(&meeting.investigations).unwrap_or_default();
+    let mut list: Vec<serde_json::Value> =
+        serde_json::from_str(&meeting.investigations).unwrap_or_default();
     list.push(serde_json::json!({
         "focus": focus,
         "scope": scope,
@@ -1526,13 +1809,22 @@ pub async fn investigate(
         "referenced_files": result.get("referenced_files").cloned().unwrap_or(serde_json::Value::Array(vec![])),
         "at": chrono::Utc::now().timestamp(),
     }));
-    let _ = db::set_investigations(&conn, &meeting_id, &serde_json::to_string(&list).unwrap_or_default());
+    let _ = db::set_investigations(
+        &conn,
+        &meeting_id,
+        &serde_json::to_string(&list).unwrap_or_default(),
+    );
     Ok(result)
 }
 
 /// Manual Playbook topic lookup (managed-free is metered by the backend).
 #[tauri::command]
-pub async fn lookup_doc_topic(app: AppHandle, state: State<'_, AppState>, meeting_id: String, label: String) -> Result<(), String> {
+pub async fn lookup_doc_topic(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    meeting_id: String,
+    label: String,
+) -> Result<(), String> {
     let prefs = state.prefs_snapshot()?;
     let cfg = state.engine_config_blocking(&prefs, &meeting_id)?;
     if cfg.docs_mcp_url.is_none() {
@@ -1555,20 +1847,32 @@ pub async fn probe_docs_mcp(url: String) -> Result<serde_json::Value, String> {
 pub fn meeting_markdown(state: State<AppState>, meeting_id: String) -> Result<String, String> {
     let prefs = state.prefs_snapshot()?;
     let conn = state.db.lock().map_err(|_| "db poisoned")?;
-    let meeting = db::get_meeting(&conn, &meeting_id).map_err(|e| e.to_string())?.ok_or("meeting not found")?;
+    let meeting = db::get_meeting(&conn, &meeting_id)
+        .map_err(|e| e.to_string())?
+        .ok_or("meeting not found")?;
     let segments = db::list_segments(&conn, &meeting_id).map_err(|e| e.to_string())?;
-    Ok(crate::export::full_meeting_markdown(&meeting, &segments, &state.fillers(&prefs)))
+    Ok(crate::export::full_meeting_markdown(
+        &meeting,
+        &segments,
+        &state.fillers(&prefs),
+    ))
 }
 
 /// Save the full meeting as Markdown via the native save dialog. Returns the
 /// written path, or None if the user cancelled.
 #[tauri::command]
-pub async fn export_markdown(app: AppHandle, state: State<'_, AppState>, meeting_id: String) -> Result<Option<String>, String> {
+pub async fn export_markdown(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    meeting_id: String,
+) -> Result<Option<String>, String> {
     use tauri_plugin_dialog::DialogExt;
     let prefs = state.prefs_snapshot()?;
     let (markdown, file_name) = {
         let conn = state.db.lock().map_err(|_| "db poisoned")?;
-        let meeting = db::get_meeting(&conn, &meeting_id).map_err(|e| e.to_string())?.ok_or("meeting not found")?;
+        let meeting = db::get_meeting(&conn, &meeting_id)
+            .map_err(|e| e.to_string())?
+            .ok_or("meeting not found")?;
         let segments = db::list_segments(&conn, &meeting_id).map_err(|e| e.to_string())?;
         (
             crate::export::full_meeting_markdown(&meeting, &segments, &state.fillers(&prefs)),
@@ -1576,7 +1880,11 @@ pub async fn export_markdown(app: AppHandle, state: State<'_, AppState>, meeting
         )
     };
     let (tx, rx) = tokio::sync::oneshot::channel();
-    let mut dialog = app.dialog().file().set_file_name(&file_name).add_filter("Markdown", &["md"]);
+    let mut dialog = app
+        .dialog()
+        .file()
+        .set_file_name(&file_name)
+        .add_filter("Markdown", &["md"]);
     if let Some(dir) = prefs.export_folder.as_deref().filter(|d| !d.is_empty()) {
         dialog = dialog.set_directory(dir);
     }
@@ -1586,7 +1894,9 @@ pub async fn export_markdown(app: AppHandle, state: State<'_, AppState>, meeting
     let Some(path) = rx.await.map_err(|_| "dialog closed".to_string())? else {
         return Ok(None);
     };
-    tokio::fs::write(&path, markdown).await.map_err(|e| format!("could not write {path}: {e}"))?;
+    tokio::fs::write(&path, markdown)
+        .await
+        .map_err(|e| format!("could not write {path}: {e}"))?;
     if let Some(parent) = std::path::Path::new(&path).parent() {
         let mut p = state.prefs.lock().map_err(|_| "prefs poisoned")?;
         p.export_folder = Some(parent.to_string_lossy().to_string());
@@ -1597,24 +1907,32 @@ pub async fn export_markdown(app: AppHandle, state: State<'_, AppState>, meeting
 
 /// Pick a Granola CSV export and import it with duplicate protection.
 #[tauri::command]
-pub async fn import_granola_csv(app: AppHandle, state: State<'_, AppState>) -> Result<Option<crate::import::granola::ImportSummary>, String> {
+pub async fn import_granola_csv(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<Option<crate::import::granola::ImportSummary>, String> {
     use tauri_plugin_dialog::DialogExt;
     let (tx, rx) = tokio::sync::oneshot::channel();
-    app.dialog().file().add_filter("CSV", &["csv"]).pick_file(move |p| {
-        let _ = tx.send(p.map(|p| p.to_string()));
-    });
+    app.dialog()
+        .file()
+        .add_filter("CSV", &["csv"])
+        .pick_file(move |p| {
+            let _ = tx.send(p.map(|p| p.to_string()));
+        });
     let Some(path) = rx.await.map_err(|_| "dialog closed".to_string())? else {
         return Ok(None);
     };
     let bytes = tokio::fs::read(&path).await.map_err(|e| e.to_string())?;
-    let text = String::from_utf8(bytes).map_err(|_| "The Granola export could not be read as a UTF-8 CSV file.".to_string())?;
+    let text = String::from_utf8(bytes)
+        .map_err(|_| "The Granola export could not be read as a UTF-8 CSV file.".to_string())?;
     let parsed = crate::import::granola::parse(&text)?;
     let prefs = state.prefs_snapshot()?;
     let conn = state.db.lock().map_err(|_| "db poisoned")?;
-    let existing: std::collections::HashSet<String> = db::find_by_import_source(&conn, crate::import::granola::SOURCE)
-        .map_err(|e| e.to_string())?
-        .into_iter()
-        .collect();
+    let existing: std::collections::HashSet<String> =
+        db::find_by_import_source(&conn, crate::import::granola::SOURCE)
+            .map_err(|e| e.to_string())?
+            .into_iter()
+            .collect();
     let mut imported = 0;
     let mut duplicates = 0;
     for rec in &parsed.meetings {
@@ -1627,20 +1945,35 @@ pub async fn import_granola_csv(app: AppHandle, state: State<'_, AppState>) -> R
         db::replace_segments(&conn, &meeting.id, &segments).map_err(|e| e.to_string())?;
         imported += 1;
     }
-    let summary = crate::import::granola::ImportSummary { imported, duplicates, skipped_rows: parsed.skipped_rows };
+    let summary = crate::import::granola::ImportSummary {
+        imported,
+        duplicates,
+        skipped_rows: parsed.skipped_rows,
+    };
     let _ = app.emit("meeting_saved", "import");
     Ok(Some(summary))
 }
 
 #[tauri::command]
-pub fn delete_segment(state: State<AppState>, meeting_id: String, segment_id: String) -> Result<(), String> {
+pub fn delete_segment(
+    state: State<AppState>,
+    meeting_id: String,
+    segment_id: String,
+) -> Result<(), String> {
     let conn = state.db.lock().map_err(|_| "db poisoned")?;
-    db::delete_segment(&conn, &meeting_id, &segment_id).map(|_| ()).map_err(|e| e.to_string())
+    db::delete_segment(&conn, &meeting_id, &segment_id)
+        .map(|_| ())
+        .map_err(|e| e.to_string())
 }
 
 /// Trim a saved transcript: drop everything before `before_s` and/or after `after_s`.
 #[tauri::command]
-pub fn trim_transcript(state: State<AppState>, meeting_id: String, before_s: Option<f64>, after_s: Option<f64>) -> Result<usize, String> {
+pub fn trim_transcript(
+    state: State<AppState>,
+    meeting_id: String,
+    before_s: Option<f64>,
+    after_s: Option<f64>,
+) -> Result<usize, String> {
     let conn = state.db.lock().map_err(|_| "db poisoned")?;
     let mut removed = 0;
     if let Some(b) = before_s {
@@ -1682,7 +2015,9 @@ pub fn recording_status(state: State<AppState>) -> RecordingStatus {
             (
                 s.running,
                 s.meeting.as_ref().map(|m| m.id.clone()),
-                s.started_at.map(|t| t.elapsed().as_secs_f64()).unwrap_or(0.0),
+                s.started_at
+                    .map(|t| t.elapsed().as_secs_f64())
+                    .unwrap_or(0.0),
             )
         })
         .unwrap_or((false, None, 0.0));
@@ -1713,7 +2048,10 @@ pub fn get_meeting(state: State<AppState>, id: String) -> Result<Option<Meeting>
 }
 
 #[tauri::command]
-pub fn get_meeting_detail(state: State<AppState>, id: String) -> Result<Option<MeetingDetail>, String> {
+pub fn get_meeting_detail(
+    state: State<AppState>,
+    id: String,
+) -> Result<Option<MeetingDetail>, String> {
     let conn = state.db.lock().map_err(|_| "db poisoned")?;
     let Some(meeting) = db::get_meeting(&conn, &id).map_err(|e| e.to_string())? else {
         return Ok(None);
@@ -1728,7 +2066,10 @@ pub fn get_meeting_detail(state: State<AppState>, id: String) -> Result<Option<M
 }
 
 #[tauri::command]
-pub fn get_segments(state: State<AppState>, meeting_id: String) -> Result<Vec<TranscriptSegment>, String> {
+pub fn get_segments(
+    state: State<AppState>,
+    meeting_id: String,
+) -> Result<Vec<TranscriptSegment>, String> {
     let conn = state.db.lock().map_err(|_| "db poisoned")?;
     db::list_segments(&conn, &meeting_id).map_err(|e| e.to_string())
 }
@@ -1773,10 +2114,15 @@ pub fn set_speaker_name(
     }
     let json = serde_json::to_string(&names).map_err(|e| e.to_string())?;
     db::set_speaker_names(&conn, &meeting_id, &json).map_err(|e| e.to_string())?;
-    let mut manual: Vec<i64> = serde_json::from_str(&meeting.manual_speaker_ids).unwrap_or_default();
+    let mut manual: Vec<i64> =
+        serde_json::from_str(&meeting.manual_speaker_ids).unwrap_or_default();
     if !manual.contains(&speaker_id) {
         manual.push(speaker_id);
-        let _ = db::set_manual_speaker_ids(&conn, &meeting_id, &serde_json::to_string(&manual).unwrap_or_default());
+        let _ = db::set_manual_speaker_ids(
+            &conn,
+            &meeting_id,
+            &serde_json::to_string(&manual).unwrap_or_default(),
+        );
     }
     Ok(names)
 }
@@ -1816,7 +2162,10 @@ pub fn delete_meeting(state: State<AppState>, id: String) -> Result<(), String> 
 
 /// Per-meeting coaching metrics (port of `TrainingMetrics.compute`).
 #[tauri::command]
-pub fn coaching_overview(state: State<AppState>, meeting_id: String) -> Result<TrainingMetrics, String> {
+pub fn coaching_overview(
+    state: State<AppState>,
+    meeting_id: String,
+) -> Result<TrainingMetrics, String> {
     let prefs = state.prefs_snapshot()?;
     let conn = state.db.lock().map_err(|_| "db poisoned")?;
     let meeting = db::get_meeting(&conn, &meeting_id)
@@ -1828,7 +2177,10 @@ pub fn coaching_overview(state: State<AppState>, meeting_id: String) -> Result<T
 
 /// Cross-meeting coaching report (port of `CoachingAdvisor.analyze`).
 #[tauri::command]
-pub fn coaching_report(state: State<AppState>, limit: Option<i64>) -> Result<CoachingOverview, String> {
+pub fn coaching_report(
+    state: State<AppState>,
+    limit: Option<i64>,
+) -> Result<CoachingOverview, String> {
     let prefs = state.prefs_snapshot()?;
     let fillers = state.fillers(&prefs);
     let conn = state.db.lock().map_err(|_| "db poisoned")?;
@@ -1855,8 +2207,26 @@ pub fn coaching_report(state: State<AppState>, limit: Option<i64>) -> Result<Coa
     })
 }
 
-
 // ---- Device-bound account (managed mode) ------------------------------------
+
+/// Run a command body on its own task so a panic becomes an `Err` the UI can
+/// show instead of a promise that never settles (the enrollment hang of 0.3.0).
+async fn guarded<T, F>(fut: F) -> Result<T, String>
+where
+    T: Send + 'static,
+    F: std::future::Future<Output = Result<T, String>> + Send + 'static,
+{
+    match tauri::async_runtime::spawn(fut).await {
+        Ok(result) => result,
+        Err(e) => {
+            tracing::error!("command task failed: {e}");
+            Err(
+                "Miniti hit an internal error; please restart and send the log if it repeats"
+                    .to_string(),
+            )
+        }
+    }
+}
 
 #[tauri::command]
 pub fn auth_status(state: State<AppState>) -> crate::auth::manager::AuthStatus {
@@ -1867,29 +2237,39 @@ pub fn auth_status(state: State<AppState>) -> crate::auth::manager::AuthStatus {
 #[tauri::command]
 pub async fn auth_create_account(state: State<'_, AppState>) -> Result<String, String> {
     let prefs = state.prefs_snapshot()?;
-    let label = hostname_label();
-    state
-        .auth
-        .create_account(label.as_deref(), prefs.app_mode)
-        .await
-        .map_err(|e| e.to_string())
+    let auth = state.auth.clone();
+    guarded(async move {
+        let label = hostname_label();
+        auth.create_account(label.as_deref(), prefs.app_mode)
+            .await
+            .map_err(|e| e.to_string())
+    })
+    .await
 }
 
 #[tauri::command]
-pub async fn auth_restore_account(state: State<'_, AppState>, recovery_key: String) -> Result<(), String> {
+pub async fn auth_restore_account(
+    state: State<'_, AppState>,
+    recovery_key: String,
+) -> Result<(), String> {
     let prefs = state.prefs_snapshot()?;
-    let label = hostname_label();
-    state
-        .auth
-        .restore_account(&recovery_key, label.as_deref(), prefs.app_mode)
-        .await
-        .map_err(|e| e.to_string())
+    let auth = state.auth.clone();
+    guarded(async move {
+        let label = hostname_label();
+        auth.restore_account(&recovery_key, label.as_deref(), prefs.app_mode)
+            .await
+            .map_err(|e| e.to_string())
+    })
+    .await
 }
 
 /// Reveal the stored recovery key (the UI asks for confirmation first).
 #[tauri::command]
 pub fn auth_recovery_key(state: State<AppState>) -> Result<String, String> {
-    state.auth.recovery_key().ok_or_else(|| ApiError::NotEnrolled.to_string())
+    state
+        .auth
+        .recovery_key()
+        .ok_or_else(|| ApiError::NotEnrolled.to_string())
 }
 
 /// Generate a new recovery key, register it, and return it formatted.
@@ -1897,41 +2277,65 @@ pub fn auth_recovery_key(state: State<AppState>) -> Result<String, String> {
 pub async fn auth_rotate_recovery_key(state: State<'_, AppState>) -> Result<String, String> {
     let prefs = state.prefs_snapshot()?;
     let client = state.api_client(&prefs).map_err(|e| e.to_string())?;
-    let canonical = crate::auth::generate_recovery_key();
-    client.auth_rotate_recovery_key(&canonical).await.map_err(|e| e.to_string())?;
-    state.auth.set_recovery_key(&canonical).map_err(|e| e.to_string())?;
-    Ok(crate::auth::format_recovery_key(&canonical))
+    let auth = state.auth.clone();
+    guarded(async move {
+        let canonical = crate::auth::generate_recovery_key();
+        client
+            .auth_rotate_recovery_key(&canonical)
+            .await
+            .map_err(|e| e.to_string())?;
+        auth.set_recovery_key(&canonical)
+            .map_err(|e| e.to_string())?;
+        Ok(crate::auth::format_recovery_key(&canonical))
+    })
+    .await
 }
 
 #[tauri::command]
 pub async fn auth_devices(state: State<'_, AppState>) -> Result<api::AuthDevices, String> {
     let prefs = state.prefs_snapshot()?;
     let client = state.api_client(&prefs).map_err(|e| e.to_string())?;
-    client.auth_devices().await.map_err(|e| e.to_string())
+    guarded(async move { client.auth_devices().await.map_err(|e| e.to_string()) }).await
 }
 
 #[tauri::command]
-pub async fn auth_remove_device(state: State<'_, AppState>, installation_id: String) -> Result<(), String> {
+pub async fn auth_remove_device(
+    state: State<'_, AppState>,
+    installation_id: String,
+) -> Result<(), String> {
     let prefs = state.prefs_snapshot()?;
     let client = state.api_client(&prefs).map_err(|e| e.to_string())?;
-    client.auth_remove_device(&installation_id).await.map_err(|e| e.to_string())?;
-    if installation_id.eq_ignore_ascii_case(&state.device_id) {
-        state.auth.clear_local();
-    }
-    Ok(())
+    let auth = state.auth.clone();
+    let this_device = state.device_id.clone();
+    guarded(async move {
+        client
+            .auth_remove_device(&installation_id)
+            .await
+            .map_err(|e| e.to_string())?;
+        if installation_id.eq_ignore_ascii_case(&this_device) {
+            auth.clear_local();
+        }
+        Ok(())
+    })
+    .await
 }
 
 /// Sign this device out: revoke server-side (best effort) and forget local credentials.
 #[tauri::command]
 pub async fn auth_sign_out(state: State<'_, AppState>) -> Result<(), String> {
     let prefs = state.prefs_snapshot()?;
-    if let Ok(client) = state.api_client(&prefs) {
-        if let Err(e) = client.auth_revoke().await {
-            tracing::warn!("revoke failed ({e}); clearing local credentials anyway");
+    let client = state.api_client(&prefs).ok();
+    let auth = state.auth.clone();
+    guarded(async move {
+        if let Some(client) = client {
+            if let Err(e) = client.auth_revoke().await {
+                tracing::warn!("revoke failed ({e}); clearing local credentials anyway");
+            }
         }
-    }
-    state.auth.clear_local();
-    Ok(())
+        auth.clear_local();
+        Ok(())
+    })
+    .await
 }
 
 /// Delete the anonymous account (all devices lose access; subscriptions are not cancelled).
@@ -1939,9 +2343,16 @@ pub async fn auth_sign_out(state: State<'_, AppState>) -> Result<(), String> {
 pub async fn auth_delete_account(state: State<'_, AppState>) -> Result<(), String> {
     let prefs = state.prefs_snapshot()?;
     let client = state.api_client(&prefs).map_err(|e| e.to_string())?;
-    client.auth_delete_account().await.map_err(|e| e.to_string())?;
-    state.auth.clear_local();
-    Ok(())
+    let auth = state.auth.clone();
+    guarded(async move {
+        client
+            .auth_delete_account()
+            .await
+            .map_err(|e| e.to_string())?;
+        auth.clear_local();
+        Ok(())
+    })
+    .await
 }
 
 /// Device label for the account's device list (hostname, best effort).

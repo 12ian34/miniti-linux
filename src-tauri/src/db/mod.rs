@@ -348,7 +348,9 @@ pub fn list_meetings(conn: &Connection, limit: i64) -> DbResult<Vec<Meeting>> {
 
 /// Escape `%`, `_` and `\` so user input is matched literally in LIKE.
 fn like_escape(q: &str) -> String {
-    q.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_")
+    q.replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_")
 }
 
 /// Case-insensitive search over title, summary, notes, and topics.
@@ -375,7 +377,10 @@ pub fn set_pinned(conn: &Connection, id: &str, pinned: bool) -> DbResult<()> {
 
 /// Manual rename: also stops automatic title suggestions for this meeting.
 pub fn set_title(conn: &Connection, id: &str, title: &str) -> DbResult<()> {
-    conn.execute("UPDATE meetings SET title=?2, title_auto=0 WHERE id=?1", params![id, title])?;
+    conn.execute(
+        "UPDATE meetings SET title=?2, title_auto=0 WHERE id=?1",
+        params![id, title],
+    )?;
     Ok(())
 }
 
@@ -389,7 +394,10 @@ pub fn set_auto_title(conn: &Connection, id: &str, title: &str) -> DbResult<bool
 }
 
 pub fn set_sales_enabled(conn: &Connection, id: &str, enabled: bool) -> DbResult<()> {
-    conn.execute("UPDATE meetings SET sales_enabled=?2 WHERE id=?1", params![id, enabled as i64])?;
+    conn.execute(
+        "UPDATE meetings SET sales_enabled=?2 WHERE id=?1",
+        params![id, enabled as i64],
+    )?;
     Ok(())
 }
 
@@ -407,7 +415,15 @@ pub fn set_standard_insights(
     conn.execute(
         "UPDATE meetings SET summary=?2, action_items=?3, topics=?4, discussion_flow=?5, \
          key_decisions=COALESCE(?6, key_decisions), insights_updated_at=?7 WHERE id=?1",
-        params![id, summary, action_items_json, topics_json, discussion_flow_json, key_decisions_json, now],
+        params![
+            id,
+            summary,
+            action_items_json,
+            topics_json,
+            discussion_flow_json,
+            key_decisions_json,
+            now
+        ],
     )?;
     Ok(())
 }
@@ -430,7 +446,12 @@ pub fn set_questions(conn: &Connection, id: &str, questions_json: &str) -> DbRes
     Ok(())
 }
 
-pub fn set_docs(conn: &Connection, id: &str, docs_json: &str, doc_topics_json: &str) -> DbResult<()> {
+pub fn set_docs(
+    conn: &Connection,
+    id: &str,
+    docs_json: &str,
+    doc_topics_json: &str,
+) -> DbResult<()> {
     conn.execute(
         "UPDATE meetings SET docs=?2, doc_topics=?3 WHERE id=?1",
         params![id, docs_json, doc_topics_json],
@@ -439,28 +460,47 @@ pub fn set_docs(conn: &Connection, id: &str, docs_json: &str, doc_topics_json: &
 }
 
 pub fn set_investigations(conn: &Connection, id: &str, json: &str) -> DbResult<()> {
-    conn.execute("UPDATE meetings SET investigations=?2 WHERE id=?1", params![id, json])?;
+    conn.execute(
+        "UPDATE meetings SET investigations=?2 WHERE id=?1",
+        params![id, json],
+    )?;
     Ok(())
 }
 
 pub fn set_manual_speaker_ids(conn: &Connection, id: &str, json: &str) -> DbResult<()> {
-    conn.execute("UPDATE meetings SET manual_speaker_ids=?2 WHERE id=?1", params![id, json])?;
+    conn.execute(
+        "UPDATE meetings SET manual_speaker_ids=?2 WHERE id=?1",
+        params![id, json],
+    )?;
     Ok(())
 }
 
 pub fn set_attendees(conn: &Connection, id: &str, json: &str) -> DbResult<()> {
-    conn.execute("UPDATE meetings SET attendees=?2 WHERE id=?1", params![id, json])?;
+    conn.execute(
+        "UPDATE meetings SET attendees=?2 WHERE id=?1",
+        params![id, json],
+    )?;
     Ok(())
 }
 
 pub fn set_calendar_event_id(conn: &Connection, id: &str, event_id: Option<&str>) -> DbResult<()> {
-    conn.execute("UPDATE meetings SET calendar_event_id=?2 WHERE id=?1", params![id, event_id])?;
+    conn.execute(
+        "UPDATE meetings SET calendar_event_id=?2 WHERE id=?1",
+        params![id, event_id],
+    )?;
     Ok(())
 }
 
 /// Replace a meeting's transcript wholesale (import / trim + regenerate).
-pub fn replace_segments(conn: &Connection, meeting_id: &str, segments: &[TranscriptSegment]) -> DbResult<()> {
-    conn.execute("DELETE FROM transcript_segments WHERE meeting_id=?1", params![meeting_id])?;
+pub fn replace_segments(
+    conn: &Connection,
+    meeting_id: &str,
+    segments: &[TranscriptSegment],
+) -> DbResult<()> {
+    conn.execute(
+        "DELETE FROM transcript_segments WHERE meeting_id=?1",
+        params![meeting_id],
+    )?;
     for seg in segments {
         add_segment(conn, seg)?;
     }
@@ -468,14 +508,21 @@ pub fn replace_segments(conn: &Connection, meeting_id: &str, segments: &[Transcr
 }
 
 pub fn get_prep_notes(conn: &Connection, event_id: &str) -> DbResult<String> {
-    conn.query_row("SELECT notes FROM calendar_prep WHERE event_id=?1", params![event_id], |r| r.get(0))
-        .optional()
-        .map(|o| o.unwrap_or_default())
+    conn.query_row(
+        "SELECT notes FROM calendar_prep WHERE event_id=?1",
+        params![event_id],
+        |r| r.get(0),
+    )
+    .optional()
+    .map(|o| o.unwrap_or_default())
 }
 
 pub fn set_prep_notes(conn: &Connection, event_id: &str, notes: &str) -> DbResult<()> {
     if notes.trim().is_empty() {
-        conn.execute("DELETE FROM calendar_prep WHERE event_id=?1", params![event_id])?;
+        conn.execute(
+            "DELETE FROM calendar_prep WHERE event_id=?1",
+            params![event_id],
+        )?;
         return Ok(());
     }
     conn.execute(
@@ -495,18 +542,25 @@ pub fn prune_prep_notes(conn: &Connection) -> DbResult<usize> {
 }
 
 pub fn find_by_import_source(conn: &Connection, source: &str) -> DbResult<Vec<String>> {
-    let mut stmt = conn.prepare("SELECT import_source FROM meetings WHERE import_source LIKE ?1")?;
+    let mut stmt =
+        conn.prepare("SELECT import_source FROM meetings WHERE import_source LIKE ?1")?;
     let rows = stmt.query_map(params![format!("{source}:%")], |r| r.get::<_, String>(0))?;
     rows.collect()
 }
 
 pub fn set_ended_at(conn: &Connection, id: &str, ended_at: i64) -> DbResult<()> {
-    conn.execute("UPDATE meetings SET ended_at=?2 WHERE id=?1", params![id, ended_at])?;
+    conn.execute(
+        "UPDATE meetings SET ended_at=?2 WHERE id=?1",
+        params![id, ended_at],
+    )?;
     Ok(())
 }
 
 pub fn set_notes(conn: &Connection, id: &str, notes: &str) -> DbResult<()> {
-    conn.execute("UPDATE meetings SET notes=?2 WHERE id=?1", params![id, notes])?;
+    conn.execute(
+        "UPDATE meetings SET notes=?2 WHERE id=?1",
+        params![id, notes],
+    )?;
     Ok(())
 }
 
@@ -589,7 +643,11 @@ pub fn trim_segments_after(conn: &Connection, meeting_id: &str, to_s: f64) -> Db
 }
 
 /// Segments at or after `from_s` (cheap window for nudges / catch-up).
-pub fn list_segments_since(conn: &Connection, meeting_id: &str, from_s: f64) -> DbResult<Vec<TranscriptSegment>> {
+pub fn list_segments_since(
+    conn: &Connection,
+    meeting_id: &str,
+    from_s: f64,
+) -> DbResult<Vec<TranscriptSegment>> {
     let mut stmt = conn.prepare(
         "SELECT id,meeting_id,speaker,text,start_s,end_s,source \
          FROM transcript_segments WHERE meeting_id=?1 AND end_s >= ?2 ORDER BY start_s ASC, created_at ASC",
@@ -663,9 +721,15 @@ mod tests {
         let m = Meeting::new("New meeting", "en");
         upsert_meeting(&conn, &m).unwrap();
         assert!(set_auto_title(&conn, &m.id, "Q4 planning").unwrap());
-        assert_eq!(get_meeting(&conn, &m.id).unwrap().unwrap().title, "Q4 planning");
+        assert_eq!(
+            get_meeting(&conn, &m.id).unwrap().unwrap().title,
+            "Q4 planning"
+        );
         set_title(&conn, &m.id, "My name").unwrap();
-        assert!(!set_auto_title(&conn, &m.id, "Generated").unwrap(), "manual title wins");
+        assert!(
+            !set_auto_title(&conn, &m.id, "Generated").unwrap(),
+            "manual title wins"
+        );
         assert_eq!(get_meeting(&conn, &m.id).unwrap().unwrap().title, "My name");
     }
 
@@ -691,8 +755,16 @@ mod tests {
         assert_eq!(search_meetings(&conn, "churn", 10).unwrap().len(), 1);
         assert_eq!(search_meetings(&conn, "nope", 10).unwrap().len(), 0);
         assert_eq!(search_meetings(&conn, "100%", 10).unwrap().len(), 1);
-        assert_eq!(search_meetings(&conn, "%", 10).unwrap().len(), 1, "literal percent");
-        assert_eq!(search_meetings(&conn, "_", 10).unwrap().len(), 0, "underscore is literal, not wildcard");
+        assert_eq!(
+            search_meetings(&conn, "%", 10).unwrap().len(),
+            1,
+            "literal percent"
+        );
+        assert_eq!(
+            search_meetings(&conn, "_", 10).unwrap().len(),
+            0,
+            "underscore is literal, not wildcard"
+        );
     }
 
     #[test]
@@ -701,7 +773,14 @@ mod tests {
         let m = Meeting::new("M", "en");
         upsert_meeting(&conn, &m).unwrap();
         for i in 0..5 {
-            let seg = TranscriptSegment::new(&m.id, 0, format!("w{i}"), i as f64, i as f64 + 0.5, "microphone");
+            let seg = TranscriptSegment::new(
+                &m.id,
+                0,
+                format!("w{i}"),
+                i as f64,
+                i as f64 + 0.5,
+                "microphone",
+            );
             add_segment(&conn, &seg).unwrap();
         }
         assert_eq!(list_segments(&conn, &m.id).unwrap().len(), 5);
@@ -710,12 +789,19 @@ mod tests {
         assert_eq!(list_segments(&conn, &m.id).unwrap().len(), 2);
 
         delete_meeting(&conn, &m.id).unwrap();
-        assert_eq!(list_segments(&conn, &m.id).unwrap().len(), 0, "cascade delete");
+        assert_eq!(
+            list_segments(&conn, &m.id).unwrap().len(),
+            0,
+            "cascade delete"
+        );
     }
 
     #[test]
     fn display_title_strips_legacy_prefix() {
-        assert_eq!(strip_legacy_timestamp_prefix("2026-09-05 14:30 Sales sync"), "Sales sync");
+        assert_eq!(
+            strip_legacy_timestamp_prefix("2026-09-05 14:30 Sales sync"),
+            "Sales sync"
+        );
         assert_eq!(strip_legacy_timestamp_prefix("Sales sync"), "Sales sync");
         let mut m = Meeting::new("", "en");
         assert_eq!(m.display_title(), "Untitled meeting");

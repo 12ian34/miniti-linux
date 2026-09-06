@@ -7,6 +7,7 @@
 #     miniti.desktop
 #     icons/hicolor/<size>/apps/miniti.png
 #     README.md                    (runtime deps + install hints)
+#     LICENSE                      (Elastic License 2.0)
 #
 # Prereq: `pnpm tauri build` (or `cargo build --release`) has produced
 # src-tauri/target/release/miniti.
@@ -46,6 +47,7 @@ mkdir -p "$stage/icons/hicolor/32x32/apps" \
 
 install -m 0755 "$bin" "$stage/miniti"
 install -m 0644 "$repo_root/packaging/miniti.desktop" "$stage/miniti.desktop"
+install -m 0644 "$repo_root/LICENSE" "$stage/LICENSE"
 install -m 0644 "$repo_root/src-tauri/icons/32x32.png"     "$stage/icons/hicolor/32x32/apps/miniti.png"
 install -m 0644 "$repo_root/src-tauri/icons/128x128.png"   "$stage/icons/hicolor/128x128/apps/miniti.png"
 install -m 0644 "$repo_root/src-tauri/icons/128x128@2x.png" "$stage/icons/hicolor/256x256@2/apps/miniti.png"

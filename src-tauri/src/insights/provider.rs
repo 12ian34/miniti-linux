@@ -12,20 +12,34 @@ use crate::api::{ApiClient, ApiError, ResponseMeta};
 use crate::prefs::AppMode;
 
 use super::mcp::{format_chunks_for_prompt, McpClient};
-use super::{model_for, Attendee, IncrementalPayload, InsightMode, InsightRequest, InvestigationScope};
+use super::{
+    model_for, Attendee, IncrementalPayload, InsightMode, InsightRequest, InvestigationScope,
+};
 
 const OPENAI_CHAT_URL: &str = "https://api.openai.com/v1/chat/completions";
 const OPENAI_RESPONSES_URL: &str = "https://api.openai.com/v1/responses";
 const OPENAI_TIMEOUT: Duration = Duration::from_secs(60);
 
 pub const LANGUAGE_NAMES: &[(&str, &str)] = &[
-    ("en", "English"), ("es", "Spanish"), ("sv", "Swedish"), ("el", "Greek"), ("fr", "French"),
-    ("de", "German"), ("pt", "Portuguese"), ("it", "Italian"), ("nl", "Dutch"), ("pl", "Polish"),
+    ("en", "English"),
+    ("es", "Spanish"),
+    ("sv", "Swedish"),
+    ("el", "Greek"),
+    ("fr", "French"),
+    ("de", "German"),
+    ("pt", "Portuguese"),
+    ("it", "Italian"),
+    ("nl", "Dutch"),
+    ("pl", "Polish"),
     ("ru", "Russian"),
 ];
 
 pub fn language_name(code: &str) -> &'static str {
-    LANGUAGE_NAMES.iter().find(|(c, _)| *c == code).map(|(_, n)| *n).unwrap_or("English")
+    LANGUAGE_NAMES
+        .iter()
+        .find(|(c, _)| *c == code)
+        .map(|(_, n)| *n)
+        .unwrap_or("English")
 }
 
 #[derive(Debug, Clone)]
@@ -37,7 +51,10 @@ pub struct InsightResult {
 #[derive(Clone)]
 pub enum Provider {
     Managed(ApiClient),
-    Byok { openai_key: String, http: reqwest::Client },
+    Byok {
+        openai_key: String,
+        http: reqwest::Client,
+    },
 }
 
 impl Provider {
@@ -58,12 +75,20 @@ impl Provider {
 
     /// Send a fully built request. Managed: to the backend. BYOK: prompt built
     /// locally from the same fields.
-    pub async fn run(&self, req: &InsightRequest, mode: InsightMode, docs_chunks: Option<&[super::mcp::DocChunk]>) -> Result<InsightResult, String> {
+    pub async fn run(
+        &self,
+        req: &InsightRequest,
+        mode: InsightMode,
+        docs_chunks: Option<&[super::mcp::DocChunk]>,
+    ) -> Result<InsightResult, String> {
         match self {
             Provider::Managed(client) => {
                 let body = serde_json::to_value(req).map_err(|e| e.to_string())?;
                 let r = client.post_insights(&body).await.map_err(friendly)?;
-                Ok(InsightResult { value: r.value, meta: r.meta })
+                Ok(InsightResult {
+                    value: r.value,
+                    meta: r.meta,
+                })
             }
             Provider::Byok { openai_key, http } => {
                 if mode == InsightMode::Investigation {
@@ -74,7 +99,13 @@ impl Provider {
                 let value = openai_json(http, openai_key, model, &system, &user).await?;
                 Ok(InsightResult {
                     value,
-                    meta: ResponseMeta { applied: true, stale: false, degraded: false, fallback_reason: None, request_seq: req.request_seq },
+                    meta: ResponseMeta {
+                        applied: true,
+                        stale: false,
+                        degraded: false,
+                        fallback_reason: None,
+                        request_seq: req.request_seq,
+                    },
                 })
             }
         }
@@ -86,7 +117,10 @@ impl Provider {
         match self {
             Provider::Managed(_) => self.run(req, InsightMode::Docs, None).await,
             Provider::Byok { .. } => {
-                let url = req.docs_mcp_url.as_deref().ok_or("docs mode requires docs_mcp_url")?;
+                let url = req
+                    .docs_mcp_url
+                    .as_deref()
+                    .ok_or("docs mode requires docs_mcp_url")?;
                 let query = req
                     .topic
                     .clone()
@@ -97,14 +131,26 @@ impl Provider {
                     Err(e) => {
                         return Ok(InsightResult {
                             value: json!({ "docs": [] }),
-                            meta: ResponseMeta { applied: false, stale: false, degraded: true, fallback_reason: Some(e), request_seq: req.request_seq },
+                            meta: ResponseMeta {
+                                applied: false,
+                                stale: false,
+                                degraded: true,
+                                fallback_reason: Some(e),
+                                request_seq: req.request_seq,
+                            },
                         })
                     }
                 };
                 if chunks.is_empty() {
                     return Ok(InsightResult {
                         value: json!({ "docs": [] }),
-                        meta: ResponseMeta { applied: true, stale: false, degraded: false, fallback_reason: Some("no_chunks".into()), request_seq: req.request_seq },
+                        meta: ResponseMeta {
+                            applied: true,
+                            stale: false,
+                            degraded: false,
+                            fallback_reason: Some("no_chunks".into()),
+                            request_seq: req.request_seq,
+                        },
                     });
                 }
                 self.run(req, InsightMode::Docs, Some(&chunks)).await
@@ -150,7 +196,8 @@ async fn openai_json(
             .unwrap_or_else(|| text.chars().take(200).collect());
         return Err(format!("OpenAI {status}: {msg}"));
     }
-    let v: Value = serde_json::from_str(&text).map_err(|e| format!("OpenAI response decode: {e}"))?;
+    let v: Value =
+        serde_json::from_str(&text).map_err(|e| format!("OpenAI response decode: {e}"))?;
     let content = v["choices"][0]["message"]["content"]
         .as_str()
         .ok_or("OpenAI response had no content")?;
@@ -159,7 +206,12 @@ async fn openai_json(
 
 /// Tolerant JSON extraction (strips code fences, finds the outer object).
 pub fn parse_json_object(text: &str) -> Result<Value, String> {
-    let t = text.trim().trim_start_matches("```json").trim_start_matches("```").trim_end_matches("```").trim();
+    let t = text
+        .trim()
+        .trim_start_matches("```json")
+        .trim_start_matches("```")
+        .trim_end_matches("```")
+        .trim();
     if let Ok(v) = serde_json::from_str::<Value>(t) {
         return Ok(v);
     }
@@ -169,8 +221,14 @@ pub fn parse_json_object(text: &str) -> Result<Value, String> {
     serde_json::from_str(&t[s..=e]).map_err(|e| format!("model JSON invalid: {e}"))
 }
 
-async fn byok_investigation(http: &reqwest::Client, key: &str, req: &InsightRequest) -> Result<InsightResult, String> {
-    let scope = req.investigation_scope.ok_or("investigation requires a scope")?;
+async fn byok_investigation(
+    http: &reqwest::Client,
+    key: &str,
+    req: &InsightRequest,
+) -> Result<InsightResult, String> {
+    let scope = req
+        .investigation_scope
+        .ok_or("investigation requires a scope")?;
     let focus = req.focus.as_deref().ok_or("investigation requires focus")?;
     let lang = language_name(&req.language);
     let scope_instruction = match scope {
@@ -214,7 +272,10 @@ async fn byok_investigation(http: &reqwest::Client, key: &str, req: &InsightRequ
     let status = resp.status();
     let text = resp.text().await.map_err(|e| e.to_string())?;
     if !status.is_success() {
-        return Err(format!("OpenAI {status}: {}", text.chars().take(200).collect::<String>()));
+        return Err(format!(
+            "OpenAI {status}: {}",
+            text.chars().take(200).collect::<String>()
+        ));
     }
     let v: Value = serde_json::from_str(&text).map_err(|e| e.to_string())?;
     let mut answer = String::new();
@@ -251,7 +312,13 @@ async fn byok_investigation(http: &reqwest::Client, key: &str, req: &InsightRequ
             "sources": sources,
             "referenced_files": req.referenced_files
         }),
-        meta: ResponseMeta { applied: true, stale: false, degraded: answer.is_empty(), fallback_reason: None, request_seq: req.request_seq },
+        meta: ResponseMeta {
+            applied: true,
+            stale: false,
+            degraded: answer.is_empty(),
+            fallback_reason: None,
+            request_seq: req.request_seq,
+        },
     })
 }
 
@@ -262,17 +329,28 @@ struct PromptContext {
     transcript_section: String,
 }
 
-fn build_prompt_context(transcript: &str, incremental: Option<&IncrementalPayload>, existing_summary: Option<&str>) -> PromptContext {
+fn build_prompt_context(
+    transcript: &str,
+    incremental: Option<&IncrementalPayload>,
+    existing_summary: Option<&str>,
+) -> PromptContext {
     let Some(inc) = incremental else {
         let context_note = match existing_summary.filter(|s| !s.is_empty()) {
             Some(s) => format!("Previous summary: \"{s}\"\n\nUpdate the summary to cover the full conversation so far. For action_items, topics, and discussion_flow: keep existing items stable (same wording) and append new ones as the conversation progresses. Only remove an item if it was contradicted or resolved."),
             None => "This is the start of the meeting. Populate all fields from the transcript.".to_string(),
         };
-        return PromptContext { context_note, transcript_section: format!("Latest transcript:\n{transcript}") };
+        return PromptContext {
+            context_note,
+            transcript_section: format!("Latest transcript:\n{transcript}"),
+        };
     };
     let rolling = serde_json::to_string_pretty(&inc.rolling_state).unwrap_or_default();
     let has_snapshot = !transcript.trim().is_empty() && transcript != inc.recent_transcript;
-    let snapshot = if has_snapshot { format!("\n\nTranscript snapshot context:\n{transcript}") } else { String::new() };
+    let snapshot = if has_snapshot {
+        format!("\n\nTranscript snapshot context:\n{transcript}")
+    } else {
+        String::new()
+    };
     let context_note = format!(
         "Incremental update mode is active.\nStrategy: {}\nSegment counts: full={}, acked={}, delta={}, recent={}\n\nPrior rolling structured state (treat as memory baseline; preserve unless newer transcript evidence contradicts it):\n{rolling}",
         inc.strategy, inc.full_segment_count, inc.acked_segment_count, inc.delta_segment_count, inc.recent_segment_count
@@ -282,7 +360,10 @@ fn build_prompt_context(transcript: &str, incremental: Option<&IncrementalPayloa
         if inc.transcript_delta.is_empty() { "[none]" } else { &inc.transcript_delta },
         if inc.recent_transcript.is_empty() { "[none]" } else { &inc.recent_transcript },
     );
-    PromptContext { context_note, transcript_section }
+    PromptContext {
+        context_note,
+        transcript_section,
+    }
 }
 
 fn attendees_appendix(attendees: &[Attendee], mode: InsightMode) -> String {
@@ -304,11 +385,24 @@ fn attendees_appendix(attendees: &[Attendee], mode: InsightMode) -> String {
     s
 }
 
-pub fn build_prompt(req: &InsightRequest, mode: InsightMode, docs_chunks: Option<&[super::mcp::DocChunk]>) -> Result<(String, String), String> {
+pub fn build_prompt(
+    req: &InsightRequest,
+    mode: InsightMode,
+    docs_chunks: Option<&[super::mcp::DocChunk]>,
+) -> Result<(String, String), String> {
     let lang = &req.language;
     let language_name = language_name(lang);
-    let ctx = build_prompt_context(&req.transcript, req.incremental_payload.as_ref(), req.existing_summary.as_deref());
-    let title_instruction = if req.existing_title.as_deref().map(|t| t.is_empty()).unwrap_or(true) {
+    let ctx = build_prompt_context(
+        &req.transcript,
+        req.incremental_payload.as_ref(),
+        req.existing_summary.as_deref(),
+    );
+    let title_instruction = if req
+        .existing_title
+        .as_deref()
+        .map(|t| t.is_empty())
+        .unwrap_or(true)
+    {
         "\"title\": \"Short descriptive title (3-6 words)\","
     } else {
         ""
@@ -320,8 +414,12 @@ pub fn build_prompt(req: &InsightRequest, mode: InsightMode, docs_chunks: Option
     };
     let field_list = match mode {
         InsightMode::Questions => "question, context",
-        InsightMode::Meddpicc => "summary, action_items, topics, discussion_flow, title, and MEDDPICC field values",
-        InsightMode::SpeakerNames => "speaker names (use names exactly as spoken in the transcript)",
+        InsightMode::Meddpicc => {
+            "summary, action_items, topics, discussion_flow, title, and MEDDPICC field values"
+        }
+        InsightMode::SpeakerNames => {
+            "speaker names (use names exactly as spoken in the transcript)"
+        }
         _ => "summary, action_items, topics, discussion_flow, title",
     };
     let language_instruction = if lang != "en" && mode != InsightMode::SpeakerNames {
@@ -630,11 +728,20 @@ mod tests {
 
     #[test]
     fn prompts_mirror_backend_modes() {
-        let mut req = InsightRequest { transcript: "[You] hi".into(), mode: "standard", model: "m", language: "de".into(), ..Default::default() };
+        let mut req = InsightRequest {
+            transcript: "[You] hi".into(),
+            mode: "standard",
+            model: "m",
+            language: "de".into(),
+            ..Default::default()
+        };
         let (sys, user) = build_prompt(&req, InsightMode::Standard, None).unwrap();
         assert!(sys.contains("live meeting snapshots"));
         assert!(user.contains("The transcript is in German"));
-        assert!(user.contains("\"title\": \"Short descriptive title"), "no existing title → ask for one");
+        assert!(
+            user.contains("\"title\": \"Short descriptive title"),
+            "no existing title → ask for one"
+        );
         assert!(user.contains("This is the start of the meeting"));
 
         req.existing_title = Some("Q4 planning".into());
@@ -653,7 +760,10 @@ mod tests {
         req.candidates = vec!["Alex".into()];
         let (_, user) = build_prompt(&req, InsightMode::SpeakerNames, None).unwrap();
         assert!(user.contains("Candidate names"));
-        assert!(!user.contains("German"), "speaker names never get the language instruction");
+        assert!(
+            !user.contains("German"),
+            "speaker names never get the language instruction"
+        );
     }
 
     #[test]
@@ -686,9 +796,21 @@ mod tests {
 
     #[test]
     fn docs_prompt_requires_chunks_and_uses_topic() {
-        let req = InsightRequest { transcript: "t".into(), mode: "docs", model: "m", language: "en".into(), topic: Some("SSO".into()), ..Default::default() };
+        let req = InsightRequest {
+            transcript: "t".into(),
+            mode: "docs",
+            model: "m",
+            language: "en".into(),
+            topic: Some("SSO".into()),
+            ..Default::default()
+        };
         assert!(build_prompt(&req, InsightMode::Docs, None).is_err());
-        let chunks = vec![super::super::mcp::DocChunk { title: "SSO".into(), url: Some("https://d/sso".into()), text: "SAML".into(), score: None }];
+        let chunks = vec![super::super::mcp::DocChunk {
+            title: "SSO".into(),
+            url: Some("https://d/sso".into()),
+            text: "SAML".into(),
+            score: None,
+        }];
         let (_, user) = build_prompt(&req, InsightMode::Docs, Some(&chunks)).unwrap();
         assert!(user.contains("Topic to answer: \"SSO\""));
         assert!(user.contains("[1] Title: SSO"));
@@ -696,7 +818,10 @@ mod tests {
 
     #[test]
     fn json_extraction_is_tolerant() {
-        assert_eq!(parse_json_object("```json\n{\"a\":1}\n```").unwrap()["a"], 1);
+        assert_eq!(
+            parse_json_object("```json\n{\"a\":1}\n```").unwrap()["a"],
+            1
+        );
         assert_eq!(parse_json_object("Sure: {\"a\":2} done").unwrap()["a"], 2);
         assert!(parse_json_object("nope").is_err());
     }

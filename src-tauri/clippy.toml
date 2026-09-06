@@ -1,0 +1,8 @@
+# Secret-service calls block on a private tokio runtime and panic inside an
+# async Tauri command. Route them through `keyring_op` (auth::manager /
+# device_id), which runs them on a dedicated thread with a deadline.
+disallowed-methods = [
+  { path = "keyring::Entry::get_password", reason = "call inside keyring_op(...) so it never runs on the async runtime" },
+  { path = "keyring::Entry::set_password", reason = "call inside keyring_op(...) so it never runs on the async runtime" },
+  { path = "keyring::Entry::delete_credential", reason = "call inside keyring_op(...) so it never runs on the async runtime" },
+]

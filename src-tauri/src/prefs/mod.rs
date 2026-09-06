@@ -176,15 +176,20 @@ mod tests {
         let path = dir.path().join("prefs.json");
         assert_eq!(Prefs::load_from(&path).language, "en");
 
-        let mut p = Prefs::default();
-        p.app_mode = AppMode::Byok;
-        p.webhook_url = Some("https://example.com/hook".into());
-        p.accepted_terms_version = Some("1.0".into());
+        let p = Prefs {
+            app_mode: AppMode::Byok,
+            webhook_url: Some("https://example.com/hook".into()),
+            accepted_terms_version: Some("1.0".into()),
+            ..Prefs::default()
+        };
         p.save_to(&path).unwrap();
 
         let loaded = Prefs::load_from(&path);
         assert_eq!(loaded.app_mode, AppMode::Byok);
-        assert_eq!(loaded.webhook_url.as_deref(), Some("https://example.com/hook"));
+        assert_eq!(
+            loaded.webhook_url.as_deref(),
+            Some("https://example.com/hook")
+        );
         assert_eq!(loaded.accepted_terms_version.as_deref(), Some("1.0"));
 
         #[cfg(unix)]
@@ -208,6 +213,9 @@ mod tests {
     #[test]
     fn app_mode_serializes_lowercase() {
         assert_eq!(serde_json::to_string(&AppMode::Byok).unwrap(), "\"byok\"");
-        assert_eq!(serde_json::to_string(&AppMode::Managed).unwrap(), "\"managed\"");
+        assert_eq!(
+            serde_json::to_string(&AppMode::Managed).unwrap(),
+            "\"managed\""
+        );
     }
 }

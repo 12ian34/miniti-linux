@@ -20,19 +20,102 @@ use crate::deepgram::{is_mic_app_speaker_id, MIC_SPEAKER_ID};
 /// "hmm", "hm" or "er".
 pub fn default_fillers(language: &str) -> Vec<&'static str> {
     match language {
-        "es" => vec!["eh", "este", "bueno", "o sea", "pues", "es que", "digamos", "entonces", "a ver"],
-        "sv" => vec!["eh", "öh", "liksom", "typ", "alltså", "asså", "va", "ju", "ba"],
-        "el" => vec!["ε", "εε", "δηλαδή", "κοίτα", "λοιπόν", "ας πούμε", "τέλος πάντων"],
-        "fr" => vec!["euh", "ben", "genre", "en fait", "du coup", "voilà", "quoi", "bah", "bon"],
-        "de" => vec!["äh", "ähm", "halt", "also", "sozusagen", "quasi", "irgendwie", "na ja", "genau"],
-        "pt" => vec!["é", "né", "tipo", "assim", "então", "bom", "quer dizer", "enfim"],
-        "it" => vec!["ehm", "cioè", "tipo", "allora", "praticamente", "insomma", "diciamo", "boh"],
-        "nl" => vec!["eh", "uhm", "eigenlijk", "zeg maar", "weet je", "dus", "nou", "gewoon"],
-        "pl" => vec!["ee", "no", "w sumie", "jakby", "znaczy", "generalnie", "w zasadzie", "tak naprawdę"],
-        "ru" => vec!["эм", "ну", "вот", "типа", "короче", "как бы", "в общем", "значит", "так сказать"],
+        "es" => vec![
+            "eh", "este", "bueno", "o sea", "pues", "es que", "digamos", "entonces", "a ver",
+        ],
+        "sv" => vec![
+            "eh", "öh", "liksom", "typ", "alltså", "asså", "va", "ju", "ba",
+        ],
+        "el" => vec![
+            "ε",
+            "εε",
+            "δηλαδή",
+            "κοίτα",
+            "λοιπόν",
+            "ας πούμε",
+            "τέλος πάντων",
+        ],
+        "fr" => vec![
+            "euh", "ben", "genre", "en fait", "du coup", "voilà", "quoi", "bah", "bon",
+        ],
+        "de" => vec![
+            "äh",
+            "ähm",
+            "halt",
+            "also",
+            "sozusagen",
+            "quasi",
+            "irgendwie",
+            "na ja",
+            "genau",
+        ],
+        "pt" => vec![
+            "é",
+            "né",
+            "tipo",
+            "assim",
+            "então",
+            "bom",
+            "quer dizer",
+            "enfim",
+        ],
+        "it" => vec![
+            "ehm",
+            "cioè",
+            "tipo",
+            "allora",
+            "praticamente",
+            "insomma",
+            "diciamo",
+            "boh",
+        ],
+        "nl" => vec![
+            "eh",
+            "uhm",
+            "eigenlijk",
+            "zeg maar",
+            "weet je",
+            "dus",
+            "nou",
+            "gewoon",
+        ],
+        "pl" => vec![
+            "ee",
+            "no",
+            "w sumie",
+            "jakby",
+            "znaczy",
+            "generalnie",
+            "w zasadzie",
+            "tak naprawdę",
+        ],
+        "ru" => vec![
+            "эм",
+            "ну",
+            "вот",
+            "типа",
+            "короче",
+            "как бы",
+            "в общем",
+            "значит",
+            "так сказать",
+        ],
         _ => vec![
-            "um", "uh", "mhmm", "mhm", "ah", "like", "basically", "literally", "actually",
-            "honestly", "uh huh", "you know", "i mean", "kind of", "sort of",
+            "um",
+            "uh",
+            "mhmm",
+            "mhm",
+            "ah",
+            "like",
+            "basically",
+            "literally",
+            "actually",
+            "honestly",
+            "uh huh",
+            "you know",
+            "i mean",
+            "kind of",
+            "sort of",
         ],
     }
 }
@@ -41,7 +124,10 @@ pub fn default_fillers(language: &str) -> Vec<&'static str> {
 pub fn effective_fillers(language: &str, overrides: &[String]) -> Vec<String> {
     let normalized = normalize_fillers(overrides);
     if normalized.is_empty() {
-        default_fillers(language).into_iter().map(String::from).collect()
+        default_fillers(language)
+            .into_iter()
+            .map(String::from)
+            .collect()
     } else {
         normalized
     }
@@ -552,9 +638,11 @@ fn copy_for(metric: CoachingMetric, value: f64) -> (&'static str, &'static str, 
                  "Your turns are very brief and may sometimes sound fragmented.",
                  "Add one sentence of reasoning after a short answer so the listener gets both the decision and why.")
             } else {
-                ("Your turns are concise",
-                 "Your average answer length is in a clear conversational range.",
-                 "Protect that clarity by stating the point before the supporting detail.")
+                (
+                    "Your turns are concise",
+                    "Your average answer length is in a clear conversational range.",
+                    "Protect that clarity by stating the point before the supporting detail.",
+                )
             }
         }
         CoachingMetric::Questions => {
@@ -616,7 +704,10 @@ pub fn analyze(snapshots: &[CoachingSnapshot]) -> Option<CoachingReport> {
 
     let mut summaries = Vec::new();
     for metric in CoachingMetric::ALL {
-        let values: Vec<f64> = sorted.iter().filter_map(|s| metric_value(metric, s)).collect();
+        let values: Vec<f64> = sorted
+            .iter()
+            .filter_map(|s| metric_value(metric, s))
+            .collect();
         if values.is_empty() {
             continue;
         }
@@ -663,7 +754,11 @@ pub fn analyze(snapshots: &[CoachingSnapshot]) -> Option<CoachingReport> {
 
     let focus = summaries
         .iter()
-        .max_by(|a, b| a.priority.partial_cmp(&b.priority).unwrap_or(std::cmp::Ordering::Equal))?
+        .max_by(|a, b| {
+            a.priority
+                .partial_cmp(&b.priority)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })?
         .clone();
     let mut strengths: Vec<CoachingMetricSummary> = summaries
         .iter()
@@ -709,7 +804,10 @@ mod tests {
     }
 
     fn en() -> Vec<String> {
-        default_fillers("en").into_iter().map(String::from).collect()
+        default_fillers("en")
+            .into_iter()
+            .map(String::from)
+            .collect()
     }
 
     #[test]
@@ -721,7 +819,11 @@ mod tests {
         for never in ["hmm", "hm", "er"] {
             assert!(!f.contains(&never), "{never} never emitted by Deepgram");
         }
-        assert_eq!(default_fillers("xx"), default_fillers("en"), "unknown lang falls back");
+        assert_eq!(
+            default_fillers("xx"),
+            default_fillers("en"),
+            "unknown lang falls back"
+        );
         assert!(!default_fillers("de").is_empty());
     }
 
@@ -729,12 +831,18 @@ mod tests {
     fn overrides_replace_defaults_when_present() {
         let eff = effective_fillers("en", &["  Like ".into(), "like".into(), "".into()]);
         assert_eq!(eff, vec!["like"]);
-        assert_eq!(effective_fillers("en", &[]).len(), default_fillers("en").len());
+        assert_eq!(
+            effective_fillers("en", &[]).len(),
+            default_fillers("en").len()
+        );
     }
 
     #[test]
     fn tokenize_strips_punctuation_but_keeps_apostrophes() {
-        assert_eq!(tokenize("Hello, there! It's me."), vec!["hello", "there", "it's", "me"]);
+        assert_eq!(
+            tokenize("Hello, there! It's me."),
+            vec!["hello", "there", "it's", "me"]
+        );
     }
 
     #[test]
@@ -759,7 +867,10 @@ mod tests {
         assert_eq!(resolved_speaker_label(0, Some(&names), None), "Alex");
         // Explicit self ids win over names; empty self set removes implicit You.
         assert_eq!(resolved_speaker_label(0, Some(&names), Some(&[0])), "You");
-        assert_eq!(resolved_speaker_label(1000, None, Some(&[])), "Speaker 1 (mic)");
+        assert_eq!(
+            resolved_speaker_label(1000, None, Some(&[])),
+            "Speaker 1 (mic)"
+        );
     }
 
     #[test]
@@ -802,7 +913,11 @@ mod tests {
 
     #[test]
     fn split_diarization_ids_merge_into_one_self_bucket() {
-        let segs = vec![seg(1000, "one two", 0.0), seg(1001, "three", 1.0), seg(0, "x", 2.0)];
+        let segs = vec![
+            seg(1000, "one two", 0.0),
+            seg(1001, "three", 1.0),
+            seg(0, "x", 2.0),
+        ];
         let m = compute(&segs, 10.0, &en(), None, Some(&[1000, 1001]));
         assert_eq!(m.speakers.len(), 2);
         assert_eq!(m.speakers[0].word_count, 3);
@@ -812,7 +927,12 @@ mod tests {
     #[test]
     fn interims_and_empty_segments_are_ignored() {
         let segs = vec![
-            Segment { text: "interim".into(), speaker: 1000, is_final: false, timestamp: 0.0 },
+            Segment {
+                text: "interim".into(),
+                speaker: 1000,
+                is_final: false,
+                timestamp: 0.0,
+            },
             seg(1000, "   ", 1.0),
         ];
         let m = compute(&segs, 10.0, &en(), None, None);
@@ -864,13 +984,25 @@ mod tests {
         };
         assert!(analyze(&[]).is_none());
 
-        let report = analyze(&[snap(3, 9.0, 140.0), snap(2, 8.0, 140.0), snap(1, 8.0, 140.0)]).unwrap();
+        let report = analyze(&[
+            snap(3, 9.0, 140.0),
+            snap(2, 8.0, 140.0),
+            snap(1, 8.0, 140.0),
+        ])
+        .unwrap();
         assert_eq!(report.meeting_count, 3);
         assert_eq!(report.focus.metric, CoachingMetric::Fillers);
         assert_eq!(report.focus.status, CoachingMetricStatus::Focus);
-        assert_eq!(report.focus.trend, CoachingTrend::BuildingBaseline, "< 4 meetings");
+        assert_eq!(
+            report.focus.trend,
+            CoachingTrend::BuildingBaseline,
+            "< 4 meetings"
+        );
         assert!(report.strengths.len() <= 2);
-        assert!(report.strengths.iter().all(|s| s.status == CoachingMetricStatus::Strong));
+        assert!(report
+            .strengths
+            .iter()
+            .all(|s| s.status == CoachingMetricStatus::Strong));
 
         // With 4+ meetings a previous window exists and trends are computed.
         let report = analyze(&[

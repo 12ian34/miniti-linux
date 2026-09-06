@@ -25,13 +25,35 @@ const SELF_MARKERS: &[&str] = &["miniti", "parec", "alsa plug-in [miniti"];
 /// Whole-word directory. Matching is on lowercase word tokens so "meet" does
 /// not match "meeting" and "teams" does not match "steams".
 const STRONG: &[&str] = &[
-    "zoom", "zoom.us", "teams", "microsoft teams", "webex", "slack", "discord", "skype",
-    "google meet", "meet", "jitsi", "signal", "telegram", "whatsapp", "gotomeeting",
-    "bluejeans", "ringcentral",
+    "zoom",
+    "zoom.us",
+    "teams",
+    "microsoft teams",
+    "webex",
+    "slack",
+    "discord",
+    "skype",
+    "google meet",
+    "meet",
+    "jitsi",
+    "signal",
+    "telegram",
+    "whatsapp",
+    "gotomeeting",
+    "bluejeans",
+    "ringcentral",
 ];
 const WEAK: &[&str] = &[
-    "firefox", "chrome", "chromium", "brave", "vivaldi", "epiphany", "edge", "opera",
-    "librewolf", "zen",
+    "firefox",
+    "chrome",
+    "chromium",
+    "brave",
+    "vivaldi",
+    "epiphany",
+    "edge",
+    "opera",
+    "librewolf",
+    "zen",
 ];
 
 fn tokens(identifier: &str) -> Vec<String> {
@@ -130,8 +152,13 @@ pub fn parse_source_outputs(text: &str) -> Vec<CaptureClient> {
 /// Live scan via `pactl`. `None` when the audio server / pactl is unavailable
 /// (an unreliable reading, which the lifecycle engine treats as no information).
 pub fn snapshot_capture_clients() -> Option<Vec<CaptureClient>> {
-    match Command::new("pactl").args(["list", "source-outputs"]).output() {
-        Ok(o) if o.status.success() => Some(parse_source_outputs(&String::from_utf8_lossy(&o.stdout))),
+    match Command::new("pactl")
+        .args(["list", "source-outputs"])
+        .output()
+    {
+        Ok(o) if o.status.success() => {
+            Some(parse_source_outputs(&String::from_utf8_lossy(&o.stdout)))
+        }
         _ => None,
     }
 }
@@ -152,7 +179,11 @@ mod tests {
         assert_eq!(classify("teams-for-linux"), CallAppKind::Strong);
         assert_eq!(classify("firefox"), CallAppKind::Weak);
         assert_eq!(classify("gnome-text-editor"), CallAppKind::None);
-        assert_eq!(classify("meeting-notes-app"), CallAppKind::None, "substring 'meet' must not match");
+        assert_eq!(
+            classify("meeting-notes-app"),
+            CallAppKind::None,
+            "substring 'meet' must not match"
+        );
         assert_eq!(classify("steams"), CallAppKind::None);
     }
 
@@ -166,8 +197,14 @@ mod tests {
     #[test]
     fn strong_capturing_app_means_in_call() {
         let clients = vec![
-            CaptureClient { app_name: "Zoom".into(), is_capturing: true },
-            CaptureClient { app_name: "firefox".into(), is_capturing: false },
+            CaptureClient {
+                app_name: "Zoom".into(),
+                is_capturing: true,
+            },
+            CaptureClient {
+                app_name: "firefox".into(),
+                is_capturing: false,
+            },
         ];
         assert!(likely_in_call(&clients));
         assert!(!weak_signal_only(&clients));
@@ -175,7 +212,10 @@ mod tests {
 
     #[test]
     fn weak_only_is_not_decisive() {
-        let clients = vec![CaptureClient { app_name: "chromium".into(), is_capturing: true }];
+        let clients = vec![CaptureClient {
+            app_name: "chromium".into(),
+            is_capturing: true,
+        }];
         assert!(!likely_in_call(&clients));
         assert!(weak_signal_only(&clients));
     }
