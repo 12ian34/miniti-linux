@@ -71,6 +71,7 @@ Tauri documents AUR packaging: https://v2.tauri.app/distribute/aur/
 
 - `makedepends=(rust cargo nodejs pnpm …)` + WebKitGTK **dev** packages  
 - Build with Tauri; install from `target/release` / bundle data  
+- `options=(!lto)`: makepkg's LTO breaks the bundled SQLite static archive (undefined `sqlite3_*` at link); Rust LTO still applies from `Cargo.toml`  
 - **Disable Tauri updater pubkey / `createUpdaterArtifacts`** for source builds — missing private key breaks AUR builds, and pacman owns updates anyway
 - Source and CI builds are identical in capability: managed mode needs no build-time secret (device-bound enrollment at runtime)  
 
