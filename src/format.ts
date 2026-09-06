@@ -133,3 +133,14 @@ export function speakerColor(id: number, isYou: boolean): string {
   const idx = ((id % 7) + 7) % 7;
   return `var(--speaker-${idx + 1})`;
 }
+
+/** True when dotted version `a` is newer than `b` (missing parts count as 0). */
+export function isNewerVersion(a: string, b: string): boolean {
+  const pa = a.split(".").map((x) => parseInt(x, 10) || 0);
+  const pb = b.split(".").map((x) => parseInt(x, 10) || 0);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const x = pa[i] ?? 0, y = pb[i] ?? 0;
+    if (x !== y) return x > y;
+  }
+  return false;
+}

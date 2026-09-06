@@ -6,6 +6,7 @@ public changelog for miniti for Linux. the changelog for every platform lives at
 
 ### unreleased - v0.4.1
 
+- new: Home shows a quiet notice when a newer release is available, with a link to the install steps. It appears once per release and can be dismissed; Linux has no built-in updater, so this is how tarball and `.deb` users hear about updates
 - fix: Builds from source (the `miniti` Arch package, or a plain `cargo build --release`) opened to "Could not connect to localhost" because the frontend was not embedded; they now build the way the release tarball does. The prebuilt tarball, `.deb`, and `miniti-bin` were not affected
 - improvement: A release build made without the frontend embedded now logs a clear error instead of showing a blank window
 - improvement: CI launches the built app on a virtual display and fails if the window is blank

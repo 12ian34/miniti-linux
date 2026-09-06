@@ -17,6 +17,7 @@ import { useStore } from "../store";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useTauriEvent } from "../useEvent";
 import { LimitReached, UsageBanner, parseStartError } from "./Limits";
+import { isNewerVersion } from "../format";
 import { Sheet } from "./MeetingTools";
 import type { CalendarEvent, CalendarView, EnvHealth, LaunchGate, Prefs, Usage } from "../types";
 
@@ -94,6 +95,7 @@ export function Home({ gate }: { gate: LaunchGate | null }) {
         {gate && !gate.backend_reachable && prefs?.app_mode === "managed" && (
           <div className="banner warn narrow">backend not reachable: {gate.backend_error ?? "unknown error"}</div>
         )}
+        {gate && <UpdateNotice gate={gate} />}
 
         {deviceDisabled ? (
           <div className="stack-center">
@@ -217,4 +219,30 @@ function fmtEventWhen(e: CalendarEvent): string {
   const sameDay = s.toDateString() === today.toDateString();
   const day = sameDay ? "today" : s.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" }).toLowerCase();
   return `${day} ${s.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}`;
+}
+
+const UPDATE_DISMISS_KEY = "update.dismissedVersion";
+
+/**
+ * Quiet once-per-release notice that a newer Linux build exists. Linux has no
+ * Sparkle or App Store, so the backend reports the real latest version and the
+ * app points at the README's install section; dismissing remembers the version.
+ */
+function UpdateNotice({ gate }: { gate: LaunchGate }) {
+  const [dismissed, setDismissed] = useState<string | null>(() => {
+    try { return localStorage.getItem(UPDATE_DISMISS_KEY); } catch { return null; }
+  });
+  const latest = gate.latest_version;
+  if (!latest || !isNewerVersion(latest, gate.current_version) || dismissed === latest) return null;
+  const dismiss = () => {
+    try { localStorage.setItem(UPDATE_DISMISS_KEY, latest); } catch { /* ignore */ }
+    setDismissed(latest);
+  };
+  return (
+    <div className="banner narrow update-notice">
+      <span>miniti {latest} is available (you have {gate.current_version}).</span>
+      <button className="ghost" onClick={() => openUrl("https://github.com/12ian34/miniti-linux#install")}>how to update</button>
+      <button className="ghost" onClick={dismiss} title="Hide until the next release">dismiss</button>
+    </div>
+  );
 }
