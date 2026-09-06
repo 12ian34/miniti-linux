@@ -69,27 +69,30 @@ Tauri 2 + Rust + React/TypeScript, `identifier=com.miniti.linux`, binary `miniti
 
 | Area | What works |
 |---|---|
-| Capture | Mic (`cpal`, phase-continuous resampler) + system audio (`parec` monitor) → stereo interleave (ch0 mic, ch1 system) → Deepgram `channels=2&multichannel=true`; mono fallback when no monitor. Source-energy log for dominance |
+| Capture | Mic (`cpal`, phase-continuous resampler) + system audio (`parec` monitor) → stereo interleave (ch0 mic, ch1 system) → Deepgram `channels=2&multichannel=true`; mono fallback when no monitor. Source-energy log for dominance. System-tap stall watchdog: 4 s without frames restarts `parec` against the current default sink (three failures → audio degraded, mic continues) |
 | Transcription | Nova-3 with the macOS query contract, `SpeakerIdentityState` + `segmentBySpeaker` ports, echo reconciliation (350 ms ordering buffer, 4 s pending-mic window, LCS/contiguous-run suppression), `CloseStream` drain on stop, bounded reconnect with timeline offsets |
 | Credentials | BYOK (`Token`) or managed (`POST /api/session` Bearer grant, refreshed before reconnects, `session/end` on stop). Backend auth is device-bound (`src-tauri/src/auth`): P-256 installation key + anonymous recovery key, HS256 access tokens bound to the key thumbprint, ES256 request proofs on every POST/DELETE, rotating refresh with challenge fallback. No shared secret in the binary |
-| Layout | macOS three-pane: history sidebar (Pinned / Today / Yesterday / This week / Older, auto-collapses on record, Ctrl+[), transcript + notes, insights rail (Ctrl+]) with lowercase summary / questions / coaching and Sales / Playbook under More. Same view live and saved |
-| Insights | Live engine ported from `AppState` (cadence policies, staggering, incremental delta + rolling state, degraded/stale/out-of-order safety, auto title until rename). Managed via `/api/insights`; BYOK via OpenAI with the backend prompts verbatim. Background final pass on stop; regenerate; catch me up; investigate (web / codebase); speaker naming that never overwrites manual renames; sales suggestion + investigation-moment heuristics |
+| Layout | macOS three-pane: history sidebar (Pinned / Today / Yesterday / This week / Older, auto-collapses on record, Ctrl+[), transcript + notes, insights rail (Ctrl+]) with lowercase summary / questions / coaching and Sales / Templates / Playbook under More (the More label carries the active template). Same view live and saved. Transcript turns are memoized and grouped into `content-visibility` blocks for long meetings. Interface scale compact / standard / large |
+| Insights | Templates view (BANT, SPIN, interview scorecard, customer check-in, stand-up, 1:1) filled live, on demand, on saved meetings, and at the final pass; in exports and webhooks. Live engine ported from `AppState` (cadence policies, staggering, incremental delta + rolling state, degraded/stale/out-of-order safety, auto title until rename). Managed via `/api/insights`; BYOK via OpenAI with the backend prompts verbatim. Background final pass on stop; regenerate; catch me up; investigate (web / codebase); speaker naming that never overwrites manual renames; sales suggestion + investigation-moment heuristics |
 | Playbook | Streamable-HTTP MCP client (backend SSRF guard, tool discovery, chunk normalization), topic extraction every 20 s, per-topic lookup state, auto lookups for BYOK/Pro |
-| Coaching | `TrainingMetrics` + `CoachingAdvisor` ports; focus / stats / history; verbatim per-language filler lists |
+| Coaching | `TrainingMetrics` + `CoachingAdvisor` ports; focus / stats / history; per-metric trend charts (SVG, categorical meeting axis, ringed latest point, broad-range band); grounded examples (real passages from recent meetings per metric, clickable); verbatim per-language filler lists |
 | History | search, pin, rename, delete, speaker rename, mark-as-you, trim (turn / before / after with regeneration), copy transcript, Markdown export (macOS section order), Granola CSV import with duplicate protection |
-| Desktop shell | Tray with live timer + Start/Stop + decision rows, close-to-tray, floating recording surface (always-on-top window with timer/stop/decisions/nudges), desktop notifications with the surface-aware rule, deep links for OAuth returns |
+| Desktop shell | Tray with live timer + Start/Stop + decision rows, close-to-tray, floating recording surface at macOS parity (presence model pushed each second: timer, call app, meeting title, call/transcription/audio status, ending countdown; kind-specific prompt actions; nudges with dismiss / don't remind / enable sales; content-sized, auto-expand/collapse attention policy, monitor clamping, never takes focus; wlr-layer-shell overlay on Wayland when `libgtk-layer-shell` is present), desktop notifications with the surface-aware rule, deep links for OAuth returns, daily rolling log with an in-app viewer |
 | Smart meetings | `CallLifecycleEngine` port over PipeWire capture clients; quiet-ended prompts (threshold table + :00/:30 boundary); calendar transition prompt with Remind-in-2-min and gated 15 s handoff; calendar auto-start countdown; silence auto-stop; 10 s ending grace; live guidance nudges |
 | Integrations | Google Calendar (upcoming five, prep notes seeding live notes, auto title/attendees), Attio + Twenty send sheet (search, payload preview, per-task inclusion) — all via the backend |
-| Gates / Pro | force-update via `/api/version`, terms, onboarding; Polar subscribe / portal / restore; usage pill |
+| Gates / Pro | force-update via `/api/version`, terms, onboarding, managed-mode enrollment (recovery key); Polar subscribe / portal / restore; usage banner (amber < 60 min, red < 15) and limit-reached view with upgrade / switch to BYOK |
 | Settings | macOS destinations (General … Privacy & Support) with sidebar + Ctrl+F search that scrolls to the control |
 
 ### Known Linux limits (documented, not faked)
 
-- System audio needs PipeWire with the pulse shim (`pactl` / `parec`); Bluetooth route changes are not yet auto-recovered (macOS has a stall watchdog).
+- System audio needs PipeWire with the pulse shim (`pactl` / `parec`). Route changes recover through the stall watchdog (restart after 4 s of silence from the monitor), not through a device-change event; a switch mid-sentence loses up to 4 s of remote audio.
 - Call detection is PipeWire-client based: native apps are strong signals, browsers weak; no per-process HAL.
-- Floating surface placement may be ignored on Wayland compositors.
+- Floating surface on Wayland: pinned and focus-free only through wlr-layer-shell (Hyprland, Sway, KDE, with `libgtk-layer-shell` installed); on GNOME or without the library the compositor decides placement and the window cannot be dragged into place. Layer surfaces cannot be dragged at all (fixed top-right, 16 px margin). X11 gets the full behaviour (utility window, keep-above, never focused, clamped to the monitor).
 - No in-app silent updater: AUR / pacman or the release tarball; `/api/version` only hard-gates.
-- Long transcripts rely on `content-visibility: auto` rather than a native text view.
+- Long transcripts use memoized turns in `content-visibility` blocks rather than a native text view; selection across blocks works, but very long meetings (thousands of turns) still render slower than the Mac's NSTextView.
+- Microphone capture has no restart path yet: a disconnected USB/Bluetooth mic surfaces as a stream error rather than recovering.
+- Coaching charts have no hover tooltips; VoiceOver-style per-chart summaries are exposed through `aria-label` only.
+- Screenshots in the README are from the Mac app; Linux screenshots need a real desktop session.
 
 ### Verification
 

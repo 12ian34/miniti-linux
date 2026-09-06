@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import {
   deleteMeeting,
@@ -455,6 +455,40 @@ export function SectionHeader({ icon, title, onCopy, copied }: { icon: string; t
   );
 }
 
+/** Turns per block; each block is a `content-visibility: auto` island so the browser
+ *  skips layout and paint for off-screen stretches of a long transcript. */
+const TURN_BLOCK = 40;
+
+const Turn = memo(function Turn({ speaker, name, color, start, text, keys, trim, onRemove, onTrimBefore, onTrimAfter }: {
+  speaker: number;
+  name: string;
+  color: string;
+  start: number;
+  text: string;
+  /** Persisted line keys, joined; only changes when the turn's lines change. */
+  keys: string;
+  trim?: boolean;
+  onRemove?: (keys: string[]) => void;
+  onTrimBefore?: (startS: number) => void;
+  onTrimAfter?: (startS: number) => void;
+}) {
+  return (
+    <div className="turn" data-speaker={speaker}>
+      <div className="turn-head" style={{ color }}>
+        {name} · {ts(start)}
+        {trim && (
+          <span className="turn-tools">
+            <button className="ghost tiny" onClick={() => onTrimBefore?.(start)}>⇤ cut before</button>
+            <button className="ghost tiny" onClick={() => onRemove?.(keys.split("\u0001"))}>✕</button>
+            <button className="ghost tiny" onClick={() => onTrimAfter?.(start)}>cut after ⇥</button>
+          </span>
+        )}
+      </div>
+      <div className="turn-text">{text}</div>
+    </div>
+  );
+});
+
 function TranscriptBody({ lines, label, isYou, trim, onRemove, onTrimBefore, onTrimAfter }: {
   lines: Line[];
   label: (id: number) => string;
@@ -465,7 +499,9 @@ function TranscriptBody({ lines, label, isYou, trim, onRemove, onTrimBefore, onT
   onTrimAfter?: (startS: number) => void;
 }) {
   // Group consecutive finals by speaker into turns; interims render as the
-  // macOS TerminalInterimRow ("listening…" with a pulsing bar).
+  // macOS TerminalInterimRow ("listening…" with a pulsing bar). Final turns are
+  // memoized on primitive props, so an interim update re-renders one row, not
+  // the whole transcript; blocks of turns are content-visibility islands.
   const turns: { speaker: number; lines: Line[]; interim: boolean }[] = [];
   for (const l of lines) {
     const last = turns[turns.length - 1];
@@ -473,42 +509,49 @@ function TranscriptBody({ lines, label, isYou, trim, onRemove, onTrimBefore, onT
     if (last && !last.interim && last.speaker === l.speaker) last.lines.push(l);
     else turns.push({ speaker: l.speaker, lines: [l], interim: false });
   }
+  const blocks: typeof turns[] = [];
+  for (let i = 0; i < turns.length; i += TURN_BLOCK) blocks.push(turns.slice(i, i + TURN_BLOCK));
   return (
     <div className="turns">
-      {turns.map((t, i) => {
-        const color = speakerColor(t.speaker, isYou(t.speaker));
-        if (t.interim) {
-          const prevSame = i > 0 && turns[i - 1].speaker === t.speaker;
-          return (
-            <div className="interim-row" key={t.lines[0].key}>
-              {!prevSame && (
-                <div className="interim-head">
-                  <span className="bar" style={{ background: color }} />
-                  <span style={{ color }}>{label(t.speaker)}</span>
-                  <span className="sep">•</span>
-                  <span className="listening">listening...</span>
+      {blocks.map((block, b) => (
+        <div className="turn-block" key={block[0]?.lines[0]?.key ?? b}>
+          {block.map((t, i) => {
+            const color = speakerColor(t.speaker, isYou(t.speaker));
+            if (t.interim) {
+              const prev = i > 0 ? block[i - 1] : b > 0 ? blocks[b - 1][blocks[b - 1].length - 1] : undefined;
+              const prevSame = prev?.speaker === t.speaker;
+              return (
+                <div className="interim-row" key={t.lines[0].key}>
+                  {!prevSame && (
+                    <div className="interim-head">
+                      <span className="bar" style={{ background: color }} />
+                      <span style={{ color }}>{label(t.speaker)}</span>
+                      <span className="sep">•</span>
+                      <span className="listening">listening...</span>
+                    </div>
+                  )}
+                  <div className="interim-body"><span className="bar pulse" style={{ background: color }} /><span>{t.lines[0].text}</span></div>
                 </div>
-              )}
-              <div className="interim-body"><span className="bar pulse" style={{ background: color }} /><span>{t.lines[0].text}</span></div>
-            </div>
-          );
-        }
-        return (
-          <div className="turn" key={`${t.speaker}-${t.lines[0].key}`}>
-            <div className="turn-head" style={{ color }}>
-              {label(t.speaker)} · {ts(t.lines[0].start)}
-              {trim && (
-                <span className="turn-tools">
-                  <button className="ghost tiny" onClick={() => onTrimBefore?.(t.lines[0].start)}>⇤ cut before</button>
-                  <button className="ghost tiny" onClick={() => onRemove?.(t.lines.map((l) => l.key))}>✕</button>
-                  <button className="ghost tiny" onClick={() => onTrimAfter?.(t.lines[t.lines.length - 1].start)}>cut after ⇥</button>
-                </span>
-              )}
-            </div>
-            <div className="turn-text">{t.lines.map((l) => l.text).join(" ")}</div>
-          </div>
-        );
-      })}
+              );
+            }
+            return (
+              <Turn
+                key={`${t.speaker}-${t.lines[0].key}`}
+                speaker={t.speaker}
+                name={label(t.speaker)}
+                color={color}
+                start={t.lines[0].start}
+                text={t.lines.map((l) => l.text).join(" ")}
+                keys={t.lines.map((l) => l.key).join("\u0001")}
+                trim={trim}
+                onRemove={onRemove}
+                onTrimBefore={onTrimBefore}
+                onTrimAfter={onTrimAfter}
+              />
+            );
+          })}
+        </div>
+      ))}
     </div>
   );
 }

@@ -4,6 +4,21 @@ public changelog for miniti for Linux. the changelog for every platform lives at
 
 ## releases
 
+### unreleased - v0.4.0
+
+the parity release: everything the Mac app does that Linux can do, it now does.
+
+- new: Templates — a specialist insights view that fills a structured template live from the conversation: BANT, SPIN discovery, an interview scorecard, a customer check-in, a stand-up, or a 1:1. Pick one from the More menu; it fills as the meeting goes, refreshes with the update button, completes when the meeting ends, and works on saved meetings. Filled sections are included in Markdown exports and webhook payloads
+- new: The floating recording surface matches the Mac: it shows the timer with the call app, and when expanded the meeting title, call status, transcription status and audio status with open and end controls; call, quiet, calendar and ending decisions get their own wording and actions; question, monologue, filler and sales nudges come with dismiss, don't remind me, and enable sales analysis. It sizes to its content, opens itself for decisions, stays on its monitor, and never steals focus from your call
+- new: Coaching shows a trend chart for every metric and grounded examples: real passages from your recent meetings behind each pattern, one click from the meeting they came from
+- new: Home shows your plan and remaining minutes with a progress bar that turns amber under an hour and red under fifteen minutes; hitting the monthly cap shows a proper limit-reached view with the reset date, upgrade, and switch to BYOK
+- new: Settings → Privacy & Support has a debug log: view, copy, save, clear, or open the logs folder. miniti keeps seven days of logs with no transcript text or keys
+- new: Interface scale in Settings → General: compact, standard, or large
+- new: Renaming a speaker opens a proper sheet with a "this is me" switch
+- improvement: System audio recovers from Bluetooth and output-device changes: if the monitor goes quiet for four seconds miniti restarts capture against the current default output, and tells you on the floating surface when audio is recovering or degraded
+- improvement: Long transcripts render faster: finished turns no longer re-render on every live update, and off-screen stretches skip layout entirely
+- improvement: On Wayland compositors that support layer-shell (Hyprland, Sway, KDE) the floating surface pins itself to the top-right corner and stays out of the window stack when `gtk-layer-shell` is installed
+
 ### 2026-09-06 - v0.3.0
 
 first public release of miniti for Linux. Available as a release tarball, a `.deb`, and an Arch package built from the PKGBUILD in this repository (AUR publication follows when registration reopens).

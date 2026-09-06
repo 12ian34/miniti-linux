@@ -114,10 +114,11 @@ it.
 | Export: Markdown, copy transcript, webhooks, Granola CSV import | Yes | |
 | Google Calendar, Attio, Twenty | Yes | OAuth completes in the browser and returns through a `miniti-*` URL scheme |
 | Smart meetings (quiet prompts, calendar handoff, call detection) | Yes | Call detection is PipeWire-client based; browsers are a weaker signal than native apps |
-| Tray icon with timer, floating recording surface, desktop notifications | Yes | Floating surface placement may be ignored on some Wayland compositors |
-| Pro via Polar, license-key restore, BYOK | Yes | |
-| Coaching charts and grounded examples | Partial | Focus, stats and history are present; charts are not yet |
-| Templates view | Not yet | Arrives with the macOS 2.6 backend change |
+| Tray icon with timer, floating recording surface, desktop notifications | Yes | Surface never takes focus; on Wayland it pins itself via layer-shell where supported (Hyprland, Sway, KDE), GNOME decides placement |
+| Pro via Polar, license-key restore, BYOK, usage banner and limit view | Yes | |
+| Interface scale (compact / standard / large), debug log viewer | Yes | |
+| Coaching charts and grounded examples | Yes | Trend chart per metric; clickable passages from recent meetings |
+| Templates view (BANT, SPIN, interview, check-in, stand-up, 1:1) | Yes | Live, on demand, on saved meetings; in exports and webhooks |
 | Silent in-app updates | No | Package manager or releases page instead |
 | iOS companion, Apple subscriptions, Sparkle | No | Apple-only by nature |
 
