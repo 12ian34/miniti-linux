@@ -23,6 +23,9 @@ interface Props {
   live: boolean;
   finishing: boolean;
   onMeetingChanged: () => Promise<void>;
+  onCopy: () => void;
+  copied: boolean;
+  onCollapse: () => void;
 }
 
 interface Question {
@@ -47,7 +50,7 @@ const MEDDPICC: [string, string, string][] = [
  * The right-hand insights pane shared by live recording and saved detail:
  * lowercase summary / questions / coaching tabs, Sales and Playbook under More.
  */
-export function InsightsRail({ meetingId, meeting, live, finishing, onMeetingChanged }: Props) {
+export function InsightsRail({ meetingId, meeting, live, finishing, onMeetingChanged, onCopy, copied, onCollapse }: Props) {
   const [tab, setTab] = useState<Tab>("summary");
   const [more, setMore] = useState(false);
   const [metrics, setMetrics] = useState<TrainingMetrics | null>(null);
@@ -116,6 +119,12 @@ export function InsightsRail({ meetingId, meeting, live, finishing, onMeetingCha
 
   return (
     <aside className="insights">
+      <div className="section-header">
+        <span className="sh-icon">◇</span>
+        <span className="sh-title">insights</span>
+        <span className="th-spacer" />
+        <button className={`copy-btn ${copied ? "ok" : ""}`} onClick={onCopy}>{copied ? "✓ copied" : "⧉ copy"}</button>
+      </div>
       <div className="tab-strip">
         {(["summary", "questions", "coaching"] as Tab[]).map((t) => (
           <button key={t} className={`tab ${tab === t ? "active" : ""}`} onClick={() => setTab(t)}>
@@ -129,9 +138,9 @@ export function InsightsRail({ meetingId, meeting, live, finishing, onMeetingCha
           {more && (
             <div className="menu" onMouseLeave={() => setMore(false)}>
               <button onClick={() => (setTab("sales"), setMore(false))}>
-                sales (MEDDPICC){meeting.sales_enabled ? " ✓" : hasSales ? " •" : ""}
+                <span style={{ color: "var(--tab-sales)" }}>◆</span> sales{meeting.sales_enabled ? " ✓" : hasSales ? " •" : ""}
               </button>
-              <button onClick={() => (setTab("playbook"), setMore(false))}>playbook (docs)</button>
+              <button onClick={() => (setTab("playbook"), setMore(false))}><span style={{ color: "var(--tab-playbook)" }}>◆</span> playbook</button>
               {!live && (
                 <button onClick={() => (setMore(false), regenerateInsights(meetingId).catch((e) => setError(errorMessage(e))))}>
                   regenerate insights
@@ -314,6 +323,11 @@ export function InsightsRail({ meetingId, meeting, live, finishing, onMeetingCha
             )}
           </>
         )}
+      </div>
+      <div className="gdiv" />
+      <div className="insights-foot">
+        <button className="ghost boxed" title="Collapse insights (Ctrl+])" onClick={onCollapse}>▸</button>
+        <span className="kbd">Ctrl+]</span>
       </div>
     </aside>
   );

@@ -5,28 +5,21 @@ interface LevelMeterProps {
   tone?: "mic" | "system";
 }
 
-const BARS = 24;
+const BANDS = 5;
 
-/** Dual labelled waveform: mic green, system blue (macOS `SourceWaveform`). */
+/** Port of the macOS `SourceWaveform`: 5 bands, 3 px bars, 2 px gap, 18 px tall. */
 export function LevelMeter({ label, level, active, tone = "mic" }: LevelMeterProps) {
   // pow(level, 0.2) so quiet mic signals (~0.003 RMS) still show movement.
-  const shaped = Math.min(1, Math.pow(Math.max(0, level), 0.2));
-  const lit = Math.round(shaped * BARS);
+  const shaped = active ? Math.min(1, Math.pow(Math.max(0, level), 0.2)) : 0;
+  const weights = [0.55, 0.85, 1, 0.75, 0.5];
   return (
-    <div className={`meter ${tone}`}>
-      <div className="meter-head">
-        <span className={`dot ${active ? "dot-ok" : "dot-off"}`} />
-        <span className="k">{label}</span>
-      </div>
-      <div className="wave">
-        {Array.from({ length: BARS }, (_, i) => (
-          <span
-            key={i}
-            className={`wave-bar ${i < lit ? "on" : ""}`}
-            style={{ height: `${30 + (i < lit ? Math.min(70, shaped * 70 * (0.6 + ((i * 7) % 5) / 10)) : 0)}%` }}
-          />
+    <div className={`wave ${tone}`} title={label}>
+      <span className="wave-label">{label}</span>
+      <span className="wave-bars">
+        {Array.from({ length: BANDS }, (_, i) => (
+          <span key={i} className="wave-bar" style={{ height: `${Math.max(2, 18 * shaped * weights[i])}px`, opacity: active ? 1 : 0.35 }} />
         ))}
-      </div>
+      </span>
     </div>
   );
 }

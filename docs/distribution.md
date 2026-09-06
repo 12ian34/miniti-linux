@@ -74,7 +74,15 @@ Tauri documents AUR packaging: https://v2.tauri.app/distribute/aur/
 - **Disable Tauri updater pubkey / `createUpdaterArtifacts`** for source builds — missing private key breaks AUR builds, and pacman owns updates anyway
 - Source builds have no `MINITI_API_KEY`, so they are **BYOK-only**; managed mode needs the `-bin` package built in CI with the key  
 
-Placeholder directories: `packaging/aur/miniti-bin/`, `packaging/aur/miniti/` — fill PKGBUILDs at first release.
+PKGBUILDs live in `packaging/aur/miniti-bin/PKGBUILD` (prebuilt tarball) and `packaging/aur/miniti/PKGBUILD` (source, BYOK-only). Update `pkgver` and `sha256sums` per release; `.github/workflows/release.yml` builds the tarball + `.deb` on `ubuntu-22.04` from a `v*` tag (needs the `MINITI_API_KEY` secret for managed-mode builds).
+
+### Local release (no CI)
+
+```bash
+MINITI_API_KEY=… pnpm tauri build      # binary + .deb
+packaging/make-tarball.sh              # dist-release/miniti-<ver>-x86_64-unknown-linux-gnu.tar.gz + .sha256
+cd packaging/aur/miniti-bin && makepkg -si   # after pointing source= at the tarball (file:// works for local tests)
+```
 
 ## Updates
 

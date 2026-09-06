@@ -1,0 +1,49 @@
+# Release build on the Ubuntu 22.04 baseline (glibc 2.35) so the tarball runs on
+# Ubuntu 22.04+, Debian 12+ and rolling distros. Triggered by a v* tag.
+# Requires the MINITI_API_KEY repository secret for managed-mode builds.
+name: release
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  linux:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: System libraries
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev librsvg2-dev \
+            libjavascriptcoregtk-4.1-dev libayatana-appindicator3-dev libssl-dev \
+            libasound2-dev libsecret-1-dev build-essential curl wget file patchelf
+      - uses: pnpm/action-setup@v4
+        with: { version: 10 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with: { workspaces: src-tauri }
+      - run: pnpm install --frozen-lockfile
+      - name: Build (binary + .deb)
+        env:
+          MINITI_API_KEY: ${{ secrets.MINITI_API_KEY }}
+        run: pnpm tauri build
+      - name: Tarball
+        run: packaging/make-tarball.sh dist-release
+      - name: Collect artifacts
+        run: |
+          mkdir -p out
+          cp dist-release/*.tar.gz dist-release/*.sha256 out/
+          cp src-tauri/target/release/bundle/deb/*.deb out/ || true
+          ls -la out
+      - uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/v')
+        with:
+          files: out/*
+          generate_release_notes: true

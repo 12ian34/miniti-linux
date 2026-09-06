@@ -162,6 +162,7 @@ pub fn run() {
             trim_transcript,
             state::notify,
             state::show_main_window,
+            shell::resize_presence,
             state::smart_decision,
             state::google_status,
             state::google_connect,

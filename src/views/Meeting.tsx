@@ -1,46 +1,35 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import {
   deleteMeeting,
+  deleteSegment,
   errorMessage,
+  exportMarkdown,
   getLevels,
   getMeetingDetail,
   hasBridge,
+  insightsFinishing,
   markAsYou,
+  meetingMarkdown,
+  onInsightsUpdated,
+  onInvestigationSuggested,
   onTranscript,
   onTranscriptionStatus,
+  regenerateInsights,
   setMeetingTitle,
   setNotes,
   setPinned,
   setSpeakerName,
+  trimTranscript,
 } from "../api";
 import { LevelMeter } from "../components/LevelMeter";
-import {
-  dateOnly,
-  displayTitle,
-  duration,
-  elapsed,
-  fallbackSpeakerLabel,
-  speakerColor,
-  streamStatusText,
-  timeOnly,
-} from "../format";
+import { dateOnly, displayTitle, duration, elapsed, fallbackSpeakerLabel, speakerColor, streamStatusText, timeOnly } from "../format";
 import { useStore } from "../store";
 import { useTauriEvent } from "../useEvent";
 import type { Levels, MeetingDetail, StreamStatus, TranscriptEventPayload } from "../types";
 import { InsightsRail } from "./InsightsRail";
 import { CatchUpButton, InvestigateButton } from "./MeetingTools";
 import { CrmSheet } from "./CrmSheet";
-import {
-  deleteSegment,
-  exportMarkdown,
-  insightsFinishing,
-  meetingMarkdown,
-  onInsightsUpdated,
-  onInvestigationSuggested,
-  regenerateInsights,
-  trimTranscript,
-} from "../api";
-import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 
 interface Line {
   key: string;
@@ -63,22 +52,159 @@ function applyEvent(lines: Line[], ev: TranscriptEventPayload): Line[] {
   return [...without, { key: interimKey, speaker: ev.speaker_id, text: ev.text, source: ev.source, final: false, start: ev.start }];
 }
 
+function ts(s: number): string {
+  const m = Math.floor(s / 60);
+  const sec = Math.floor(s % 60);
+  return `${m}:${sec.toString().padStart(2, "0")}`;
+}
+
+/** Port of the macOS MeetingView: TerminalHeader · speaker legend · transcript + notes · insights. */
 export function MeetingView({ id }: { id: string }) {
   const store = useStore();
   const { recording, stop, stopping, navigate, refreshMeetings, insightsOpen, setInsightsOpen, prefs } = store;
   const live = recording.recording && recording.meeting_id === id;
+
+  const [detail, setDetail] = useState<MeetingDetail | null>(null);
+  const [lines, setLines] = useState<Line[]>([]);
+  const [status, setStatus] = useState<StreamStatus | null>(recording.stream);
+  const [levels, setLevels] = useState<Levels>({ mic: 0, system: 0, recording: false });
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [notes, setNotesState] = useState("");
+  const [follow, setFollow] = useState(true);
+  const [justStopped, setJustStopped] = useState(false);
   const [finishing, setFinishing] = useState(false);
   const [suggestedFocus, setSuggestedFocus] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
   const [trimMode, setTrimMode] = useState(false);
   const [crmOpen, setCrmOpen] = useState(false);
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [titleDraft, setTitleDraft] = useState("");
+  const [speakerMenu, setSpeakerMenu] = useState<number | null>(null);
+  const [copied, setCopied] = useState<string | null>(null);
+  const notesTimer = useRef<number | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
 
-  async function copyTranscript() {
+  // ResizableNotesLayout: notes default 100, min 50, max 500; transcript keeps ≥ 200.
+  const [notesHeight, setNotesHeight] = useState(() => {
+    try { return Number(localStorage.getItem("ui.notesHeight")) || 100; } catch { return 100; }
+  });
+  const splitRef = useRef<HTMLDivElement>(null);
+  const dragStart = useRef<{ y: number; h: number } | null>(null);
+  function onHandleDown(e: React.MouseEvent) {
+    dragStart.current = { y: e.clientY, h: notesHeight };
+    const move = (ev: MouseEvent) => {
+      if (!dragStart.current) return;
+      const avail = splitRef.current?.clientHeight ?? 600;
+      const max = Math.min(500, Math.max(50, avail - 200 - 8));
+      const h = Math.min(max, Math.max(50, dragStart.current.h + (dragStart.current.y - ev.clientY)));
+      setNotesHeight(h);
+    };
+    const up = () => {
+      dragStart.current = null;
+      window.removeEventListener("mousemove", move);
+      window.removeEventListener("mouseup", up);
+      try { localStorage.setItem("ui.notesHeight", String(notesHeight)); } catch { /* ignore */ }
+    };
+    window.addEventListener("mousemove", move);
+    window.addEventListener("mouseup", up);
+  }
+
+  const load = useCallback(async () => {
+    if (!hasBridge) return;
+    try {
+      const d = await getMeetingDetail(id);
+      if (!d) { setError("Meeting not found."); return; }
+      setDetail(d);
+      setNotesState(d.meeting.notes);
+      setLines((prev) => {
+        const interims = prev.filter((l) => !l.final);
+        const finals: Line[] = d.segments.map((s) => ({ key: `seg:${s.id}`, speaker: s.speaker, text: s.text, source: s.source, final: true, start: s.start_s }));
+        return [...finals, ...interims];
+      });
+    } catch (e) {
+      setError(errorMessage(e));
+    }
+  }, [id]);
+  useEffect(() => { void load(); }, [load]);
+
+  useTauriEvent(onTranscript, (ev) => { if (ev.meeting_id === id) setLines((prev) => applyEvent(prev, ev)); });
+  useTauriEvent(onTranscriptionStatus, (st) => { if (live) setStatus(st); });
+  useTauriEvent(onInsightsUpdated, (mid) => {
+    if (mid === id) {
+      void load();
+      insightsFinishing().then((f) => setFinishing(f.includes(id))).catch(() => {});
+    }
+  });
+  useTauriEvent(onInvestigationSuggested, (ev) => { if (ev.meeting_id === id && live) setSuggestedFocus(ev.focus); });
+  useEffect(() => {
+    if (!hasBridge) return;
+    insightsFinishing().then((f) => setFinishing(f.includes(id))).catch(() => {});
+  }, [id, live]);
+  useEffect(() => {
+    if (!live || !hasBridge) return;
+    const t = window.setInterval(() => getLevels().then(setLevels).catch(() => {}), 150);
+    return () => window.clearInterval(t);
+  }, [live]);
+  useEffect(() => { if (follow) bottomRef.current?.scrollIntoView({ block: "end" }); }, [lines, follow]);
+
+  function onScroll() {
+    const el = scrollRef.current;
+    if (!el) return;
+    setFollow(el.scrollHeight - el.scrollTop - el.clientHeight < 40);
+  }
+  function onNotesChange(v: string) {
+    setNotesState(v);
+    if (notesTimer.current) window.clearTimeout(notesTimer.current);
+    notesTimer.current = window.setTimeout(() => { setNotes(id, v).catch((e: unknown) => setError(errorMessage(e))); }, 400);
+  }
+  async function onStop() {
+    try {
+      await stop();
+      setJustStopped(true);
+      setLines((prev) => prev.filter((l) => l.final));
+      await load();
+    } catch (e) {
+      setError(errorMessage(e));
+    }
+  }
+  async function commitTitle() {
+    setEditingTitle(false);
+    if (!detail || titleDraft.trim() === displayTitle(detail.meeting)) return;
+    await setMeetingTitle(id, titleDraft);
+    await load();
+    await refreshMeetings();
+  }
+  async function togglePin() {
+    if (!detail) return;
+    await setPinned(id, !detail.meeting.pinned);
+    await load();
+    await refreshMeetings();
+  }
+  async function remove() {
+    if (!detail || live) return;
+    if (!window.confirm(`Delete “${displayTitle(detail.meeting)}”? This cannot be undone.`)) return;
+    await deleteMeeting(id);
+    await refreshMeetings();
+    navigate({ kind: "home" });
+  }
+  async function copySection(section: "transcript" | "notes" | "insights" | "all") {
     try {
       const md = await meetingMarkdown(id);
-      const transcript = md.slice(md.indexOf("## Transcript"));
-      await writeText(transcript);
-      setNotice("Transcript copied.");
+      const cut = (start: string, ends: string[]) => {
+        const i = md.indexOf(start);
+        if (i < 0) return "";
+        const rest = md.slice(i);
+        const j = ends.map((e) => rest.indexOf(e, start.length)).filter((x) => x > 0).sort((a, b) => a - b)[0];
+        return j ? rest.slice(0, j) : rest;
+      };
+      const text = section === "all" ? md
+        : section === "transcript" ? cut("## Transcript", [])
+        : section === "notes" ? (notes.trim() ? `## Notes\n\n${notes}` : "")
+        : cut("## Insights", ["\n---\n"]);
+      await writeText(text.trim());
+      setCopied(section);
+      window.setTimeout(() => setCopied(null), 1500);
     } catch (e) {
       setError(errorMessage(e));
     }
@@ -86,18 +212,15 @@ export function MeetingView({ id }: { id: string }) {
   async function exportMd() {
     try {
       const path = await exportMarkdown(id);
-      if (path) setNotice(`Exported to ${path}`);
+      if (path) setNotice(`exported to ${path}`);
     } catch (e) {
       setError(errorMessage(e));
     }
   }
   async function removeTurn(keys: string[]) {
     try {
-      for (const k of keys) {
-        if (k.startsWith("seg:")) await deleteSegment(id, k.slice(4));
-      }
+      for (const k of keys) if (k.startsWith("seg:")) await deleteSegment(id, k.slice(4));
       await load();
-      setNotice("Removed. Regenerate insights from More to refresh them.");
     } catch (e) {
       setError(errorMessage(e));
     }
@@ -109,333 +232,195 @@ export function MeetingView({ id }: { id: string }) {
       setTrimMode(false);
       if (n > 0) {
         await regenerateInsights(id).catch(() => {});
-        setNotice(`Trimmed ${n} segment${n === 1 ? "" : "s"}; regenerating insights.`);
+        setNotice(`trimmed ${n} segment${n === 1 ? "" : "s"} · regenerating insights`);
       }
     } catch (e) {
       setError(errorMessage(e));
     }
   }
 
-  const [detail, setDetail] = useState<MeetingDetail | null>(null);
-  const [lines, setLines] = useState<Line[]>([]);
-  const [status, setStatus] = useState<StreamStatus | null>(recording.stream);
-  const [levels, setLevels] = useState<Levels>({ mic: 0, system: 0, recording: false });
-  const [error, setError] = useState<string | null>(null);
-  const [notes, setNotesState] = useState("");
-  const [follow, setFollow] = useState(true);
-  const [justStopped, setJustStopped] = useState(false);
-  const notesTimer = useRef<number | null>(null);
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const bottomRef = useRef<HTMLDivElement>(null);
-
-  const load = useCallback(async () => {
-    if (!hasBridge) return;
-    try {
-      const d = await getMeetingDetail(id);
-      if (!d) {
-        setError("Meeting not found.");
-        return;
-      }
-      setDetail(d);
-      setNotesState(d.meeting.notes);
-      setLines((prev) => {
-        const interims = prev.filter((l) => !l.final);
-        const finals: Line[] = d.segments.map((s) => ({
-          key: `seg:${s.id}`,
-          speaker: s.speaker,
-          text: s.text,
-          source: s.source,
-          final: true,
-          start: s.start_s,
-        }));
-        return [...finals, ...interims];
-      });
-    } catch (e) {
-      setError(errorMessage(e));
-    }
-  }, [id]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
-
-  useTauriEvent(onTranscript, (ev) => {
-    if (ev.meeting_id !== id) return;
-    setLines((prev) => applyEvent(prev, ev));
-  });
-  useTauriEvent(onTranscriptionStatus, (st) => {
-    if (live) setStatus(st);
-  });
-  useTauriEvent(onInsightsUpdated, (mid) => {
-    if (mid === id) {
-      void load();
-      insightsFinishing().then((f) => setFinishing(f.includes(id))).catch(() => {});
-    }
-  });
-  useTauriEvent(onInvestigationSuggested, (ev) => {
-    if (ev.meeting_id === id && live) setSuggestedFocus(ev.focus);
-  });
-  useEffect(() => {
-    if (!hasBridge) return;
-    insightsFinishing().then((f) => setFinishing(f.includes(id))).catch(() => {});
-  }, [id, live]);
-
-  useEffect(() => {
-    if (!live || !hasBridge) return;
-    const t = window.setInterval(() => getLevels().then(setLevels).catch(() => {}), 150);
-    return () => window.clearInterval(t);
-  }, [live]);
-
-  useEffect(() => {
-    if (follow) bottomRef.current?.scrollIntoView({ block: "end" });
-  }, [lines, follow]);
-
-  function onScroll() {
-    const el = scrollRef.current;
-    if (!el) return;
-    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
-    setFollow(atBottom);
-  }
-
-  function onNotesChange(v: string) {
-    setNotesState(v);
-    if (notesTimer.current) window.clearTimeout(notesTimer.current);
-    notesTimer.current = window.setTimeout(() => {
-      setNotes(id, v).catch((e: unknown) => setError(errorMessage(e)));
-    }, 400);
-  }
-
-  async function onStop() {
-    try {
-      await stop();
-      setJustStopped(true);
-      setLines((prev) => prev.filter((l) => l.final));
-      await load();
-    } catch (e) {
-      setError(errorMessage(e));
-    }
-  }
-
-  async function rename() {
-    if (!detail) return;
-    const next = window.prompt("Meeting title", displayTitle(detail.meeting));
-    if (next === null) return;
-    await setMeetingTitle(id, next);
-    await load();
-    await refreshMeetings();
-  }
-
-  async function togglePin() {
-    if (!detail) return;
-    await setPinned(id, !detail.meeting.pinned);
-    await load();
-    await refreshMeetings();
-  }
-
-  async function remove() {
-    if (!detail || live) return;
-    if (!window.confirm(`Delete “${displayTitle(detail.meeting)}”? This cannot be undone.`)) return;
-    await deleteMeeting(id);
-    await refreshMeetings();
-    navigate({ kind: "home" });
-  }
-
-  const label = useCallback(
-    (sid: number) => detail?.speaker_labels[String(sid)] ?? fallbackSpeakerLabel(sid),
-    [detail],
-  );
+  const label = useCallback((sid: number) => detail?.speaker_labels[String(sid)] ?? fallbackSpeakerLabel(sid), [detail]);
   const selfIds = useMemo<number[]>(() => {
     try {
       const ids = JSON.parse(detail?.meeting.self_speaker_ids || "[]");
       return Array.isArray(ids) && ids.length ? ids : [1000];
-    } catch {
-      return [1000];
-    }
+    } catch { return [1000]; }
   }, [detail]);
   const isYou = (sid: number) => selfIds.includes(sid);
-
   async function renameSpeaker(sid: number) {
-    const next = window.prompt("Speaker name (empty to clear)", label(sid) === "You" ? "" : label(sid));
+    setSpeakerMenu(null);
+    const next = window.prompt("speaker name (empty to clear)", isYou(sid) ? "" : label(sid));
     if (next === null) return;
     await setSpeakerName(id, sid, next);
     await load();
   }
   async function toggleYou(sid: number) {
+    setSpeakerMenu(null);
     await markAsYou(id, sid, !isYou(sid));
     await load();
   }
 
-  const speakerIds = useMemo(
-    () => Array.from(new Set(lines.filter((l) => l.final).map((l) => l.speaker))).sort((a, b) => a - b),
-    [lines],
-  );
-
+  const speakerIds = useMemo(() => Array.from(new Set(lines.filter((l) => l.final).map((l) => l.speaker))).sort((a, b) => a - b), [lines]);
+  const selfCount = speakerIds.filter(isYou).length;
+  const remoteCount = speakerIds.length - selfCount;
+  const attendees: { self?: boolean; is_self?: boolean }[] = useMemo(() => {
+    try { return JSON.parse(detail?.meeting.attendees || "[]"); } catch { return []; }
+  }, [detail]);
   const m = detail?.meeting;
 
   return (
     <div className={`meeting ${insightsOpen ? "" : "insights-collapsed"}`}>
       <div className="meeting-main">
-        <header className={`terminal-header ${live ? "live" : ""}`}>
-          <div className="th-left">
-            {live ? (
-              <>
+        <header className="terminal-header">
+          <div className="th-title-row">
+            {editingTitle ? (
+              <input
+                className="title-input"
+                autoFocus
+                value={titleDraft}
+                onChange={(e) => setTitleDraft(e.currentTarget.value)}
+                onBlur={commitTitle}
+                onKeyDown={(e) => { if (e.key === "Enter") commitTitle(); if (e.key === "Escape") setEditingTitle(false); }}
+              />
+            ) : (
+              <button className="title-btn" title="rename" onClick={() => { setTitleDraft(m ? displayTitle(m) : ""); setEditingTitle(true); }}>
+                {m ? displayTitle(m) : "…"}
+              </button>
+            )}
+            {m && !live && (
+              <span className="muted small">
+                {dateOnly(m.started_at)} · {timeOnly(m.started_at)}{duration(m) ? ` · ${duration(m)}` : ""}
+                {m.import_source ? ` · imported from ${m.import_source.split(":")[0]}` : ""}
+              </span>
+            )}
+            {live && (
+              <span className="th-live">
                 <span className="dot dot-rec pulse" />
                 <span className="timer">{elapsed(recording.elapsed_seconds)}</span>
-                <span className="muted small">{streamStatusText(status, true)}</span>
-              </>
-            ) : (
-              <>
-                <button className="ghost" onClick={() => navigate({ kind: "home" })} title="Back to meetings">
-                  ‹ meetings
-                </button>
-                {m && (
-                  <span className="muted small">
-                    {dateOnly(m.started_at)} · {timeOnly(m.started_at)}
-                    {duration(m) ? ` · ${duration(m)}` : ""}
-                    {m.import_source ? ` · imported from ${m.import_source}` : ""}
-                  </span>
-                )}
-              </>
+                <LevelMeter label="mic" level={levels.mic} active tone="mic" />
+                {prefs?.capture_system_audio && <LevelMeter label="system" level={levels.system} active tone="system" />}
+                <span className={`muted tiny ${status?.state === "failed" || status?.state === "reconnecting" ? "warn-text" : ""}`}>{streamStatusText(status, true)}</span>
+              </span>
             )}
           </div>
-          <div className="th-right">
-            {detail && (lines.some((l) => l.final)) && (
-              <>
-                <CatchUpButton meetingId={id} />
-                <InvestigateButton
-                  meetingId={id}
-                  suggestedFocus={suggestedFocus}
-                  onDismissSuggestion={() => setSuggestedFocus(null)}
-                  hasCodebaseRoot={!!prefs?.codebase_root}
-                />
-              </>
-            )}
+
+          <div className="th-actions">
             {live ? (
-              <button className="btn recording" onClick={onStop} disabled={stopping}>
-                {stopping ? "finishing…" : "■ Stop"}
+              <button className="control recording emph" onClick={onStop} disabled={stopping}>
+                <span className="glyph">■</span> {stopping ? "finishing…" : "stop"} <span className="kbd light">Ctrl+R</span>
               </button>
             ) : (
+              <button className="control primary emph" onClick={() => navigate({ kind: "home" })}>
+                <span className="glyph">▤</span> back to meetings
+              </button>
+            )}
+            {detail && lines.some((l) => l.final) && (
               <>
-                {prefs && (
-                  <button className="ghost" onClick={() => setCrmOpen(true)} title="Send to Attio or Twenty">crm</button>
-                )}
-                <button className="ghost" onClick={copyTranscript} title="Copy transcript">copy</button>
-                <button className="ghost" onClick={exportMd} title="Export as Markdown">export</button>
-                <button className={`ghost ${trimMode ? "on" : ""}`} onClick={() => setTrimMode(!trimMode)} title="Trim transcript">
-                  trim
-                </button>
-                <button className="ghost" onClick={togglePin} title="Pin">
-                  {m?.pinned ? "★" : "☆"}
-                </button>
-                <button className="ghost" onClick={remove} title="Delete">
-                  delete
-                </button>
+                <InvestigateButton meetingId={id} suggestedFocus={suggestedFocus} onDismissSuggestion={() => setSuggestedFocus(null)} hasCodebaseRoot={!!prefs?.codebase_root} />
+                <CatchUpButton meetingId={id} />
               </>
             )}
-            <button className="ghost" title="Toggle insights (Ctrl+])" onClick={() => setInsightsOpen(!insightsOpen)}>
-              {insightsOpen ? "›" : "‹"}
-            </button>
+            {attendees.length > 0 && (
+              <span className="control quiet" title="attendees"><span className="glyph">👥</span> {attendees.filter((a) => !(a.self || a.is_self)).length}</span>
+            )}
+            {!live && m && (
+              <>
+                <button className="control quiet" onClick={() => setCrmOpen(true)} title="send to Attio / Twenty"><span className="glyph">↗</span> crm</button>
+                <button className="control quiet" onClick={exportMd} title="export Markdown"><span className="glyph">⇩</span> export</button>
+                <button className={`control quiet ${trimMode ? "on" : ""}`} onClick={() => setTrimMode(!trimMode)} title="trim transcript"><span className="glyph">✂</span> trim</button>
+                <button className="control quiet" onClick={togglePin} title={m.pinned ? "unpin" : "pin"}><span className="glyph">{m.pinned ? "★" : "☆"}</span> {m.pinned ? "pinned" : "pin"}</button>
+                <button className="control destructive" onClick={remove} title="delete meeting"><span className="glyph">🗑</span> delete</button>
+              </>
+            )}
+            <span className="th-spacer" />
+            <button className="ghost boxed" title="Toggle insights (Ctrl+])" onClick={() => setInsightsOpen(!insightsOpen)}>{insightsOpen ? "▸" : "◂"}</button>
           </div>
         </header>
+        <div className="gdiv" />
 
-        <div className="meeting-title-row">
-          <h1 className="meeting-title" onClick={rename} title="Rename">
-            {m ? displayTitle(m) : "…"}
-          </h1>
-        </div>
-
-        {error && <div className="banner error">{error}</div>}
-        {notice && (
-          <div className="banner ok">
-            {notice}
-            <button className="ghost" onClick={() => setNotice(null)}>×</button>
+        {error && <div className="banner error inset">{error}<button className="ghost" onClick={() => setError(null)}>×</button></div>}
+        {notice && <div className="banner ok inset">{notice}<button className="ghost" onClick={() => setNotice(null)}>×</button></div>}
+        {justStopped && !live && (
+          <div className="banner ok inset">
+            saved{finishing ? " · final insights are being generated in the background" : ""}
+            <button className="ghost" onClick={() => setJustStopped(false)}>×</button>
           </div>
         )}
         {trimMode && !live && (
-          <div className="banner warn">
-            Trim mode: hover a turn to remove it, or cut everything before / after it. Insights regenerate afterwards.
+          <div className="banner warn inset">
+            trim: hover a turn to remove it or cut everything before / after it. insights regenerate afterwards.
             <button className="ghost" onClick={() => setTrimMode(false)}>done</button>
           </div>
         )}
-        {justStopped && !live && (
-          <div className="banner ok">
-            Saved.{finishing ? " Final insights are being generated in the background." : ""}
-            <button className="ghost" onClick={() => navigate({ kind: "home" })}>back to meetings</button>
-          </div>
-        )}
 
-        {live && (
-          <div className="meters">
-            <LevelMeter label="mic" level={levels.mic} active tone="mic" />
-            <LevelMeter label="system" level={levels.system} active tone="system" />
-          </div>
-        )}
-
-        {speakerIds.length > 0 && (
-          <div className="speakers">
-            {speakerIds.map((sid) => (
-              <div className="speaker-chip" key={sid} style={{ borderColor: speakerColor(sid, isYou(sid)) }}>
-                <span style={{ color: speakerColor(sid, isYou(sid)) }}>{label(sid)}</span>
-                <button className="ghost tiny" onClick={() => renameSpeaker(sid)}>rename</button>
-                <button className="ghost tiny" onClick={() => toggleYou(sid)}>
-                  {isYou(sid) ? "not me" : "mark as you"}
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-
-        <div className="split">
-          <section className="transcript" ref={scrollRef} onScroll={onScroll}>
-            {lines.length === 0 ? (
-              <p className="muted pad">{live ? "Listening…" : "No transcript."}</p>
-            ) : (
-              <TranscriptBody
-                lines={lines}
-                label={label}
-                isYou={isYou}
-                trim={trimMode && !live}
-                onRemove={removeTurn}
-                onTrimBefore={(t) => trim(t, null)}
-                onTrimAfter={(t) => trim(null, t)}
-              />
-            )}
-            <div ref={bottomRef} />
-            {!follow && live && (
-              <button className="btn secondary resume" onClick={() => setFollow(true)}>
-                ↓ resume
+        {/* Speaker legend (macOS SpeakerLegend): tiny dots + 10px labels, click to rename / mark as you. */}
+        <div className="legend" onMouseLeave={() => setSpeakerMenu(null)}>
+          {live && <span className="legend-live"><span className="dot dot-rec" /> live</span>}
+          <span className="legend-k">speakers:</span>
+          {speakerIds.length === 0 && <span className="legend-k">detecting…</span>}
+          {speakerIds.map((sid) => (
+            <span className="legend-chip-wrap" key={sid}>
+              <button className="legend-chip" style={{ color: speakerColor(sid, isYou(sid)) }} onClick={() => setSpeakerMenu(speakerMenu === sid ? null : sid)} title="rename speaker">
+                <span className="dot" style={{ background: speakerColor(sid, isYou(sid)) }} />{label(sid)}
               </button>
-            )}
+              {speakerMenu === sid && (
+                <span className="menu legend-menu">
+                  <button onClick={() => renameSpeaker(sid)}>rename…</button>
+                  <button onClick={() => toggleYou(sid)}>{isYou(sid) ? "not me" : "mark as you"}</button>
+                </span>
+              )}
+            </span>
+          ))}
+          {speakerIds.length === 1 && <span className="legend-k">{isYou(speakerIds[0]) ? "(you only)" : "(single speaker)"}</span>}
+          {selfCount >= 1 && remoteCount === 1 && <span className="legend-k">{selfCount > 1 ? `(you ×${selfCount} + 1 remote)` : "(you + 1 remote)"}</span>}
+        </div>
+
+        <div className="split" ref={splitRef}>
+          <section className="transcript-pane">
+            <SectionHeader icon="¶" title="transcript" copied={copied === "transcript"} onCopy={() => copySection("transcript")} />
+            <div className="transcript" ref={scrollRef} onScroll={onScroll}>
+              {lines.length === 0 ? (
+                <p className="muted pad">{live ? "listening…" : "no transcript."}</p>
+              ) : (
+                <TranscriptBody lines={lines} label={label} isYou={isYou} trim={trimMode && !live} onRemove={removeTurn} onTrimBefore={(t) => trim(t, null)} onTrimAfter={(t) => trim(null, t)} />
+              )}
+              <div ref={bottomRef} />
+            </div>
+            {!follow && live && <button className="control resume" onClick={() => { setFollow(true); bottomRef.current?.scrollIntoView({ block: "end" }); }}>↓ resume</button>}
           </section>
-          <section className="notes">
-            <div className="panel-title">notes</div>
-            <textarea
-              className="notes-area"
-              placeholder="Private notes… (saved automatically)"
-              value={notes}
-              onChange={(e) => onNotesChange(e.currentTarget.value)}
-            />
+          <div className="drag-handle" onMouseDown={onHandleDown} title="drag to resize notes"><span /></div>
+          <section className="notes-pane" style={{ height: notesHeight }}>
+            <SectionHeader icon="✎" title="notes" copied={copied === "notes"} onCopy={() => copySection("notes")} />
+            <textarea className="notes-area" placeholder="relax and take notes..." value={notes} onChange={(e) => onNotesChange(e.currentTarget.value)} />
           </section>
         </div>
       </div>
 
       {crmOpen && <CrmSheet meetingId={id} onClose={() => setCrmOpen(false)} />}
-      {insightsOpen && detail && (
-        <InsightsRail meetingId={id} meeting={detail.meeting} live={live} finishing={finishing} onMeetingChanged={load} />
-      )}
+      {insightsOpen && detail ? (
+        <InsightsRail meetingId={id} meeting={detail.meeting} live={live} finishing={finishing} onMeetingChanged={load} onCopy={() => copySection("insights")} copied={copied === "insights"} onCollapse={() => setInsightsOpen(false)} />
+      ) : !insightsOpen ? (
+        <aside className="insights-rail-collapsed">
+          <button className="ghost boxed" title="Show insights (Ctrl+])" onClick={() => setInsightsOpen(true)}>◂</button>
+          <span className="vertical-label">insights</span>
+        </aside>
+      ) : null}
     </div>
   );
 }
 
-function TranscriptBody({
-  lines,
-  label,
-  isYou,
-  trim,
-  onRemove,
-  onTrimBefore,
-  onTrimAfter,
-}: {
+export function SectionHeader({ icon, title, onCopy, copied }: { icon: string; title: string; onCopy?: () => void; copied?: boolean }) {
+  return (
+    <div className="section-header">
+      <span className="sh-icon">{icon}</span>
+      <span className="sh-title">{title}</span>
+      <span className="th-spacer" />
+      {onCopy && <button className={`copy-btn ${copied ? "ok" : ""}`} onClick={onCopy}>{copied ? "✓ copied" : "⧉ copy"}</button>}
+    </div>
+  );
+}
+
+function TranscriptBody({ lines, label, isYou, trim, onRemove, onTrimBefore, onTrimAfter }: {
   lines: Line[];
   label: (id: number) => string;
   isYou: (id: number) => boolean;
@@ -444,36 +429,51 @@ function TranscriptBody({
   onTrimBefore?: (startS: number) => void;
   onTrimAfter?: (startS: number) => void;
 }) {
-  // Group consecutive lines by speaker, like the macOS speaker-turn document.
-  const turns: { speaker: number; lines: Line[] }[] = [];
+  // Group consecutive finals by speaker into turns; interims render as the
+  // macOS TerminalInterimRow ("listening…" with a pulsing bar).
+  const turns: { speaker: number; lines: Line[]; interim: boolean }[] = [];
   for (const l of lines) {
     const last = turns[turns.length - 1];
-    if (last && last.speaker === l.speaker) last.lines.push(l);
-    else turns.push({ speaker: l.speaker, lines: [l] });
+    if (!l.final) { turns.push({ speaker: l.speaker, lines: [l], interim: true }); continue; }
+    if (last && !last.interim && last.speaker === l.speaker) last.lines.push(l);
+    else turns.push({ speaker: l.speaker, lines: [l], interim: false });
   }
   return (
     <div className="turns">
-      {turns.map((t, i) => (
-        <div className={`turn ${isYou(t.speaker) ? "you" : ""}`} key={`${t.speaker}-${i}`}>
-          <div className="turn-speaker" style={{ color: speakerColor(t.speaker, isYou(t.speaker)) }}>
-            {label(t.speaker)}
-            {trim && (
-              <span className="turn-tools">
-                <button className="ghost tiny" onClick={() => onTrimBefore?.(t.lines[0].start)} title="Remove everything before this turn">⇤ cut before</button>
-                <button className="ghost tiny" onClick={() => onRemove?.(t.lines.map((l) => l.key))} title="Remove this turn">✕</button>
-                <button className="ghost tiny" onClick={() => onTrimAfter?.(t.lines[t.lines.length - 1].start)} title="Remove everything after this turn">cut after ⇥</button>
-              </span>
-            )}
+      {turns.map((t, i) => {
+        const color = speakerColor(t.speaker, isYou(t.speaker));
+        if (t.interim) {
+          const prevSame = i > 0 && turns[i - 1].speaker === t.speaker;
+          return (
+            <div className="interim-row" key={t.lines[0].key}>
+              {!prevSame && (
+                <div className="interim-head">
+                  <span className="bar" style={{ background: color }} />
+                  <span style={{ color }}>{label(t.speaker)}</span>
+                  <span className="sep">•</span>
+                  <span className="listening">listening...</span>
+                </div>
+              )}
+              <div className="interim-body"><span className="bar pulse" style={{ background: color }} /><span>{t.lines[0].text}</span></div>
+            </div>
+          );
+        }
+        return (
+          <div className="turn" key={`${t.speaker}-${t.lines[0].key}`}>
+            <div className="turn-head" style={{ color }}>
+              {label(t.speaker)} · {ts(t.lines[0].start)}
+              {trim && (
+                <span className="turn-tools">
+                  <button className="ghost tiny" onClick={() => onTrimBefore?.(t.lines[0].start)}>⇤ cut before</button>
+                  <button className="ghost tiny" onClick={() => onRemove?.(t.lines.map((l) => l.key))}>✕</button>
+                  <button className="ghost tiny" onClick={() => onTrimAfter?.(t.lines[t.lines.length - 1].start)}>cut after ⇥</button>
+                </span>
+              )}
+            </div>
+            <div className="turn-text">{t.lines.map((l) => l.text).join(" ")}</div>
           </div>
-          <div className="turn-text">
-            {t.lines.map((l) => (
-              <span key={l.key} className={l.final ? "" : "interim"}>
-                {l.text}{" "}
-              </span>
-            ))}
-          </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

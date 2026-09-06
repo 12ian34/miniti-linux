@@ -39,6 +39,9 @@ export function Shell({ gate }: { gate: LaunchGate | null }) {
       } else if (e.key === ",") {
         e.preventDefault();
         navigate({ kind: "settings" });
+      } else if (e.key.toLowerCase() === "n" && !editing && !e.shiftKey) {
+        e.preventDefault();
+        navigate({ kind: "home" });
       } else if (e.key.toLowerCase() === "r" && !editing && !e.shiftKey) {
         e.preventDefault();
         if (store.recording.recording) void store.stop();

@@ -1,0 +1,27 @@
+# Maintainer: Ian Ahuja <hello@miniti.app>
+# Prebuilt Miniti Linux from the GitHub Release tarball (built on Ubuntu 22.04 / glibc 2.35).
+pkgname=miniti-bin
+pkgver=0.2.0
+pkgrel=1
+pkgdesc="Miniti — AI meeting assistant with live transcription, insights and coaching (prebuilt)"
+arch=('x86_64')
+url="https://miniti.app"
+license=('custom')
+depends=('webkit2gtk-4.1' 'gtk3' 'libsoup3' 'librsvg' 'libappindicator-gtk3' 'openssl'
+         'pipewire' 'pipewire-pulse' 'libpulse' 'libsecret' 'libnotify' 'hicolor-icon-theme')
+optdepends=('gnome-keyring: store the device id in the secret service'
+            'xdg-utils: open Polar / OAuth pages in the browser')
+provides=('miniti')
+conflicts=('miniti' 'miniti-git')
+source=("https://github.com/ian/miniti-linux/releases/download/v${pkgver}/miniti-${pkgver}-x86_64-unknown-linux-gnu.tar.gz")
+sha256sums=('SKIP') # replace with the .sha256 published next to the tarball
+
+package() {
+  cd "miniti-${pkgver}-x86_64-unknown-linux-gnu"
+  install -Dm755 miniti "${pkgdir}/usr/bin/miniti"
+  install -Dm644 miniti.desktop "${pkgdir}/usr/share/applications/miniti.desktop"
+  for size in 32x32 128x128 256x256@2; do
+    install -Dm644 "icons/hicolor/${size}/apps/miniti.png" "${pkgdir}/usr/share/icons/hicolor/${size}/apps/miniti.png"
+  done
+  install -Dm644 README.md "${pkgdir}/usr/share/doc/${pkgname}/README.md"
+}

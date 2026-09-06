@@ -165,35 +165,43 @@ pub fn set_tray_decision(app: &AppHandle, decision: Option<(&str, &str, &str)>) 
 }
 
 /// Create (once) and show the floating recording surface: always on top,
-/// undecorated, not in the taskbar, never steals focus. Wayland compositors
-/// may ignore positioning; that is the documented Linux limit.
+/// undecorated, not in the taskbar, never steals focus. Default position is
+/// the top-right corner with a 16 px inset (macOS `positionInDefaultCorner`);
+/// the webview restores a user-moved position from its own storage. Wayland
+/// compositors may ignore positioning; that is the documented Linux limit.
+pub const PRESENCE_W: f64 = 236.0;
+pub const PRESENCE_H: f64 = 52.0;
+
 pub fn show_presence(app: &AppHandle) {
     if let Some(w) = app.get_webview_window(PRESENCE_LABEL) {
         let _ = w.show();
         return;
     }
     let url = WebviewUrl::App("index.html#presence".into());
-    let builder = WebviewWindowBuilder::new(app, PRESENCE_LABEL, url)
+    let mut builder = WebviewWindowBuilder::new(app, PRESENCE_LABEL, url)
         .title("Miniti")
-        .inner_size(320.0, 84.0)
-        .min_inner_size(240.0, 64.0)
+        .inner_size(PRESENCE_W, PRESENCE_H)
+        .min_inner_size(200.0, 44.0)
         .decorations(false)
+        .background_color(tauri::window::Color(0x09, 0x09, 0x0b, 0xff))
         .always_on_top(true)
         .skip_taskbar(true)
-        .resizable(true)
+        .resizable(false)
         .focused(false)
-        .visible(true)
-        .background_color(tauri::window::Color(0x0a, 0x0a, 0x0b, 0xff));
+        .visible(false);
+    // Top-right of the primary monitor, computed before the window exists so
+    // it never flashes in the centre.
+    if let Ok(Some(mon)) = app.primary_monitor() {
+        let scale = mon.scale_factor();
+        let size = mon.size();
+        let pos = mon.position();
+        let x = pos.x as f64 / scale + size.width as f64 / scale - PRESENCE_W - 16.0;
+        let y = pos.y as f64 / scale + 16.0;
+        builder = builder.position(x.max(0.0), y.max(0.0));
+    }
     match builder.build() {
         Ok(w) => {
-            // Bottom-right of the primary monitor when we can measure it.
-            if let Ok(Some(mon)) = w.primary_monitor() {
-                let size = mon.size();
-                let scale = mon.scale_factor();
-                let x = (size.width as f64 / scale - 320.0 - 24.0).max(0.0);
-                let y = (size.height as f64 / scale - 84.0 - 64.0).max(0.0);
-                let _ = w.set_position(tauri::LogicalPosition::new(x, y));
-            }
+            let _ = w.show();
         }
         Err(e) => tracing::warn!("floating surface unavailable: {e}"),
     }
@@ -216,7 +224,15 @@ pub fn raise_presence(app: &AppHandle) {
 
 pub fn shrink_presence(app: &AppHandle) {
     if let Some(w) = app.get_webview_window(PRESENCE_LABEL) {
-        let _ = w.set_size(tauri::LogicalSize::new(320.0, 84.0));
+        let _ = w.set_size(tauri::LogicalSize::new(PRESENCE_W, PRESENCE_H));
+    }
+}
+
+/// Webview-driven resize (expand for decisions/nudges, collapse back).
+#[tauri::command]
+pub fn resize_presence(app: AppHandle, width: f64, height: f64) {
+    if let Some(w) = app.get_webview_window(PRESENCE_LABEL) {
+        let _ = w.set_size(tauri::LogicalSize::new(width.clamp(200.0, 360.0), height.clamp(44.0, 260.0)));
     }
 }
 

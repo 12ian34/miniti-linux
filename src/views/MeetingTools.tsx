@@ -25,8 +25,8 @@ export function CatchUpButton({ meetingId }: { meetingId: string }) {
 
   return (
     <>
-      <button className="btn secondary" onClick={run} disabled={busy} title="Summarize the last few minutes">
-        ↻ catch me up
+      <button className="control" onClick={run} disabled={busy} title="Summarize the last few minutes">
+        <span className="glyph">↻</span> catch me up
       </button>
       {open && (
         <Sheet title="catch me up" onClose={() => setOpen(false)}>
@@ -64,8 +64,8 @@ export function CatchUpButton({ meetingId }: { meetingId: string }) {
             </>
           )}
           <div className="save-row">
-            <button className="btn secondary" onClick={run} disabled={busy}>refresh</button>
-            <button className="btn primary" onClick={() => setOpen(false)}>done</button>
+            <button className="control" onClick={run} disabled={busy}>refresh</button>
+            <button className="control primary" onClick={() => setOpen(false)}>done</button>
           </div>
         </Sheet>
       )}
@@ -115,8 +115,8 @@ export function InvestigateButton({
 
   return (
     <>
-      <button className="btn secondary" onClick={() => openWith(suggestedFocus ?? "")} title="Research a question from the meeting">
-        ⌕ investigate
+      <button className="control" onClick={() => openWith(suggestedFocus ?? "")} title="Research a question from the meeting">
+        <span className="glyph">⌕</span> investigate
       </button>
       {suggestedFocus && !open && (
         <div className="banner warn suggestion">
@@ -145,10 +145,10 @@ export function InvestigateButton({
             </button>
           </div>
           <div className="save-row">
-            <button className="btn primary" onClick={run} disabled={busy || !focus.trim()}>
+            <button className="control primary" onClick={run} disabled={busy || !focus.trim()}>
               {busy ? "investigating…" : "run"}
             </button>
-            <button className="btn secondary" onClick={() => setOpen(false)}>close</button>
+            <button className="control" onClick={() => setOpen(false)}>close</button>
           </div>
           {error && <div className="banner error">{error}</div>}
           {result && (
