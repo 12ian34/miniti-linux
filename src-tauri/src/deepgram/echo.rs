@@ -311,7 +311,8 @@ mod tests {
         assert!(!is_likely_mic_echo(&seg("nobody alive", 10.5, 11.0), &sys, false));
         assert!(!is_likely_mic_echo(&seg("yeah right", 10.5, 11.0), &sys, true));
         // Fuzzy variant needs dominance.
-        let fuzzy = seg("nobody alive today will maybe remember something else entirely", 10.0, 13.0);
+        // 5 of 7 words match (71%): under the 84% verbatim bar, over the 66% dominance bar.
+        let fuzzy = seg("nobody alive today will remember something else", 10.0, 13.0);
         assert!(!is_likely_mic_echo(&fuzzy, &sys, false));
         assert!(is_likely_mic_echo(&fuzzy, &sys, true));
     }
