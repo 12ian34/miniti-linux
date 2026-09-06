@@ -78,8 +78,8 @@ export function Onboarding({ onDone }: GateProps) {
       <h1 className="view-title">Welcome to Miniti</h1>
       <ol className="steps">
         <li>
-          <strong>Pick a mode</strong> in Settings: Managed (Miniti backend, free minutes each month) or
-          BYOK (your own Deepgram key).
+          <strong>Pick a mode</strong>: Managed (Miniti backend, free minutes each month; your account
+          is an anonymous recovery key you create next) or BYOK (your own Deepgram key).
         </li>
         <li>
           <strong>Check audio</strong> on Home: your microphone must be detected. System audio

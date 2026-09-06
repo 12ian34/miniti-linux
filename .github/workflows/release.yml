@@ -1,6 +1,6 @@
 # Release build on the Ubuntu 22.04 baseline (glibc 2.35) so the tarball runs on
 # Ubuntu 22.04+, Debian 12+ and rolling distros. Triggered by a v* tag.
-# Requires the MINITI_API_KEY repository secret for managed-mode builds.
+# No repository secrets: managed mode enrolls at runtime (device-bound auth).
 name: release
 on:
   push:
@@ -31,8 +31,6 @@ jobs:
         with: { workspaces: src-tauri }
       - run: pnpm install --frozen-lockfile
       - name: Build (binary + .deb)
-        env:
-          MINITI_API_KEY: ${{ secrets.MINITI_API_KEY }}
         run: pnpm tauri build
       - name: Tarball
         run: packaging/make-tarball.sh dist-release

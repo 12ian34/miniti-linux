@@ -340,6 +340,8 @@ Phase 1 core is wired (not just scaffolded): SQLite persistence, prefs, keyring 
 
 ### Status 2026-09-06
 
+Backend authentication is device-bound as of 0.3.0 (roadmap P0.1 Phase 4, implemented first on Linux): no `X-API-Key` in the binary; `src-tauri/src/auth` + `/api/auth/*`. Flip `CLIENT_AUTH_MODE_LINUX=require` and `LINUX_MIN_VERSION=0.3.0` on the backend once every Linux install runs 0.3.0+.
+
 Phases 1–5 are implemented in code (see AGENTS.md § Status for the wired table). Mono transcription is verified on Arch; the dual-source spike (step 4 above) and the Smart-meetings / integration paths need their real-hardware pass. Remaining engineering after that pass: Bluetooth/route-change recovery for the system tap, release CI on the Ubuntu 22.04 baseline, and the AUR PKGBUILDs.
 
 ### Phase 1 — Core meeting (8–12 weeks)

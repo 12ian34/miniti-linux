@@ -50,7 +50,7 @@ Prebuilt binaries must be produced on an **old-enough** image that still has Web
 
 CI sketch:
 
-1. Job on `ubuntu-22.04` → `MINITI_API_KEY=$SECRET pnpm tauri build` (the backend app key is injected at build time by `src-tauri/build.rs`; never commit it) → `packaging/make-tarball.sh` (records build host + glibc, warns above the 2.35 baseline) → upload GitHub Release  
+1. Job on `ubuntu-22.04` → `pnpm tauri build` (no secrets: managed mode enrolls at runtime with a device-bound key) → `packaging/make-tarball.sh` (records build host + glibc, warns above the 2.35 baseline) → upload GitHub Release  
 2. Optional: emit `.deb` in the same job  
 3. Do **not** require Flatpak
 
@@ -72,14 +72,14 @@ Tauri documents AUR packaging: https://v2.tauri.app/distribute/aur/
 - `makedepends=(rust cargo nodejs pnpm …)` + WebKitGTK **dev** packages  
 - Build with Tauri; install from `target/release` / bundle data  
 - **Disable Tauri updater pubkey / `createUpdaterArtifacts`** for source builds — missing private key breaks AUR builds, and pacman owns updates anyway
-- Source builds have no `MINITI_API_KEY`, so they are **BYOK-only**; managed mode needs the `-bin` package built in CI with the key  
+- Source and CI builds are identical in capability: managed mode needs no build-time secret (device-bound enrollment at runtime)  
 
-PKGBUILDs live in `packaging/aur/miniti-bin/PKGBUILD` (prebuilt tarball) and `packaging/aur/miniti/PKGBUILD` (source, BYOK-only). Update `pkgver` and `sha256sums` per release; `.github/workflows/release.yml` builds the tarball + `.deb` on `ubuntu-22.04` from a `v*` tag (needs the `MINITI_API_KEY` secret for managed-mode builds).
+PKGBUILDs live in `packaging/aur/miniti-bin/PKGBUILD` (prebuilt tarball) and `packaging/aur/miniti/PKGBUILD` (source). Update `pkgver` and `sha256sums` per release; `.github/workflows/release.yml` builds the tarball + `.deb` on `ubuntu-22.04` from a `v*` tag with no repository secrets.
 
 ### Local release (no CI)
 
 ```bash
-MINITI_API_KEY=… pnpm tauri build      # binary + .deb
+pnpm tauri build                       # binary + .deb
 packaging/make-tarball.sh              # dist-release/miniti-<ver>-x86_64-unknown-linux-gnu.tar.gz + .sha256
 cd packaging/aur/miniti-bin && makepkg -si   # after pointing source= at the tarball (file:// works for local tests)
 ```

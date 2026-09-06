@@ -1,6 +1,15 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { confirm } from "@tauri-apps/plugin-dialog";
+import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import {
+  authDeleteAccount,
+  authDevices,
+  authRecoveryKey,
+  authRemoveDevice,
+  authRotateRecoveryKey,
+  authSignOut,
+  authStatus,
   crmConnect,
   crmStatus,
   environmentHealth,
@@ -20,7 +29,8 @@ import {
   setPrefs,
   subscribeUrl,
 } from "../api";
-import type { AppMode, CrmProvider, EnvHealth, Prefs, Usage } from "../types";
+import type { AppMode, AuthDevices, AuthStatus, CrmProvider, EnvHealth, Prefs, Usage } from "../types";
+import { Enroll } from "./Enroll";
 import { useStore } from "../store";
 import { useTauriEvent } from "../useEvent";
 
@@ -69,6 +79,7 @@ export function Settings() {
   const [prefs, setPrefsState] = useState<Prefs | null>(null);
   const [saved, setSaved] = useState(false);
   const [health, setHealth] = useState<EnvHealth | null>(null);
+  const [auth, setAuth] = useState<AuthStatus | null>(null);
   const [usage, setUsage] = useState<Usage | null>(null);
   const [usageError, setUsageError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -78,8 +89,9 @@ export function Settings() {
   const [crm, setCrm] = useState<Record<CrmProvider, { connected: boolean; account_label: string | null } | null>>({ attio: null, twenty: null });
   const [highlight, setHighlight] = useState<string | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
-  const backendKey = health?.backend_key_present ?? null;
-  const managedUnavailable = backendKey === false;
+  const backendKey = auth?.enrolled ?? null;
+  const notEnrolled = backendKey === false;
+  const refreshAuth = () => { if (hasBridge) authStatus().then(setAuth).catch(() => setAuth(null)); };
 
   function setDest(d: DestId) {
     setDestState(d);
@@ -104,6 +116,7 @@ export function Settings() {
     if (!hasBridge) return;
     getPrefs().then(setPrefsState);
     environmentHealth().then(setHealth).catch(() => {});
+    refreshAuth();
   }, []);
 
   useEffect(() => {
@@ -180,6 +193,7 @@ export function Settings() {
     { id: "presence", dest: "general", label: "Floating recording surface", keywords: "floating window indicator presence always on top" },
     { id: "mode", dest: "account", label: "Mode", keywords: "managed byok mode api backend" },
     { id: "plan", dest: "account", label: "Plan & usage", keywords: "pro upgrade subscription minutes usage polar portal restore license" },
+    { id: "recovery", dest: "account", label: "Recovery key & devices", keywords: "recovery key account devices sign out delete rotate reveal" },
     { id: "keys", dest: "account", label: "API keys", keywords: "deepgram openai key byok" },
     { id: "device", dest: "account", label: "Device ID", keywords: "device id uuid" },
     { id: "sources", dest: "recording", label: "Audio sources", keywords: "microphone system audio pipewire capture" },
@@ -276,13 +290,20 @@ export function Settings() {
             <C id="mode">
               <Field label="Mode">
                 <select className="input" value={prefs.app_mode} onChange={(e) => update("app_mode", e.currentTarget.value as AppMode)}>
-                  <option value="managed" disabled={managedUnavailable}>Managed (Miniti backend){managedUnavailable ? " — unavailable in this build" : ""}</option>
+                  <option value="managed">Managed (Miniti backend)</option>
                   <option value="byok">BYOK (your own keys)</option>
                 </select>
-                {managedUnavailable && <p className="muted">This build was compiled without a backend key, so managed mode cannot start sessions. Use BYOK, or rebuild with <code>MINITI_API_KEY</code> set.</p>}
               </Field>
             </C>
-            {prefs.app_mode === "managed" && !managedUnavailable && (
+            {prefs.app_mode === "managed" && notEnrolled && (
+              <C id="recovery">
+                <section className="card">
+                  <h2 className="card-title">Account</h2>
+                  <Enroll inline onDone={() => { refreshAuth(); refreshPrefs(); getPrefs().then(setPrefsState); }} />
+                </section>
+              </C>
+            )}
+            {prefs.app_mode === "managed" && backendKey === true && (
               <C id="plan">
                 <section className="card">
                   <h2 className="card-title">Plan</h2>
@@ -306,6 +327,11 @@ export function Settings() {
                     </div>
                   </Field>
                 </section>
+              </C>
+            )}
+            {prefs.app_mode === "managed" && backendKey === true && auth && (
+              <C id="recovery">
+                <AccountCard auth={auth} onChanged={() => { refreshAuth(); setUsage(null); }} onError={setError} onNotice={setNotice} />
               </C>
             )}
             {prefs.app_mode === "byok" && (
@@ -407,7 +433,7 @@ export function Settings() {
             <C id="gcal">
               <div className="row-line">
                 <span className="k">Google Calendar</span>
-                {managedUnavailable ? <span className="muted">needs a build with the backend key</span> : (
+                {notEnrolled ? <span className="muted">needs managed mode with an enrolled account (Account &amp; Plan)</span> : (
                   <>
                     <span className="v">{google === null ? "…" : google.connected ? `connected${google.email ? ` (${google.email})` : ""}` : "not connected"}</span>
                     {google?.connected
@@ -425,7 +451,7 @@ export function Settings() {
         )}
 
         {dest === "crm" && (
-          managedUnavailable ? <p className="muted">Attio and Twenty connect through the Miniti backend and need a build with the backend key.</p> : (
+          notEnrolled ? <p className="muted">Attio and Twenty connect through the Miniti backend; set up managed mode under Account &amp; Plan first.</p> : (
             <>
               {(["attio", "twenty"] as CrmProvider[]).map((p) => (
                 <C id={p} key={p}>
@@ -495,7 +521,7 @@ export function Settings() {
               <div className="rows">
                 <Row k="version" v={health ? `Miniti Linux ${health.app_version}` : "…"} />
                 <Row k="platform" v={health ? `${health.platform} · ${health.os}` : "…"} />
-                <Row k="managed mode" v={health ? (health.backend_key_present ? "available" : "unavailable in this build") : "…"} />
+                <Row k="managed mode" v={auth ? (auth.enrolled ? `enrolled (${auth.storage === "file" ? "credentials in ~/.local/share/miniti/auth.json" : "credentials in the secret service"})` : "not enrolled") : "…"} />
                 <Row k="data" v="~/.local/share/miniti · prefs in ~/.config/miniti" />
               </div>
               <div className="save-row">
@@ -515,6 +541,91 @@ export function Settings() {
         </div>
       </div>
     </div>
+  );
+}
+
+/** Recovery key, devices, sign-out and deletion for the anonymous account (macOS Settings › Account). */
+function AccountCard({ auth, onChanged, onError, onNotice }: { auth: AuthStatus; onChanged: () => void; onError: (m: string | null) => void; onNotice: (m: string | null) => void }) {
+  const [revealed, setRevealed] = useState<string | null>(null);
+  const [devices, setDevices] = useState<AuthDevices | null>(null);
+  const [devicesError, setDevicesError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const loadDevices = () => authDevices().then((d) => { setDevices(d); setDevicesError(null); }).catch((e) => setDevicesError(errorMessage(e)));
+  useEffect(() => { void loadDevices(); }, []);
+
+  async function reveal() {
+    if (!(await confirm("Show your recovery key on screen? Anyone who sees it can add devices to this account.", { title: "Reveal recovery key", kind: "warning" }))) return;
+    try { setRevealed(await authRecoveryKey()); } catch (e) { onError(errorMessage(e)); }
+  }
+  async function copyKey() {
+    if (!revealed) return;
+    try { await writeText(revealed); onNotice("Recovery key copied."); } catch { onError("Could not copy to the clipboard."); }
+  }
+  async function rotate() {
+    if (!(await confirm("Generate a new recovery key? The current key stops working immediately; your devices stay signed in.", { title: "Rotate recovery key", kind: "warning" }))) return;
+    setBusy(true);
+    try { setRevealed(await authRotateRecoveryKey()); onNotice("Recovery key rotated. Save the new key."); } catch (e) { onError(errorMessage(e)); } finally { setBusy(false); }
+  }
+  async function remove(id: string, current: boolean) {
+    const msg = current ? "Sign this computer out of the account?" : "Remove this device from the account? It will need the recovery key to sign back in.";
+    if (!(await confirm(msg, { title: "Remove device", kind: "warning" }))) return;
+    setBusy(true);
+    try { await authRemoveDevice(id); if (current) onChanged(); else await loadDevices(); } catch (e) { onError(errorMessage(e)); } finally { setBusy(false); }
+  }
+  async function signOut() {
+    if (!(await confirm("Sign this computer out? You will need the recovery key to use managed mode again.", { title: "Sign out", kind: "warning" }))) return;
+    setBusy(true);
+    try { await authSignOut(); onChanged(); } catch (e) { onError(errorMessage(e)); } finally { setBusy(false); }
+  }
+  async function deleteAccount() {
+    if (!(await confirm("Delete this account? Every device loses access and the recovery key stops working. This does not cancel a Polar subscription; manage that from the customer portal first.", { title: "Delete account", kind: "warning", okLabel: "Delete account" }))) return;
+    setBusy(true);
+    try { await authDeleteAccount(); onChanged(); } catch (e) { onError(errorMessage(e)); } finally { setBusy(false); }
+  }
+
+  return (
+    <section className="card">
+      <h2 className="card-title">Account</h2>
+      <div className="rows">
+        <Row k="account" v={auth.account_id ? `${auth.account_id.slice(0, 12)}…` : "—"} />
+        <Row k="devices" v={devices ? `${devices.devices.length} / ${devices.device_cap ?? auth.device_cap ?? "—"}` : devicesError ?? "…"} />
+        {auth.storage === "file" && <Row k="storage" v="no secret service found; credentials kept in ~/.local/share/miniti/auth.json (0600)" />}
+      </div>
+      <Field label="Recovery key">
+        {revealed ? (
+          <>
+            <div className="recovery-key">{revealed}</div>
+            <div className="save-row">
+              <button className="btn small" onClick={copyKey}>copy</button>
+              <button className="btn small" onClick={() => setRevealed(null)}>hide</button>
+            </div>
+          </>
+        ) : (
+          <div className="save-row">
+            <button className="btn small" onClick={reveal} disabled={busy}>reveal</button>
+            <button className="btn small" onClick={rotate} disabled={busy}>rotate</button>
+          </div>
+        )}
+      </Field>
+      <Field label="Devices on this account">
+        {devices ? (
+          devices.devices.map((d) => (
+            <div key={d.installation_id} className="device-row">
+              <div className="grow">
+                <div>{d.label ?? d.installation_id.slice(0, 8)}{d.current ? " · this computer" : ""}</div>
+                <div className="sub">{[d.platform, d.app_version, d.last_auth_at ? `seen ${new Date(d.last_auth_at).toLocaleDateString()}` : null].filter(Boolean).join(" · ")}</div>
+              </div>
+              <button className="control destructive" disabled={busy} onClick={() => remove(d.installation_id, d.current)}>{d.current ? "sign out" : "remove"}</button>
+            </div>
+          ))
+        ) : <p className="muted">{devicesError ?? "Loading devices…"}</p>}
+      </Field>
+      <div className="save-row">
+        <button className="btn" onClick={signOut} disabled={busy}>Sign out</button>
+        <button className="btn danger" onClick={deleteAccount} disabled={busy}>Delete account</button>
+      </div>
+    </section>
   );
 }
 

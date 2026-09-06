@@ -1,11 +1,14 @@
 //! Miniti backend client (PLAN.md §5, contract: `../miniti-api/docs/agents/04-api-reference.md`).
-//! Header construction, URL building, key obfuscation, session expiry parsing and
-//! error mapping are pure + tested; the reqwest methods perform live calls.
+//! Header construction, URL building, session expiry parsing and error mapping
+//! are pure + tested; the reqwest methods perform live calls. Authentication is
+//! device-bound (`crate::auth`): no shared secret is compiled into the binary.
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
+use crate::auth::manager::AuthManager;
 use crate::prefs::AppMode;
 
 pub const DEFAULT_BASE_URL: &str = "https://api.miniti.app";
@@ -16,51 +19,13 @@ pub const HTTP_TIMEOUT: Duration = Duration::from_secs(30);
 /// `/api/insights` runs on the node runtime with a 60 s budget.
 pub const INSIGHTS_TIMEOUT: Duration = Duration::from_secs(75);
 
-// Build-time embedded, XOR-obfuscated app secret (see build.rs). Empty when the
-// build was produced without `MINITI_API_KEY`.
-mod embedded {
-    include!(concat!(env!("OUT_DIR"), "/api_key.rs"));
-}
-
-/// The shared backend app secret compiled into this build, if any.
-pub fn embedded_api_key() -> Option<String> {
-    if embedded::API_KEY_OBF.is_empty() {
-        return None;
-    }
-    let key = deobfuscate_api_key(embedded::API_KEY_OBF, embedded::API_KEY_MASK);
-    if key.trim().is_empty() {
-        None
-    } else {
-        Some(key)
-    }
-}
-
-/// Values needed to authenticate every request.
+/// Values needed to identify every request. Authentication itself comes from
+/// the device-bound `auth::manager::AuthManager` (bearer token + request proof).
 #[derive(Debug, Clone)]
 pub struct HeaderContext {
-    /// Deobfuscated shared app secret (`X-API-Key`).
-    pub api_key: String,
     pub device_id: String,
     pub app_version: String,
     pub app_mode: AppMode,
-}
-
-/// XOR-obfuscate/deobfuscate the shared app key. This is *not* real security —
-/// it only keeps the literal secret out of `strings` output, matching the other
-/// clients. Symmetric: the same call encodes and decodes.
-pub fn xor_transform(data: &[u8], key: &[u8]) -> Vec<u8> {
-    if key.is_empty() {
-        return data.to_vec();
-    }
-    data.iter()
-        .enumerate()
-        .map(|(i, b)| b ^ key[i % key.len()])
-        .collect()
-}
-
-/// Recover the shared key from its obfuscated bytes.
-pub fn deobfuscate_api_key(obfuscated: &[u8], xor_key: &[u8]) -> String {
-    String::from_utf8_lossy(&xor_transform(obfuscated, xor_key)).to_string()
 }
 
 fn app_mode_header(mode: AppMode) -> &'static str {
@@ -70,10 +35,9 @@ fn app_mode_header(mode: AppMode) -> &'static str {
     }
 }
 
-/// Build the header name/value pairs sent on authenticated routes.
+/// Build the identity header name/value pairs sent on every backend request.
 pub fn build_header_pairs(ctx: &HeaderContext) -> Vec<(String, String)> {
     vec![
-        ("X-API-Key".into(), ctx.api_key.clone()),
         ("X-Device-ID".into(), ctx.device_id.clone()),
         ("X-App-Version".into(), ctx.app_version.clone()),
         ("X-Platform".into(), PLATFORM.into()),
@@ -82,7 +46,11 @@ pub fn build_header_pairs(ctx: &HeaderContext) -> Vec<(String, String)> {
 }
 
 pub fn endpoint_url(base: &str, path: &str) -> String {
-    format!("{}/{}", base.trim_end_matches('/'), path.trim_start_matches('/'))
+    format!(
+        "{}/{}",
+        base.trim_end_matches('/'),
+        path.trim_start_matches('/')
+    )
 }
 
 /// Parse an RFC 3339 / ISO 8601 timestamp (as the backend emits) to unix secs.
@@ -212,15 +180,21 @@ pub struct InsightsResponse {
 #[derive(Debug, Clone, thiserror::Error, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ApiError {
-    #[error("this build has no Miniti backend key; use BYOK or rebuild with MINITI_API_KEY")]
-    NoApiKey,
+    #[error("managed mode needs a Miniti account on this device: create or restore a recovery key in Settings → Account")]
+    NotEnrolled,
+    #[error("this device is already enrolled")]
+    AlreadyEnrolled,
+    #[error("that recovery key is not valid (check for typos; it starts with M1)")]
+    InvalidRecoveryKey,
+    #[error("this device's access was revoked; create or restore a recovery key to continue")]
+    Revoked,
     #[error("this device has been disabled")]
     DeviceDisabled,
     #[error("monthly managed minutes used up{}", resets_hint(.resets_at))]
     LimitReached { resets_at: Option<String> },
     #[error("rate limited; try again shortly")]
     RateLimited,
-    #[error("backend rejected the app key (unauthorized)")]
+    #[error("backend rejected this device's credentials (unauthorized)")]
     Unauthorized,
     #[error("backend error {status}: {code}{}", message_hint(.message))]
     Http {
@@ -267,7 +241,12 @@ pub fn map_error(status: u16, body: &str) -> Option<ApiError> {
     let parsed: ErrorBody = serde_json::from_str(body).unwrap_or_default();
     Some(match (status, parsed.error.as_str()) {
         (401, "unauthorized") | (401, "") => ApiError::Unauthorized,
-        (401, code) => ApiError::Http { status: 401, code: code.into(), message: parsed.message },
+        (401, "installation_revoked") | (401, "device_auth_required") => ApiError::Revoked,
+        (401, code) => ApiError::Http {
+            status: 401,
+            code: code.into(),
+            message: parsed.message,
+        },
         (402, _) => ApiError::LimitReached {
             resets_at: parsed.resets_at,
         },
@@ -275,7 +254,11 @@ pub fn map_error(status: u16, body: &str) -> Option<ApiError> {
         (429, _) => ApiError::RateLimited,
         (s, code) => ApiError::Http {
             status: s,
-            code: if code.is_empty() { "unknown".into() } else { code.into() },
+            code: if code.is_empty() {
+                "unknown".into()
+            } else {
+                code.into()
+            },
             message: parsed.message,
         },
     })
@@ -288,16 +271,47 @@ pub fn map_status(status: u16) -> Option<ApiError> {
 
 // ---- Live client ----------------------------------------------------------
 
-/// Live HTTP client. Construction is cheap; calls need network + credentials.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct AuthDevice {
+    pub installation_id: String,
+    #[serde(default)]
+    pub platform: Option<String>,
+    #[serde(default)]
+    pub app_version: Option<String>,
+    #[serde(default)]
+    pub label: Option<String>,
+    #[serde(default)]
+    pub enrolled_at: String,
+    #[serde(default)]
+    pub last_auth_at: Option<String>,
+    #[serde(default)]
+    pub current: bool,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
+pub struct AuthDevices {
+    #[serde(default)]
+    pub account_id: String,
+    #[serde(default)]
+    pub device_cap: Option<u32>,
+    #[serde(default)]
+    pub recovery_version: Option<u32>,
+    #[serde(default)]
+    pub devices: Vec<AuthDevice>,
+}
+
+/// Live HTTP client. Construction is cheap; calls need network + an enrolled
+/// installation (except `get_version`, which is public metadata).
 #[derive(Clone)]
 pub struct ApiClient {
     base: String,
     http: reqwest::Client,
     ctx: HeaderContext,
+    auth: Arc<AuthManager>,
 }
 
 impl ApiClient {
-    pub fn new(base: impl Into<String>, ctx: HeaderContext) -> Self {
+    pub fn new(base: impl Into<String>, ctx: HeaderContext, auth: Arc<AuthManager>) -> Self {
         let http = reqwest::Client::builder()
             .timeout(HTTP_TIMEOUT)
             .user_agent(format!("Miniti-Linux/{}", ctx.app_version))
@@ -307,6 +321,7 @@ impl ApiClient {
             base: base.into(),
             http,
             ctx,
+            auth,
         }
     }
 
@@ -318,63 +333,183 @@ impl ApiClient {
         &self.base
     }
 
+    pub fn auth(&self) -> &Arc<AuthManager> {
+        &self.auth
+    }
+
     /// GET an absolute URL and decode JSON (integrations).
     pub async fn get_json<T: for<'de> Deserialize<'de>>(&self, url: &str) -> Result<T, ApiError> {
-        self.send_json(self.http.get(url)).await
+        self.send_json(reqwest::Method::GET, url, None, None).await
     }
 
     /// POST JSON to an absolute URL and decode JSON (integrations).
-    pub async fn post_json<T: for<'de> Deserialize<'de>>(&self, url: &str, body: &serde_json::Value) -> Result<T, ApiError> {
-        self.send_json(self.http.post(url).json(body)).await
+    pub async fn post_json<T: for<'de> Deserialize<'de>>(
+        &self,
+        url: &str,
+        body: &serde_json::Value,
+    ) -> Result<T, ApiError> {
+        self.send_json(reqwest::Method::POST, url, Some(body), None)
+            .await
     }
 
-    fn apply_headers(&self, mut req: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
+    /// DELETE an absolute URL and decode JSON.
+    pub async fn delete_json<T: for<'de> Deserialize<'de>>(
+        &self,
+        url: &str,
+    ) -> Result<T, ApiError> {
+        self.send_json(reqwest::Method::DELETE, url, None, None)
+            .await
+    }
+
+    fn identity_headers(&self, mut req: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
         for (k, v) in build_header_pairs(&self.ctx) {
             req = req.header(k, v);
         }
         req
     }
 
-    async fn send_text(&self, req: reqwest::RequestBuilder) -> Result<String, ApiError> {
-        let resp = self
-            .apply_headers(req)
+    /// One authenticated attempt: bearer token + request proof (non-GET).
+    async fn attempt(
+        &self,
+        method: &reqwest::Method,
+        url: &str,
+        body: &Option<Vec<u8>>,
+        timeout: Option<Duration>,
+        token: Option<&str>,
+    ) -> Result<(u16, String), ApiError> {
+        let mut req = self.identity_headers(self.http.request(method.clone(), url));
+        if let Some(t) = timeout {
+            req = req.timeout(t);
+        }
+        if let Some(token) = token {
+            req = req.bearer_auth(token);
+            if *method != reqwest::Method::GET && *method != reqwest::Method::HEAD {
+                let proof = self.auth.request_proof(
+                    token,
+                    method.as_str(),
+                    url,
+                    body.as_deref().unwrap_or(&[]),
+                )?;
+                req = req.header("X-Request-Proof", proof);
+            }
+        }
+        if let Some(bytes) = body {
+            req = req
+                .header(reqwest::header::CONTENT_TYPE, "application/json")
+                .body(bytes.clone());
+        }
+        let resp = req
             .send()
             .await
             .map_err(|e| ApiError::Network(e.to_string()))?;
         let status = resp.status().as_u16();
-        let body = resp
+        let text = resp
             .text()
             .await
             .map_err(|e| ApiError::Network(e.to_string()))?;
-        if let Some(err) = map_error(status, &body) {
-            return Err(err);
+        Ok((status, text))
+    }
+
+    /// Authenticated request with one retry after a token rejection.
+    async fn send_text(
+        &self,
+        method: reqwest::Method,
+        url: &str,
+        body: Option<&serde_json::Value>,
+        timeout: Option<Duration>,
+    ) -> Result<String, ApiError> {
+        let bytes = body
+            .map(serde_json::to_vec)
+            .transpose()
+            .map_err(|e| ApiError::Decode(e.to_string()))?;
+        let mut token = self.auth.access_token().await?;
+        for attempt in 0..2 {
+            let (status, text) = self
+                .attempt(&method, url, &bytes, timeout, Some(&token))
+                .await?;
+            if status == 401 && attempt == 0 {
+                let code = error_code(&text);
+                if code == "token_expired" || code == "invalid_token" {
+                    token = self.auth.force_refresh().await?;
+                    continue;
+                }
+                if code == "installation_revoked" {
+                    self.auth.clear_local();
+                    return Err(ApiError::Revoked);
+                }
+            }
+            if let Some(err) = map_error(status, &text) {
+                return Err(err);
+            }
+            return Ok(text);
         }
-        Ok(body)
+        Err(ApiError::Unauthorized)
     }
 
     async fn send_json<T: for<'de> Deserialize<'de>>(
         &self,
-        req: reqwest::RequestBuilder,
+        method: reqwest::Method,
+        url: &str,
+        body: Option<&serde_json::Value>,
+        timeout: Option<Duration>,
     ) -> Result<T, ApiError> {
-        let body = self.send_text(req).await?;
-        serde_json::from_str::<T>(&body).map_err(|e| ApiError::Decode(e.to_string()))
+        let text = self.send_text(method, url, body, timeout).await?;
+        serde_json::from_str::<T>(&text).map_err(|e| ApiError::Decode(e.to_string()))
     }
 
+    async fn post<T: for<'de> Deserialize<'de>>(
+        &self,
+        path: &str,
+        body: &serde_json::Value,
+    ) -> Result<T, ApiError> {
+        self.send_json(
+            reqwest::Method::POST,
+            &endpoint_url(&self.base, path),
+            Some(body),
+            None,
+        )
+        .await
+    }
+
+    async fn get<T: for<'de> Deserialize<'de>>(&self, path: &str) -> Result<T, ApiError> {
+        self.send_json(
+            reqwest::Method::GET,
+            &endpoint_url(&self.base, path),
+            None,
+            None,
+        )
+        .await
+    }
+
+    /// Public version metadata: authenticated when enrolled (so the device is
+    /// touched for the dashboard), anonymous otherwise.
     pub async fn get_version(&self) -> Result<VersionInfo, ApiError> {
         let url = endpoint_url(&self.base, "api/version");
-        self.send_json(self.http.get(url)).await
+        if self.auth.is_enrolled() {
+            if let Ok(v) = self.get::<VersionInfo>("api/version").await {
+                return Ok(v);
+            }
+        }
+        let (status, text) = self
+            .attempt(&reqwest::Method::GET, &url, &None, None, None)
+            .await?;
+        if let Some(err) = map_error(status, &text) {
+            return Err(err);
+        }
+        serde_json::from_str(&text).map_err(|e| ApiError::Decode(e.to_string()))
     }
 
     pub async fn get_usage(&self) -> Result<Usage, ApiError> {
-        let url = endpoint_url(&self.base, "api/usage");
-        self.send_json(self.http.get(url)).await
+        self.get("api/usage").await
     }
 
     /// Start a managed transcription session (Deepgram grant JWT).
     pub async fn create_session(&self, language: &str) -> Result<Session, ApiError> {
-        let url = endpoint_url(&self.base, "api/session");
-        let body = serde_json::json!({ "model": "nova-3", "language": language });
-        self.send_json(self.http.post(url).json(&body)).await
+        self.post(
+            "api/session",
+            &serde_json::json!({ "model": "nova-3", "language": language }),
+        )
+        .await
     }
 
     /// Report session duration. Idempotent per `(device, session_id)`.
@@ -383,12 +518,11 @@ impl ApiClient {
         session_id: &str,
         duration_minutes: f64,
     ) -> Result<SessionEnd, ApiError> {
-        let url = endpoint_url(&self.base, "api/session/end");
         let body = serde_json::json!({
             "session_id": session_id,
             "duration_minutes": duration_minutes,
         });
-        self.send_json(self.http.post(url).json(&body)).await
+        self.post("api/session/end", &body).await
     }
 
     /// Managed insights proxy. `body` should come from `insights::InsightRequest`.
@@ -398,7 +532,12 @@ impl ApiClient {
     ) -> Result<InsightsResponse, ApiError> {
         let url = endpoint_url(&self.base, "api/insights");
         let text = self
-            .send_text(self.http.post(url).timeout(INSIGHTS_TIMEOUT).json(body))
+            .send_text(
+                reqwest::Method::POST,
+                &url,
+                Some(body),
+                Some(INSIGHTS_TIMEOUT),
+            )
             .await?;
         let value: serde_json::Value =
             serde_json::from_str(&text).map_err(|e| ApiError::Decode(e.to_string()))?;
@@ -418,8 +557,7 @@ impl ApiClient {
         struct R {
             checkout_url: String,
         }
-        let url = endpoint_url(&self.base, "api/subscribe");
-        self.send_json::<R>(self.http.get(url)).await.map(|r| r.checkout_url)
+        self.get::<R>("api/subscribe").await.map(|r| r.checkout_url)
     }
 
     /// Polar customer portal URL.
@@ -428,16 +566,64 @@ impl ApiClient {
         struct R {
             portal_url: String,
         }
-        let url = endpoint_url(&self.base, "api/portal");
-        self.send_json::<R>(self.http.get(url)).await.map(|r| r.portal_url)
+        self.get::<R>("api/portal").await.map(|r| r.portal_url)
     }
 
     /// Restore Pro on this device with a Polar license key.
     pub async fn restore(&self, license_key: &str) -> Result<serde_json::Value, ApiError> {
-        let url = endpoint_url(&self.base, "api/restore");
-        let body = serde_json::json!({ "license_key": license_key });
-        self.send_json(self.http.post(url).json(&body)).await
+        self.post(
+            "api/restore",
+            &serde_json::json!({ "license_key": license_key }),
+        )
+        .await
     }
+
+    // ---- Account (device-bound auth) ------------------------------------------
+
+    pub async fn auth_devices(&self) -> Result<AuthDevices, ApiError> {
+        self.get("api/auth/account/devices").await
+    }
+
+    pub async fn auth_remove_device(&self, installation_id: &str) -> Result<(), ApiError> {
+        let url = endpoint_url(
+            &self.base,
+            &format!("api/auth/account/devices/{installation_id}"),
+        );
+        self.delete_json::<serde_json::Value>(&url)
+            .await
+            .map(|_| ())
+    }
+
+    /// Ask the server to accept a new (client-generated, canonical) recovery key.
+    pub async fn auth_rotate_recovery_key(&self, canonical: &str) -> Result<(), ApiError> {
+        self.post::<serde_json::Value>(
+            "api/auth/account/recovery-key/rotate",
+            &serde_json::json!({ "new_recovery_key": canonical }),
+        )
+        .await
+        .map(|_| ())
+    }
+
+    /// Sign this installation out server-side.
+    pub async fn auth_revoke(&self) -> Result<(), ApiError> {
+        self.post::<serde_json::Value>("api/auth/revoke", &serde_json::json!({}))
+            .await
+            .map(|_| ())
+    }
+
+    /// Delete the anonymous account (revokes every installation).
+    pub async fn auth_delete_account(&self) -> Result<(), ApiError> {
+        let url = endpoint_url(&self.base, "api/auth/account");
+        self.delete_json::<serde_json::Value>(&url)
+            .await
+            .map(|_| ())
+    }
+}
+
+fn error_code(body: &str) -> String {
+    serde_json::from_str::<ErrorBody>(body)
+        .map(|b| b.error)
+        .unwrap_or_default()
 }
 
 #[cfg(test)]
@@ -445,27 +631,22 @@ mod tests {
     use super::*;
 
     #[test]
-    fn xor_roundtrips() {
-        let key = b"miniti-xor";
-        let secret = b"super-secret-app-key";
-        let obf = xor_transform(secret, key);
-        assert_ne!(&obf, secret);
-        assert_eq!(deobfuscate_api_key(&obf, key), "super-secret-app-key");
-    }
-
-    #[test]
     fn headers_include_linux_platform_and_mode() {
         let ctx = HeaderContext {
-            api_key: "K".into(),
             device_id: "D".into(),
             app_version: "0.1.0".into(),
             app_mode: AppMode::Byok,
         };
         let pairs = build_header_pairs(&ctx);
-        let get = |name: &str| pairs.iter().find(|(k, _)| k == name).map(|(_, v)| v.clone());
+        let get = |name: &str| {
+            pairs
+                .iter()
+                .find(|(k, _)| k == name)
+                .map(|(_, v)| v.clone())
+        };
         assert_eq!(get("X-Platform").as_deref(), Some("linux"));
         assert_eq!(get("X-App-Mode").as_deref(), Some("byok"));
-        assert_eq!(get("X-API-Key").as_deref(), Some("K"));
+        assert!(get("X-API-Key").is_none(), "no shared secret is ever sent");
         assert_eq!(get("X-Device-ID").as_deref(), Some("D"));
     }
 
@@ -485,21 +666,37 @@ mod tests {
     fn error_mapping_uses_status_and_body() {
         assert!(map_error(200, "").is_none());
         assert!(matches!(
-            map_error(402, r#"{"error":"limit_reached","resets_at":"2026-10-01T00:00:00.000Z"}"#),
+            map_error(
+                402,
+                r#"{"error":"limit_reached","resets_at":"2026-10-01T00:00:00.000Z"}"#
+            ),
             Some(ApiError::LimitReached { resets_at: Some(_) })
         ));
-        assert!(matches!(map_error(403, r#"{"error":"device_disabled"}"#), Some(ApiError::DeviceDisabled)));
+        assert!(matches!(
+            map_error(403, r#"{"error":"device_disabled"}"#),
+            Some(ApiError::DeviceDisabled)
+        ));
         assert!(matches!(map_error(429, ""), Some(ApiError::RateLimited)));
-        assert!(matches!(map_error(401, r#"{"error":"unauthorized"}"#), Some(ApiError::Unauthorized)));
+        assert!(matches!(
+            map_error(401, r#"{"error":"unauthorized"}"#),
+            Some(ApiError::Unauthorized)
+        ));
         match map_error(500, r#"{"error":"internal_error","message":"boom"}"#) {
-            Some(ApiError::Http { status, code, message }) => {
+            Some(ApiError::Http {
+                status,
+                code,
+                message,
+            }) => {
                 assert_eq!(status, 500);
                 assert_eq!(code, "internal_error");
                 assert_eq!(message.as_deref(), Some("boom"));
             }
             other => panic!("unexpected {other:?}"),
         }
-        assert!(matches!(map_status(500), Some(ApiError::Http { status: 500, .. })));
+        assert!(matches!(
+            map_status(500),
+            Some(ApiError::Http { status: 500, .. })
+        ));
     }
 
     #[test]
@@ -517,7 +714,11 @@ mod tests {
         assert_eq!(s.token(), Some("eyJ.jwt"));
         assert_eq!(s.session_id.as_deref(), Some("sess_abc123def456"));
         let expected = parse_iso8601("2026-07-20T22:00:00.000Z").unwrap();
-        assert_eq!(s.expiry_at(0), Some(expected), "expires_at is authoritative");
+        assert_eq!(
+            s.expiry_at(0),
+            Some(expected),
+            "expires_at is authoritative"
+        );
     }
 
     #[test]
@@ -561,14 +762,5 @@ mod tests {
         .unwrap();
         assert_eq!(u.minutes_limit, Some(500.0));
         assert_eq!(u.docs_lookups_limit, Some(10));
-    }
-
-    #[test]
-    fn embedded_key_absent_in_test_builds_unless_env_set() {
-        // Tests run without MINITI_API_KEY unless the developer set it.
-        match std::env::var("MINITI_API_KEY") {
-            Ok(k) if !k.is_empty() => assert_eq!(embedded_api_key().as_deref(), Some(k.as_str())),
-            _ => assert!(embedded_api_key().is_none()),
-        }
     }
 }

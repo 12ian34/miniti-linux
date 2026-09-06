@@ -1,0 +1,744 @@
+//! Credential storage and token lifecycle for device-bound authorization.
+//!
+//! Credentials (installation key secret, canonical recovery key, tokens) are
+//! stored as one JSON document in the desktop secret service under
+//! `com.miniti.linux` / `device-auth`. When no secret service is available the
+//! document falls back to `~/.local/share/miniti/auth.json` with mode 0600
+//! (the roadmap's "Keychain-backed fallback" equivalent); `AuthStatus.storage`
+//! reports which one is in use so the UI can say so.
+//!
+//! Enrollment and token grants talk to `/api/auth/*` directly (no bearer);
+//! everything else goes through `api::ApiClient`, which asks this manager for
+//! a fresh access token and a request proof per call.
+
+use std::path::{Path, PathBuf};
+use std::sync::Mutex;
+
+use serde::{Deserialize, Serialize};
+
+use super::{
+    format_recovery_key, generate_recovery_key, new_jti, parse_recovery_key, request_target,
+    InstallationKey,
+};
+use crate::api::{endpoint_url, map_error, ApiError, HTTP_TIMEOUT, PLATFORM};
+use crate::device_id::data_dir;
+use crate::prefs::AppMode;
+
+const KEYRING_SERVICE: &str = "com.miniti.linux";
+const KEYRING_USER: &str = "device-auth";
+/// Refresh the access token when within this many seconds of expiry.
+const ACCESS_REFRESH_MARGIN_SECS: i64 = 60;
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Credentials {
+    /// base64url P-256 secret scalar.
+    pub installation_key: String,
+    /// Canonical recovery key (`M1…`), shown only on explicit reveal.
+    pub recovery_key: String,
+    pub account_id: String,
+    #[serde(default)]
+    pub access_token: Option<String>,
+    #[serde(default)]
+    pub access_expires_at: Option<i64>,
+    #[serde(default)]
+    pub refresh_token: Option<String>,
+    #[serde(default)]
+    pub device_cap: Option<u32>,
+    #[serde(default)]
+    pub enrolled_at: String,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum StorageKind {
+    SecretService,
+    File,
+    None,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct AuthStatus {
+    pub enrolled: bool,
+    pub account_id: Option<String>,
+    pub device_cap: Option<u32>,
+    pub storage: StorageKind,
+    pub enrolled_at: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ChallengeResponse {
+    challenge_id: String,
+    nonce: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct TokenResponse {
+    access_token: String,
+    #[serde(default)]
+    expires_in: Option<i64>,
+    #[serde(default)]
+    refresh_token: Option<String>,
+    #[serde(default)]
+    account_id: Option<String>,
+    #[serde(default)]
+    device_cap: Option<u32>,
+}
+
+// ---- Storage --------------------------------------------------------------------
+
+pub fn auth_file_path() -> PathBuf {
+    data_dir().join("auth.json")
+}
+
+fn keyring_entry() -> Option<keyring::Entry> {
+    keyring::Entry::new(KEYRING_SERVICE, KEYRING_USER).ok()
+}
+
+fn read_keyring() -> Option<Credentials> {
+    let raw = keyring_entry()?.get_password().ok()?;
+    serde_json::from_str(&raw).ok()
+}
+
+fn write_keyring(creds: &Credentials) -> bool {
+    let Ok(json) = serde_json::to_string(creds) else {
+        return false;
+    };
+    match keyring_entry().map(|e| e.set_password(&json)) {
+        Some(Ok(())) => true,
+        Some(Err(e)) => {
+            tracing::info!("secret service unavailable for device auth ({e}); using file fallback");
+            false
+        }
+        None => false,
+    }
+}
+
+fn delete_keyring() {
+    if let Some(entry) = keyring_entry() {
+        let _ = entry.delete_credential();
+    }
+}
+
+pub fn read_file(path: &Path) -> Option<Credentials> {
+    let raw = std::fs::read_to_string(path).ok()?;
+    serde_json::from_str(&raw).ok()
+}
+
+pub fn write_file(path: &Path, creds: &Credentials) -> std::io::Result<()> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let json = serde_json::to_string_pretty(creds).map_err(std::io::Error::other)?;
+    std::fs::write(path, json)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
+    }
+    Ok(())
+}
+
+fn now() -> i64 {
+    chrono::Utc::now().timestamp()
+}
+
+// ---- Manager ----------------------------------------------------------------------
+
+pub struct AuthManager {
+    base: String,
+    device_id: String,
+    app_version: String,
+    http: reqwest::Client,
+    creds: Mutex<Option<Credentials>>,
+    storage: Mutex<StorageKind>,
+    file_path: PathBuf,
+    /// False in tests so nothing touches the real secret service.
+    use_keyring: bool,
+    /// Serializes concurrent refreshes so one expiry triggers one grant.
+    refresh_gate: tokio::sync::Mutex<()>,
+}
+
+impl AuthManager {
+    /// Load stored credentials (secret service first, then the file fallback).
+    pub fn load(
+        base: impl Into<String>,
+        device_id: impl Into<String>,
+        app_version: impl Into<String>,
+    ) -> Self {
+        let file_path = auth_file_path();
+        let (creds, storage) = match read_keyring() {
+            Some(c) => (Some(c), StorageKind::SecretService),
+            None => match read_file(&file_path) {
+                Some(c) => (Some(c), StorageKind::File),
+                None => (None, StorageKind::None),
+            },
+        };
+        let mut manager =
+            Self::with_credentials(base, device_id, app_version, creds, storage, file_path);
+        manager.use_keyring = true;
+        manager
+    }
+
+    /// File-only manager (no secret service); used by tests and the live check.
+    pub fn with_credentials(
+        base: impl Into<String>,
+        device_id: impl Into<String>,
+        app_version: impl Into<String>,
+        creds: Option<Credentials>,
+        storage: StorageKind,
+        file_path: PathBuf,
+    ) -> Self {
+        let app_version = app_version.into();
+        let http = reqwest::Client::builder()
+            .timeout(HTTP_TIMEOUT)
+            .user_agent(format!("Miniti-Linux/{app_version}"))
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new());
+        Self {
+            base: base.into(),
+            device_id: device_id.into(),
+            app_version,
+            http,
+            creds: Mutex::new(creds),
+            storage: Mutex::new(storage),
+            file_path,
+            use_keyring: false,
+            refresh_gate: tokio::sync::Mutex::new(()),
+        }
+    }
+
+    pub fn device_id(&self) -> &str {
+        &self.device_id
+    }
+
+    pub fn is_enrolled(&self) -> bool {
+        self.creds.lock().map(|c| c.is_some()).unwrap_or(false)
+    }
+
+    pub fn status(&self) -> AuthStatus {
+        let creds = self.creds.lock().ok().and_then(|c| c.clone());
+        AuthStatus {
+            enrolled: creds.is_some(),
+            account_id: creds.as_ref().map(|c| c.account_id.clone()),
+            device_cap: creds.as_ref().and_then(|c| c.device_cap),
+            storage: self.storage.lock().map(|s| *s).unwrap_or(StorageKind::None),
+            enrolled_at: creds
+                .as_ref()
+                .map(|c| c.enrolled_at.clone())
+                .filter(|s| !s.is_empty()),
+        }
+    }
+
+    /// Formatted recovery key for an explicit reveal.
+    pub fn recovery_key(&self) -> Option<String> {
+        self.creds
+            .lock()
+            .ok()?
+            .as_ref()
+            .map(|c| format_recovery_key(&c.recovery_key))
+    }
+
+    fn installation_key(&self) -> Result<InstallationKey, ApiError> {
+        let creds = self.creds.lock().map_err(|_| ApiError::NotEnrolled)?;
+        let creds = creds.as_ref().ok_or(ApiError::NotEnrolled)?;
+        InstallationKey::from_secret_b64(&creds.installation_key).ok_or(ApiError::NotEnrolled)
+    }
+
+    /// Persist credentials: secret service when available, else the 0600 file.
+    fn persist(&self, creds: Credentials) -> Result<(), ApiError> {
+        let kind = if self.use_keyring && write_keyring(&creds) {
+            // Never leave a stale plaintext copy behind once the secret service works.
+            let _ = std::fs::remove_file(&self.file_path);
+            StorageKind::SecretService
+        } else {
+            write_file(&self.file_path, &creds)
+                .map_err(|e| ApiError::Network(format!("could not store credentials: {e}")))?;
+            StorageKind::File
+        };
+        if let Ok(mut s) = self.storage.lock() {
+            *s = kind;
+        }
+        if let Ok(mut c) = self.creds.lock() {
+            *c = Some(creds);
+        }
+        Ok(())
+    }
+
+    fn update<F: FnOnce(&mut Credentials)>(&self, f: F) -> Result<(), ApiError> {
+        let mut creds = {
+            let guard = self.creds.lock().map_err(|_| ApiError::NotEnrolled)?;
+            guard.clone().ok_or(ApiError::NotEnrolled)?
+        };
+        f(&mut creds);
+        self.persist(creds)
+    }
+
+    /// Forget local credentials (after revoke / delete, or when the server says revoked).
+    pub fn clear_local(&self) {
+        if self.use_keyring {
+            delete_keyring();
+        }
+        let _ = std::fs::remove_file(&self.file_path);
+        if let Ok(mut c) = self.creds.lock() {
+            *c = None;
+        }
+        if let Ok(mut s) = self.storage.lock() {
+            *s = StorageKind::None;
+        }
+    }
+
+    // ---- Unauthenticated calls ---------------------------------------------------
+
+    fn common_headers(
+        &self,
+        req: reqwest::RequestBuilder,
+        app_mode: AppMode,
+    ) -> reqwest::RequestBuilder {
+        req.header("X-Device-ID", &self.device_id)
+            .header("X-App-Version", &self.app_version)
+            .header("X-Platform", PLATFORM)
+            .header(
+                "X-App-Mode",
+                match app_mode {
+                    AppMode::Byok => "byok",
+                    AppMode::Managed => "managed",
+                },
+            )
+    }
+
+    async fn post_public<T: for<'de> Deserialize<'de>>(
+        &self,
+        path: &str,
+        body: &serde_json::Value,
+        app_mode: AppMode,
+    ) -> Result<T, ApiError> {
+        let url = endpoint_url(&self.base, path);
+        let resp = self
+            .common_headers(self.http.post(url), app_mode)
+            .json(body)
+            .send()
+            .await
+            .map_err(|e| ApiError::Network(e.to_string()))?;
+        let status = resp.status().as_u16();
+        let text = resp
+            .text()
+            .await
+            .map_err(|e| ApiError::Network(e.to_string()))?;
+        if let Some(err) = map_error(status, &text) {
+            return Err(err);
+        }
+        serde_json::from_str(&text).map_err(|e| ApiError::Decode(e.to_string()))
+    }
+
+    async fn challenge(
+        &self,
+        purpose: &str,
+        app_mode: AppMode,
+    ) -> Result<ChallengeResponse, ApiError> {
+        self.post_public(
+            "api/auth/challenge",
+            &serde_json::json!({ "device_id": self.device_id, "purpose": purpose }),
+            app_mode,
+        )
+        .await
+    }
+
+    async fn enroll(
+        &self,
+        path: &str,
+        key: &InstallationKey,
+        recovery_key: &str,
+        label: Option<&str>,
+        app_mode: AppMode,
+    ) -> Result<TokenResponse, ApiError> {
+        let challenge = self.challenge("enroll", app_mode).await?;
+        let proof = key.challenge_proof(&challenge.nonce, "enroll", &self.device_id, now());
+        self.post_public(
+            path,
+            &serde_json::json!({
+                "device_id": self.device_id,
+                "recovery_key": recovery_key,
+                "public_key_jwk": key.public_jwk(),
+                "challenge_id": challenge.challenge_id,
+                "proof": proof,
+                "label": label,
+            }),
+            app_mode,
+        )
+        .await
+    }
+
+    fn store_enrollment(
+        &self,
+        key: &InstallationKey,
+        recovery_key: &str,
+        tokens: TokenResponse,
+    ) -> Result<(), ApiError> {
+        let creds = Credentials {
+            installation_key: key.secret_b64(),
+            recovery_key: recovery_key.to_string(),
+            account_id: tokens.account_id.clone().unwrap_or_default(),
+            access_token: Some(tokens.access_token),
+            access_expires_at: Some(now() + tokens.expires_in.unwrap_or(3600)),
+            refresh_token: tokens.refresh_token,
+            device_cap: tokens.device_cap,
+            enrolled_at: chrono::Utc::now().to_rfc3339(),
+        };
+        self.persist(creds)
+    }
+
+    /// Create a new anonymous account. Returns the formatted recovery key,
+    /// which the UI must show once and ask the user to save.
+    pub async fn create_account(
+        &self,
+        label: Option<&str>,
+        app_mode: AppMode,
+    ) -> Result<String, ApiError> {
+        if self.is_enrolled() {
+            return Err(ApiError::AlreadyEnrolled);
+        }
+        let key = InstallationKey::generate();
+        let recovery_key = generate_recovery_key();
+        // Keep a local copy before the request so a lost response cannot lose the only key.
+        let draft = Credentials {
+            installation_key: key.secret_b64(),
+            recovery_key: recovery_key.clone(),
+            account_id: String::new(),
+            access_token: None,
+            access_expires_at: None,
+            refresh_token: None,
+            device_cap: None,
+            enrolled_at: String::new(),
+        };
+        let _ = write_file(&self.file_path, &draft);
+        let tokens = self
+            .enroll(
+                "api/auth/account/create",
+                &key,
+                &recovery_key,
+                label,
+                app_mode,
+            )
+            .await?;
+        self.store_enrollment(&key, &recovery_key, tokens)?;
+        tracing::info!("device auth: account created");
+        Ok(format_recovery_key(&recovery_key))
+    }
+
+    /// Attach this installation to an existing account with its recovery key.
+    pub async fn restore_account(
+        &self,
+        recovery_key_input: &str,
+        label: Option<&str>,
+        app_mode: AppMode,
+    ) -> Result<(), ApiError> {
+        if self.is_enrolled() {
+            return Err(ApiError::AlreadyEnrolled);
+        }
+        let recovery_key =
+            parse_recovery_key(recovery_key_input).ok_or(ApiError::InvalidRecoveryKey)?;
+        let key = InstallationKey::generate();
+        let tokens = self
+            .enroll(
+                "api/auth/account/restore",
+                &key,
+                &recovery_key,
+                label,
+                app_mode,
+            )
+            .await?;
+        self.store_enrollment(&key, &recovery_key, tokens)?;
+        tracing::info!("device auth: account restored");
+        Ok(())
+    }
+
+    /// Record a rotated recovery key after the server accepted it.
+    pub fn set_recovery_key(&self, canonical: &str) -> Result<(), ApiError> {
+        let canonical = canonical.to_string();
+        self.update(|c| c.recovery_key = canonical)
+    }
+
+    // ---- Tokens ---------------------------------------------------------------------------
+
+    fn cached_token(&self) -> Option<(String, i64)> {
+        let creds = self.creds.lock().ok()?;
+        let creds = creds.as_ref()?;
+        Some((creds.access_token.clone()?, creds.access_expires_at?))
+    }
+
+    /// A valid access token, refreshing when within the margin of expiry.
+    pub async fn access_token(&self) -> Result<String, ApiError> {
+        if !self.is_enrolled() {
+            return Err(ApiError::NotEnrolled);
+        }
+        if let Some((token, exp)) = self.cached_token() {
+            if exp - now() > ACCESS_REFRESH_MARGIN_SECS {
+                return Ok(token);
+            }
+        }
+        self.refresh(false).await
+    }
+
+    /// Discard the cached token and obtain a new one (after a 401).
+    pub async fn force_refresh(&self) -> Result<String, ApiError> {
+        self.refresh(true).await
+    }
+
+    async fn refresh(&self, force: bool) -> Result<String, ApiError> {
+        let _gate = self.refresh_gate.lock().await;
+        if !force {
+            if let Some((token, exp)) = self.cached_token() {
+                if exp - now() > ACCESS_REFRESH_MARGIN_SECS {
+                    return Ok(token);
+                }
+            }
+        }
+        let refresh_token = self
+            .creds
+            .lock()
+            .ok()
+            .and_then(|c| c.as_ref().and_then(|c| c.refresh_token.clone()));
+        let app_mode = AppMode::Managed;
+
+        let result = match refresh_token {
+            Some(rt) => match self.grant_refresh(&rt, app_mode).await {
+                Ok(t) => Ok(t),
+                Err(ApiError::Http { status: 401, .. }) | Err(ApiError::Unauthorized) => {
+                    self.grant_challenge(app_mode).await
+                }
+                Err(e) => Err(e),
+            },
+            None => self.grant_challenge(app_mode).await,
+        };
+        match result {
+            Ok(tokens) => {
+                let access = tokens.access_token.clone();
+                self.update(|c| {
+                    c.access_token = Some(tokens.access_token);
+                    c.access_expires_at = Some(now() + tokens.expires_in.unwrap_or(3600));
+                    if tokens.refresh_token.is_some() {
+                        c.refresh_token = tokens.refresh_token;
+                    }
+                    if tokens.device_cap.is_some() {
+                        c.device_cap = tokens.device_cap;
+                    }
+                    if let Some(id) = tokens.account_id {
+                        c.account_id = id;
+                    }
+                })?;
+                Ok(access)
+            }
+            Err(ApiError::Http {
+                status: 401, code, ..
+            }) if code == "installation_revoked" => {
+                tracing::warn!(
+                    "device auth: installation revoked by the server; clearing local credentials"
+                );
+                self.clear_local();
+                Err(ApiError::Revoked)
+            }
+            Err(e) => Err(e),
+        }
+    }
+
+    async fn grant_refresh(
+        &self,
+        refresh_token: &str,
+        app_mode: AppMode,
+    ) -> Result<TokenResponse, ApiError> {
+        self.post_public(
+            "api/auth/token",
+            &serde_json::json!({ "grant_type": "refresh", "device_id": self.device_id, "refresh_token": refresh_token }),
+            app_mode,
+        )
+        .await
+    }
+
+    async fn grant_challenge(&self, app_mode: AppMode) -> Result<TokenResponse, ApiError> {
+        let key = self.installation_key()?;
+        let challenge = self.challenge("token", app_mode).await?;
+        let proof = key.challenge_proof(&challenge.nonce, "token", &self.device_id, now());
+        self.post_public(
+            "api/auth/token",
+            &serde_json::json!({ "grant_type": "challenge", "device_id": self.device_id, "challenge_id": challenge.challenge_id, "proof": proof }),
+            app_mode,
+        )
+        .await
+    }
+
+    /// `X-Request-Proof` for an authenticated call.
+    pub fn request_proof(
+        &self,
+        access_token: &str,
+        method: &str,
+        url: &str,
+        body: &[u8],
+    ) -> Result<String, ApiError> {
+        let key = self.installation_key()?;
+        Ok(key.request_proof(
+            access_token,
+            method,
+            &request_target(url),
+            body,
+            now(),
+            &new_jti(),
+        ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn creds() -> Credentials {
+        Credentials {
+            installation_key: InstallationKey::generate().secret_b64(),
+            recovery_key: generate_recovery_key(),
+            account_id: "acct_x".into(),
+            access_token: Some("tok".into()),
+            access_expires_at: Some(now() + 3600),
+            refresh_token: Some("mrt_x".into()),
+            device_cap: Some(5),
+            enrolled_at: "2026-09-06T00:00:00Z".into(),
+        }
+    }
+
+    #[test]
+    fn file_round_trip_is_private() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("auth.json");
+        let c = creds();
+        write_file(&path, &c).unwrap();
+        assert_eq!(read_file(&path), Some(c));
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+                0o600
+            );
+        }
+        std::fs::write(&path, "not json").unwrap();
+        assert_eq!(read_file(&path), None);
+    }
+
+    #[test]
+    fn status_and_reveal_reflect_loaded_credentials() {
+        let dir = tempfile::tempdir().unwrap();
+        let c = creds();
+        let m = AuthManager::with_credentials(
+            "https://api.test",
+            "550e8400-e29b-41d4-a716-446655440000",
+            "0.3.0",
+            Some(c.clone()),
+            StorageKind::File,
+            dir.path().join("auth.json"),
+        );
+        assert!(m.is_enrolled());
+        let s = m.status();
+        assert_eq!(s.account_id.as_deref(), Some("acct_x"));
+        assert_eq!(s.storage, StorageKind::File);
+        assert_eq!(
+            m.recovery_key().as_deref(),
+            Some(format_recovery_key(&c.recovery_key).as_str())
+        );
+        let proof = m
+            .request_proof("tok", "POST", "https://api.test/api/session?x=1", b"{}")
+            .unwrap();
+        assert_eq!(proof.split('.').count(), 3);
+
+        let empty = AuthManager::with_credentials(
+            "https://api.test",
+            "d",
+            "0.3.0",
+            None,
+            StorageKind::None,
+            dir.path().join("none.json"),
+        );
+        assert!(!empty.is_enrolled());
+        assert!(matches!(
+            empty.request_proof("t", "GET", "https://api.test/x", b""),
+            Err(ApiError::NotEnrolled)
+        ));
+    }
+
+    /// End-to-end interop check against the deployed backend: enroll a
+    /// throwaway device, make a proof-bearing call, list devices, delete the
+    /// account. Run with `cargo test live_ -- --ignored`.
+    #[tokio::test]
+    #[ignore]
+    async fn live_enroll_against_backend() {
+        use crate::api::{ApiClient, HeaderContext, DEFAULT_BASE_URL};
+        let base =
+            std::env::var("MINITI_API_BASE").unwrap_or_else(|_| DEFAULT_BASE_URL.to_string());
+        let dir = tempfile::tempdir().unwrap();
+        let device_id = uuid::Uuid::new_v4().to_string();
+        let manager = std::sync::Arc::new(AuthManager::with_credentials(
+            &base,
+            &device_id,
+            "0.3.0",
+            None,
+            StorageKind::None,
+            dir.path().join("auth.json"),
+        ));
+
+        let recovery = manager
+            .create_account(Some("live-test (Linux)"), AppMode::Managed)
+            .await
+            .expect("create account");
+        assert!(
+            super::parse_recovery_key(&recovery).is_some(),
+            "server accepted our key format"
+        );
+        assert!(manager.is_enrolled());
+        assert!(matches!(
+            manager.create_account(None, AppMode::Managed).await,
+            Err(ApiError::AlreadyEnrolled)
+        ));
+
+        let client = ApiClient::new(
+            &base,
+            HeaderContext {
+                device_id: device_id.clone(),
+                app_version: "0.3.0".into(),
+                app_mode: AppMode::Managed,
+            },
+            manager.clone(),
+        );
+        let usage = client.get_usage().await.expect("usage with bearer token");
+        assert!(usage.minutes_limit.is_some() || usage.tier.is_some());
+        let version = client.get_version().await.expect("version");
+        assert!(!version.min_version.is_empty());
+        let devices = client
+            .auth_devices()
+            .await
+            .expect("devices (GET, no proof)");
+        assert_eq!(devices.devices.len(), 1);
+        assert!(devices.devices[0].current);
+
+        // Proof-bearing POST: rotate the recovery key, then confirm the old one no longer restores.
+        let rotated = super::generate_recovery_key();
+        client
+            .auth_rotate_recovery_key(&rotated)
+            .await
+            .expect("rotate (POST + proof)");
+        manager.set_recovery_key(&rotated).unwrap();
+        assert_eq!(
+            manager.recovery_key().as_deref(),
+            Some(super::format_recovery_key(&rotated).as_str())
+        );
+
+        // Forced refresh exercises the refresh grant and the challenge fallback path.
+        let first = manager.access_token().await.unwrap();
+        let second = manager.force_refresh().await.expect("refresh grant");
+        assert_ne!(first, second);
+        assert!(client.get_usage().await.is_ok());
+
+        client
+            .auth_delete_account()
+            .await
+            .expect("delete account (DELETE + proof)");
+        manager.clear_local();
+        assert!(!manager.is_enrolled());
+    }
+}

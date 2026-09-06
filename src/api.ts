@@ -14,6 +14,8 @@ import type {
   Investigation,
   InvestigationScope,
   EnvHealth,
+  AuthStatus,
+  AuthDevices,
   LaunchGate,
   Levels,
   Meeting,
@@ -42,6 +44,17 @@ export const environmentHealth = () => invoke<EnvHealth>("environment_health");
 export const getPrefs = () => invoke<Prefs>("get_prefs");
 export const setPrefs = (prefs: Prefs) => invoke<void>("set_prefs", { prefs });
 export const getDeviceId = () => invoke<string>("get_device_id");
+
+// Device-bound account (managed mode).
+export const authStatus = () => invoke<AuthStatus>("auth_status");
+export const authCreateAccount = () => invoke<string>("auth_create_account");
+export const authRestoreAccount = (recoveryKey: string) => invoke<void>("auth_restore_account", { recoveryKey });
+export const authRecoveryKey = () => invoke<string>("auth_recovery_key");
+export const authRotateRecoveryKey = () => invoke<string>("auth_rotate_recovery_key");
+export const authDevices = () => invoke<AuthDevices>("auth_devices");
+export const authRemoveDevice = (installationId: string) => invoke<void>("auth_remove_device", { installationId });
+export const authSignOut = () => invoke<void>("auth_sign_out");
+export const authDeleteAccount = () => invoke<void>("auth_delete_account");
 
 export const launchGate = () => invoke<LaunchGate>("launch_gate");
 export const acceptTerms = () => invoke<Prefs>("accept_terms");

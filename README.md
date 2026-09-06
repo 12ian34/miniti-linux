@@ -32,18 +32,16 @@ cargo test --manifest-path src-tauri/Cargo.toml   # Rust unit tests
 pnpm tauri build        # release binary + .deb bundle
 ```
 
-### Managed mode needs the backend app key at build time
+### Managed mode: no secrets in the binary
 
-The shared `X-API-Key` secret is never committed. Export it when building a binary
-that should support managed mode; it is XOR-obfuscated into the binary by
-`src-tauri/build.rs`:
-
-```bash
-MINITI_API_KEY=… pnpm tauri build
-```
-
-Builds without it still work in BYOK mode and report managed mode as unavailable
-in Settings. Debug logging: `RUST_LOG=debug pnpm tauri dev`.
+Nothing is baked into the build. On the first managed-mode launch the app
+creates (or restores) an anonymous **recovery key** and a per-device P-256
+installation key; the backend then issues short-lived, device-bound tokens
+(`../miniti-api/docs/agents/04-api-reference.md` § Device-bound client
+authorization). Credentials live in the desktop secret service
+(`com.miniti.linux` / `device-auth`), or in `~/.local/share/miniti/auth.json`
+(0600) when no secret service is running. Any build, from source or CI, can use
+managed mode. Debug logging: `RUST_LOG=debug pnpm tauri dev`.
 
 ## Package a release (tarball)
 

@@ -36,7 +36,7 @@ export function Home({ gate }: { gate: LaunchGate | null }) {
     environmentHealth().then(setHealth).catch(() => setHealth(null));
   }, []);
   useEffect(() => {
-    if (!hasBridge || !prefs || prefs.app_mode !== "managed" || !health?.backend_key_present) return;
+    if (!hasBridge || !prefs || prefs.app_mode !== "managed" || !health?.enrolled) return;
     getUsage().then((u) => { setUsage(u); setUsageError(null); }).catch((e) => setUsageError(String(e)));
   }, [prefs, health]);
 
@@ -79,7 +79,7 @@ export function Home({ gate }: { gate: LaunchGate | null }) {
           <span className="tagline">multi-dimensional<span className="cursor">_</span> meetings</span>
         </div>
 
-        <StatusPills prefs={prefs} usage={usage} backendKey={health?.backend_key_present ?? null} />
+        <StatusPills prefs={prefs} usage={usage} backendKey={health?.enrolled ?? null} />
 
         {lastError && <div className="banner error narrow">{lastError}<button className="ghost" onClick={clearError}>×</button></div>}
         {gate && !gate.backend_reachable && prefs?.app_mode === "managed" && (
@@ -189,7 +189,7 @@ function StatusPills({ prefs, usage, backendKey }: { prefs: Prefs | null; usage:
       </div>
     );
   }
-  if (backendKey === false) return <span className="pill warn">managed unavailable in this build</span>;
+  if (backendKey === false) return <span className="pill warn">managed · not enrolled (Settings → Account)</span>;
   if (!usage) return <span className="pill">managed · free</span>;
   const limit = usage.minutes_limit ?? Infinity;
   const pct = limit === Infinity ? 0 : Math.min(100, (usage.minutes_used / limit) * 100);

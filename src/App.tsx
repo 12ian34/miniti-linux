@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import "./App.css";
-import { hasBridge, launchGate } from "./api";
+import { authStatus, getPrefs, hasBridge, launchGate } from "./api";
 import type { LaunchGate } from "./types";
 import { StoreProvider } from "./store";
 import { Shell } from "./views/Shell";
 import { ForceUpdate, Onboarding, Terms } from "./views/Gates";
+import { Enroll } from "./views/Enroll";
 import { Presence } from "./views/Presence";
 
 const IS_PRESENCE = typeof window !== "undefined" && window.location.hash === "#presence";
@@ -17,11 +18,16 @@ function App() {
 function MainApp() {
   const [gate, setGate] = useState<LaunchGate | null>(null);
   const [gateChecked, setGateChecked] = useState(!hasBridge);
+  // Managed mode needs an enrolled device (recovery key); BYOK never does.
+  const [needsEnroll, setNeedsEnroll] = useState(false);
 
   const refreshGate = useCallback(() => {
     if (!hasBridge) return;
-    launchGate()
-      .then(setGate)
+    Promise.all([launchGate(), getPrefs(), authStatus()])
+      .then(([g, prefs, auth]) => {
+        setGate(g);
+        setNeedsEnroll(prefs.app_mode === "managed" && !auth.enrolled);
+      })
       .catch(() => setGate(null))
       .finally(() => setGateChecked(true));
   }, []);
@@ -42,6 +48,7 @@ function MainApp() {
   if (gate?.gate === "force_update") return <ForceUpdate gate={gate} />;
   if (gate?.gate === "terms") return <Terms gate={gate} onDone={refreshGate} />;
   if (gate?.gate === "onboarding") return <Onboarding gate={gate} onDone={refreshGate} />;
+  if (needsEnroll) return <Enroll onDone={refreshGate} />;
 
   return (
     <StoreProvider>

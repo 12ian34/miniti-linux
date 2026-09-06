@@ -9,7 +9,8 @@ export interface EnvHealth {
   tauri_bridge: boolean;
   microphone_available: boolean;
   system_audio_available: boolean;
-  backend_key_present: boolean;
+  /** Enrolled with the Miniti backend (managed mode available). */
+  enrolled: boolean;
   device_id: string;
 }
 
@@ -317,4 +318,33 @@ export interface CrmRecord {
 export interface CrmTask {
   content: string;
   deadline_at?: string | null;
+}
+
+// ---- Device-bound account (managed mode) ----------------------------------------
+
+export type AuthStorage = "secret_service" | "file" | "none";
+
+export interface AuthStatus {
+  enrolled: boolean;
+  account_id: string | null;
+  device_cap: number | null;
+  storage: AuthStorage;
+  enrolled_at: string | null;
+}
+
+export interface AuthDevice {
+  installation_id: string;
+  platform: string | null;
+  app_version: string | null;
+  label: string | null;
+  enrolled_at: string;
+  last_auth_at: string | null;
+  current: boolean;
+}
+
+export interface AuthDevices {
+  account_id: string;
+  device_cap: number | null;
+  recovery_version: number | null;
+  devices: AuthDevice[];
 }

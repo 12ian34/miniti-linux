@@ -13,6 +13,7 @@ use tauri::Manager;
 
 pub mod api;
 pub mod audio;
+pub mod auth;
 pub mod call_sensor;
 pub mod coaching;
 pub mod db;
@@ -38,6 +39,8 @@ use state::{
     recording_status, regenerate_insights, restore_license, search_meetings, set_meeting_title,
     set_notes, set_pinned, set_prefs, set_sales_enabled, set_speaker_name, start_recording,
     stop_recording, subscribe_url, trim_transcript, AppState, Levels, RecordingSession,
+    auth_status, auth_create_account, auth_restore_account, auth_recovery_key, auth_rotate_recovery_key,
+    auth_devices, auth_remove_device, auth_sign_out, auth_delete_account,
 };
 
 fn init_tracing() {
@@ -56,16 +59,16 @@ fn build_state() -> AppState {
         tracing::error!("device id unavailable ({e}); using an ephemeral id");
         uuid::Uuid::new_v4().to_string()
     });
-    let api_key = api::embedded_api_key();
-    if api_key.is_none() {
-        tracing::info!("no backend key in this build: managed mode unavailable, BYOK only");
+    let auth = Arc::new(auth::manager::AuthManager::load(api::DEFAULT_BASE_URL, device.clone(), state::APP_VERSION));
+    if !auth.is_enrolled() {
+        tracing::info!("device not enrolled: managed mode needs a recovery key (Settings → Account); BYOK works");
     }
 
     AppState {
         db: Arc::new(Mutex::new(conn)),
         prefs: Mutex::new(prefs),
         device_id: device,
-        api_key,
+        auth,
         levels: Arc::new(Levels::default()),
         session: Mutex::new(RecordingSession::default()),
         last_status: Arc::new(Mutex::new(None)),
@@ -120,6 +123,15 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             environment_health,
+            auth_status,
+            auth_create_account,
+            auth_restore_account,
+            auth_recovery_key,
+            auth_rotate_recovery_key,
+            auth_devices,
+            auth_remove_device,
+            auth_sign_out,
+            auth_delete_account,
             get_prefs,
             set_prefs,
             get_device_id,

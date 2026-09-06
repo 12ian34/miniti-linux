@@ -458,8 +458,8 @@ pub struct AppState {
     pub db: Arc<Mutex<Connection>>,
     pub prefs: Mutex<Prefs>,
     pub device_id: String,
-    /// Shared backend secret compiled into this build (None ⇒ BYOK only).
-    pub api_key: Option<String>,
+    /// Device-bound backend credentials (managed mode needs an enrolled installation).
+    pub auth: Arc<crate::auth::manager::AuthManager>,
     pub levels: Arc<Levels>,
     pub session: Mutex<RecordingSession>,
     pub last_status: Arc<Mutex<Option<StreamStatus>>>,
@@ -564,17 +564,22 @@ impl AppState {
         });
     }
 
+    /// Backend client. Construction never fails; authenticated calls return
+    /// `ApiError::NotEnrolled` until the device has an account.
     fn api_client(&self, prefs: &Prefs) -> Result<ApiClient, ApiError> {
-        let api_key = self.api_key.clone().ok_or(ApiError::NoApiKey)?;
         Ok(ApiClient::new(
             api::DEFAULT_BASE_URL,
             HeaderContext {
-                api_key,
                 device_id: self.device_id.clone(),
                 app_version: APP_VERSION.to_string(),
                 app_mode: prefs.app_mode,
             },
+            self.auth.clone(),
         ))
+    }
+
+    fn enrolled(&self) -> bool {
+        self.auth.is_enrolled()
     }
 
     fn prefs_snapshot(&self) -> Result<Prefs, String> {
@@ -634,8 +639,8 @@ pub struct EnvHealth {
     pub tauri_bridge: bool,
     pub microphone_available: bool,
     pub system_audio_available: bool,
-    /// Whether this build can talk to the Miniti backend (managed mode).
-    pub backend_key_present: bool,
+    /// Whether this installation is enrolled with the Miniti backend (managed mode).
+    pub enrolled: bool,
     pub device_id: String,
 }
 
@@ -734,7 +739,7 @@ pub fn environment_health(state: State<AppState>) -> EnvHealth {
         tauri_bridge: true,
         microphone_available: audio::microphone_available(),
         system_audio_available: audio::system_audio_available(),
-        backend_key_present: state.api_key.is_some(),
+        enrolled: state.enrolled(),
         device_id: state.device_id.clone(),
     }
 }
@@ -1282,13 +1287,13 @@ async fn refresh_calendar(app: &AppHandle) {
     }
 }
 
-/// Refresh calendar status + events every 60 s (macOS cadence) when a backend key exists.
+/// Refresh calendar status + events every 60 s (macOS cadence) once the device is enrolled.
 pub fn spawn_calendar_refresher(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
         let mut tick = tokio::time::interval(Duration::from_secs(60));
         loop {
             tick.tick().await;
-            if app.state::<AppState>().api_key.is_none() {
+            if !app.state::<AppState>().enrolled() {
                 continue;
             }
             refresh_calendar(&app).await;
@@ -1311,7 +1316,7 @@ pub struct CalendarView {
 
 #[tauri::command]
 pub async fn calendar_events(app: AppHandle, state: State<'_, AppState>, refresh: Option<bool>) -> Result<CalendarView, String> {
-    if refresh.unwrap_or(false) && state.api_key.is_some() {
+    if refresh.unwrap_or(false) && state.enrolled() {
         refresh_calendar(&app).await;
     }
     let slot = app.state::<crate::integrations::CalendarSlot>();
@@ -1323,7 +1328,7 @@ pub async fn calendar_events(app: AppHandle, state: State<'_, AppState>, refresh
         events: c.events.clone(),
         upcoming: crate::integrations::upcoming(&c.events, now, 5),
         error: c.last_error.clone(),
-        available: state.api_key.is_some(),
+        available: state.enrolled(),
     })
 }
 
@@ -1848,4 +1853,102 @@ pub fn coaching_report(state: State<AppState>, limit: Option<i64>) -> Result<Coa
         report: coaching::analyze(&snapshots),
         snapshots,
     })
+}
+
+
+// ---- Device-bound account (managed mode) ------------------------------------
+
+#[tauri::command]
+pub fn auth_status(state: State<AppState>) -> crate::auth::manager::AuthStatus {
+    state.auth.status()
+}
+
+/// Create an anonymous account; returns the formatted recovery key to show once.
+#[tauri::command]
+pub async fn auth_create_account(state: State<'_, AppState>) -> Result<String, String> {
+    let prefs = state.prefs_snapshot()?;
+    let label = hostname_label();
+    state
+        .auth
+        .create_account(label.as_deref(), prefs.app_mode)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn auth_restore_account(state: State<'_, AppState>, recovery_key: String) -> Result<(), String> {
+    let prefs = state.prefs_snapshot()?;
+    let label = hostname_label();
+    state
+        .auth
+        .restore_account(&recovery_key, label.as_deref(), prefs.app_mode)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Reveal the stored recovery key (the UI asks for confirmation first).
+#[tauri::command]
+pub fn auth_recovery_key(state: State<AppState>) -> Result<String, String> {
+    state.auth.recovery_key().ok_or_else(|| ApiError::NotEnrolled.to_string())
+}
+
+/// Generate a new recovery key, register it, and return it formatted.
+#[tauri::command]
+pub async fn auth_rotate_recovery_key(state: State<'_, AppState>) -> Result<String, String> {
+    let prefs = state.prefs_snapshot()?;
+    let client = state.api_client(&prefs).map_err(|e| e.to_string())?;
+    let canonical = crate::auth::generate_recovery_key();
+    client.auth_rotate_recovery_key(&canonical).await.map_err(|e| e.to_string())?;
+    state.auth.set_recovery_key(&canonical).map_err(|e| e.to_string())?;
+    Ok(crate::auth::format_recovery_key(&canonical))
+}
+
+#[tauri::command]
+pub async fn auth_devices(state: State<'_, AppState>) -> Result<api::AuthDevices, String> {
+    let prefs = state.prefs_snapshot()?;
+    let client = state.api_client(&prefs).map_err(|e| e.to_string())?;
+    client.auth_devices().await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn auth_remove_device(state: State<'_, AppState>, installation_id: String) -> Result<(), String> {
+    let prefs = state.prefs_snapshot()?;
+    let client = state.api_client(&prefs).map_err(|e| e.to_string())?;
+    client.auth_remove_device(&installation_id).await.map_err(|e| e.to_string())?;
+    if installation_id.eq_ignore_ascii_case(&state.device_id) {
+        state.auth.clear_local();
+    }
+    Ok(())
+}
+
+/// Sign this device out: revoke server-side (best effort) and forget local credentials.
+#[tauri::command]
+pub async fn auth_sign_out(state: State<'_, AppState>) -> Result<(), String> {
+    let prefs = state.prefs_snapshot()?;
+    if let Ok(client) = state.api_client(&prefs) {
+        if let Err(e) = client.auth_revoke().await {
+            tracing::warn!("revoke failed ({e}); clearing local credentials anyway");
+        }
+    }
+    state.auth.clear_local();
+    Ok(())
+}
+
+/// Delete the anonymous account (all devices lose access; subscriptions are not cancelled).
+#[tauri::command]
+pub async fn auth_delete_account(state: State<'_, AppState>) -> Result<(), String> {
+    let prefs = state.prefs_snapshot()?;
+    let client = state.api_client(&prefs).map_err(|e| e.to_string())?;
+    client.auth_delete_account().await.map_err(|e| e.to_string())?;
+    state.auth.clear_local();
+    Ok(())
+}
+
+/// Device label for the account's device list (hostname, best effort).
+fn hostname_label() -> Option<String> {
+    std::fs::read_to_string("/etc/hostname")
+        .ok()
+        .map(|h| h.trim().to_string())
+        .filter(|h| !h.is_empty())
+        .map(|h| format!("{h} (Linux)"))
 }
