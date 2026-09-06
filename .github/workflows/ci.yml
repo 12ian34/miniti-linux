@@ -33,3 +33,60 @@ jobs:
         run: cargo test --manifest-path src-tauri/Cargo.toml
       - name: Clippy (warnings are errors)
         run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+
+  # Launch the real binary under a virtual display and prove the webview paints:
+  # a blank window (renderer, CSP, asset, or JS failure) fails this job and the
+  # screenshot is attached as an artifact.
+  smoke:
+    runs-on: ubuntu-22.04
+    needs: linux
+    steps:
+      - uses: actions/checkout@v7
+      - name: System libraries
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev librsvg2-dev \
+            libjavascriptcoregtk-4.1-dev libayatana-appindicator3-dev libssl-dev \
+            libasound2-dev libsecret-1-dev build-essential curl wget file patchelf \
+            xvfb dbus-x11 imagemagick x11-utils xdotool
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with: { node-version: 22, cache: pnpm }
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with: { workspaces: src-tauri }
+      - run: pnpm install --frozen-lockfile
+      - name: Build frontend + release binary
+        run: pnpm build && cargo build --release --manifest-path src-tauri/Cargo.toml
+      - name: Launch under Xvfb and screenshot
+        env:
+          RUST_LOG: info
+          WEBKIT_DISABLE_DMABUF_RENDERER: "1"
+        run: |
+          set -x
+          export HOME=$RUNNER_TEMP/home; mkdir -p "$HOME"
+          xvfb-run -a -s "-screen 0 1400x900x24" bash -c '
+            dbus-run-session -- bash -c "
+              ./src-tauri/target/release/miniti > app.log 2>&1 &
+              APP=\$!
+              sleep 12
+              xwininfo -root -tree | tee windows.txt | grep -i miniti || true
+              import -window root screenshot.png
+              kill \$APP || true
+              sleep 1
+            "'
+          echo "--- app.log"; cat app.log || true
+          UNIQUE=$(identify -format "%k" screenshot.png)
+          echo "unique colours in screenshot: $UNIQUE"
+          if grep -qi "panic" app.log; then echo "::error::panic in app log"; exit 1; fi
+          if ! grep -qi miniti windows.txt; then echo "::error::no miniti window appeared"; exit 1; fi
+          if [ "$UNIQUE" -lt 40 ]; then echo "::error::window looks blank ($UNIQUE colours)"; exit 1; fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: smoke-screenshot
+          path: |
+            screenshot.png
+            app.log
+            windows.txt
