@@ -2,7 +2,7 @@
 # miniti Linux built from source. Managed mode needs no build-time secret: the
 # app enrolls at runtime with a device-bound key and an anonymous recovery key.
 pkgname=miniti
-pkgver=0.4.0
+pkgver=0.4.1
 pkgrel=1
 pkgdesc="miniti — AI meeting assistant with live transcription, insights and coaching"
 arch=('x86_64' 'aarch64')
@@ -21,7 +21,7 @@ conflicts=('miniti-bin' 'miniti-git')
 # !debug: the release profile already strips symbols, so makepkg's debug split has nothing to index.
 options=(!lto !debug)
 source=("miniti-${pkgver}.tar.gz::https://github.com/12ian34/miniti-linux/archive/refs/tags/v${pkgver}.tar.gz")
-sha256sums=('829d21b24dfaefeaa453f0f8e18274153801d862d73cef6d9745274c4e9ffa80')
+sha256sums=('5b50928795ed829d3a8f1579a1f29295b131344281e54da18db98e36484dc8bd')
 
 prepare() {
   cd "miniti-linux-${pkgver}"

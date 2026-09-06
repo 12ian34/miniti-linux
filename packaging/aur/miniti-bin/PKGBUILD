@@ -1,7 +1,7 @@
 # Maintainer: Ian Ahuja <hello@miniti.app>
 # Prebuilt miniti Linux from the GitHub Release tarball (built on Ubuntu 22.04 / glibc 2.35).
 pkgname=miniti-bin
-pkgver=0.4.0
+pkgver=0.4.1
 pkgrel=1
 pkgdesc="miniti — AI meeting assistant with live transcription, insights and coaching (prebuilt)"
 arch=('x86_64')
@@ -17,7 +17,7 @@ conflicts=('miniti' 'miniti-git')
 # The prebuilt binary is already stripped; skip makepkg's debug split (it would only warn).
 options=(!debug)
 source=("https://github.com/12ian34/miniti-linux/releases/download/v${pkgver}/miniti-${pkgver}-x86_64-unknown-linux-gnu.tar.gz")
-sha256sums=('1bfa89b051c3b7c66cae2700f0b55fa0aa703a3a04c30405bdc2ace2233fc487')
+sha256sums=('d50efc366cb49349b99fdaacbae8f765b72ea9bf2f2736a9c744c2b666f597b5')
 
 package() {
   cd "miniti-${pkgver}-x86_64-unknown-linux-gnu"
