@@ -474,17 +474,14 @@ impl LiveEngine {
             req.existing_title = Some(snap.meeting.display_title());
         }
         let n = snap.segments.len();
-        match run_mode(&self.app, &self.cfg, &mut self.standard, "standard", req, InsightMode::Standard).await {
-            Some(v) => {
-                if let Ok(conn) = self.db.lock() {
-                    if let Err(e) = apply_standard(&conn, &self.cfg.meeting_id, &v, &mut self.standard, n, update_title && snap.meeting.title_auto) {
-                        emit(&self.app, &self.cfg.meeting_id, "standard", "error", Some(e));
-                        return;
-                    }
+        if let Some(v) = run_mode(&self.app, &self.cfg, &mut self.standard, "standard", req, InsightMode::Standard).await {
+            if let Ok(conn) = self.db.lock() {
+                if let Err(e) = apply_standard(&conn, &self.cfg.meeting_id, &v, &mut self.standard, n, update_title && snap.meeting.title_auto) {
+                    emit(&self.app, &self.cfg.meeting_id, "standard", "error", Some(e));
+                    return;
                 }
-                emit(&self.app, &self.cfg.meeting_id, "standard", "applied", None);
             }
-            None => {}
+            emit(&self.app, &self.cfg.meeting_id, "standard", "applied", None);
         }
     }
 

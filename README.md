@@ -2,11 +2,13 @@
 
 Tauri 2 + Rust desktop client for [Miniti](https://miniti.app).
 
-**Status:** Phase 0/1. Mic → Deepgram → SQLite → UI works end to end (BYOK or
-managed), with launch gates, webhook, coaching and history. System audio is
-metered but not yet transcribed; insights and the desktop shell are not started.
-The exact wired / contract-only / not-started split is in [AGENTS.md](AGENTS.md)
-§ Status; the plan is [PLAN.md](PLAN.md).
+**Status:** feature build-out toward macOS parity is complete in code: mic +
+system audio with echo reconciliation, live insights (Summary / Questions /
+Coaching / Sales / Playbook), catch-up and investigation, history with trim /
+export / Granola import, tray + floating recording surface, Smart meetings,
+Google Calendar and Attio / Twenty. The mono transcription path is verified on
+Arch; the rest needs its real-hardware pass. Details and known Linux limits in
+[AGENTS.md](AGENTS.md) § Status.
 
 Distribution target: GitHub Release binary tarball + AUR — not Flatpak/AppImage.
 
@@ -15,7 +17,7 @@ Distribution target: GitHub Release binary tarball + AUR — not Flatpak/AppImag
 Prerequisites (Debian/Ubuntu package names — the Cloud Agent env installs these
 automatically via [`.cursor/install.sh`](.cursor/install.sh)):
 
-- Rust **stable** (≥ 1.85; the `edition2024` Cargo feature is required)
+- Rust **stable** (≥ 1.85, enforced by `rust-version` in Cargo.toml)
 - Node 22 + `pnpm`
 - System libs: `libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev librsvg2-dev
   libjavascriptcoregtk-4.1-dev libayatana-appindicator3-dev libssl-dev
@@ -58,7 +60,7 @@ distro-agnostic artifact and its bundled `README.md` lists the runtime deps.
 
 ```bash
 sudo pacman -S --needed webkit2gtk-4.1 gtk3 libsoup3 librsvg \
-  libappindicator-gtk3 openssl pipewire libpulse libsecret
+  libappindicator-gtk3 openssl pipewire pipewire-pulse libpulse libsecret libnotify
 tar xzf miniti-*-x86_64-unknown-linux-gnu.tar.gz && cd miniti-*-x86_64-unknown-linux-gnu
 install -Dm755 miniti ~/.local/bin/miniti
 install -Dm644 miniti.desktop ~/.local/share/applications/miniti.desktop

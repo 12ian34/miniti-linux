@@ -272,7 +272,7 @@ fn parse_jsonrpc_body(body: &str, content_type: &str) -> Result<Value, String> {
         let last = t
             .lines()
             .filter_map(|l| l.strip_prefix("data:"))
-            .last()
+            .next_back()
             .ok_or_else(|| "MCP SSE response missing data".to_string())?;
         serde_json::from_str(last.trim()).map_err(|_| "MCP SSE response is not valid JSON".to_string())
     };
@@ -346,7 +346,7 @@ impl McpClient {
     }
 
     async fn request(&mut self, method: &str, params: Option<Value>) -> Result<Value, String> {
-        let id = (chrono::Utc::now().timestamp_millis() % 1_000_000) as i64;
+        let id = chrono::Utc::now().timestamp_millis() % 1_000_000;
         let mut payload = json!({ "jsonrpc": "2.0", "id": id, "method": method });
         if let Some(p) = params {
             payload["params"] = p;

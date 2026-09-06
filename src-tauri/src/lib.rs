@@ -1,10 +1,12 @@
 //! Miniti Linux — native desktop meeting assistant (Tauri 2 + Rust).
 //!
-//! Module map (PLAN.md): `audio` (capture + PCM), `deepgram` (live transcription
-//! + speaker identity/segmentation), `db` (SQLite), `prefs`, `device_id`,
-//! `coaching` (local metrics), `api` (backend client), `insights` (request
-//! contract), `webhook`, `gates`, `call_sensor` (sensor + policy), and `state`
-//! (recording engine + Tauri commands).
+//! Module map (PLAN.md): `audio` (capture, PCM, dual-source mixer), `deepgram`
+//! (live transcription, speaker identity/segmentation, echo reconciliation),
+//! `db` (SQLite), `prefs`, `device_id`, `coaching` (local metrics), `api`
+//! (backend client), `insights` (engine, providers, MCP), `webhook`, `gates`,
+//! `call_sensor`, `smart` (Smart meetings), `shell` (tray / presence /
+//! notifications / deep links), `integrations` (Calendar, CRM), `export`,
+//! `import`, and `state` (recording engine + Tauri commands).
 
 use std::sync::{Arc, Mutex};
 use tauri::Manager;

@@ -128,6 +128,8 @@ pub fn pcm16_to_le_bytes(samples: &[i16]) -> Vec<u8> {
 
 /// Little-endian bytes to PCM16 samples (length must be even).
 pub fn le_bytes_to_pcm16(bytes: &[u8]) -> Vec<i16> {
+    // `chunks_exact` rather than `as_chunks` to stay within the Rust 1.85 floor.
+    #[allow(clippy::manual_slice_size_calculation)]
     bytes
         .chunks_exact(2)
         .map(|b| i16::from_le_bytes([b[0], b[1]]))

@@ -63,37 +63,37 @@ Honest Linux limits (document in UI/docs, don’t fake parity): Process-Tap-clas
 
 ## Status
 
-Folder created 2026-09-05. Tauri 2 + Rust + React/TypeScript, `identifier=com.miniti.linux`, binary `miniti`. Last reviewed and reworked 2026-09-05 (second-pass review; see git log).
+Tauri 2 + Rust + React/TypeScript, `identifier=com.miniti.linux`, binary `miniti`. Last reworked 2026-09-06 (macOS-parity build-out; see git log).
 
-### Wired and runnable (end-to-end paths that exist today)
+### Wired and runnable
 
-| Path | Notes |
+| Area | What works |
 |---|---|
-| Mic → 16 kHz PCM16 → Deepgram → SQLite → UI | `cpal` capture with a phase-continuous resampler; per-word speaker segmentation and identity mapping ported from macOS (`SpeakerIdentityState` / `segmentBySpeaker`); interims replaced in place in the UI; `CloseStream` + drain on stop so trailing finals are kept; bounded reconnect with wall-clock timeline offsets |
-| BYOK credential | Deepgram `Token` from prefs; recording refuses to start without a key instead of producing an empty meeting |
-| Managed credential | `POST /api/session` → `Bearer` grant, refreshed before reconnects when near expiry; `POST /api/session/end` on stop. Requires a build with `MINITI_API_KEY` (see README); without it managed mode reports itself unavailable |
-| Launch gates | `GET /api/version` min-version force gate → terms → onboarding → main. Backend failures never block launch |
-| Webhook | `meeting.saved` POST on stop with the Apple payload shape (`meeting` envelope, `training` blob, resolved speaker labels) |
-| Coaching | `TrainingMetrics` + `CoachingAdvisor` ported (fillers/min, wpm, words/turn, questions/30 min, talk ratio, monologue words); per-language filler defaults verbatim from `TranscriptionLanguage`; focus / stats / history tabs |
-| History | list, search (LIKE-escaped), pin, delete, rename, speaker rename, mark-as-you |
-| Pro (Polar) | subscribe / portal URLs opened in the browser, license-key restore, usage display |
-| Device id | secret service via `keyring` with file mirror + fallback |
+| Capture | Mic (`cpal`, phase-continuous resampler) + system audio (`parec` monitor) → stereo interleave (ch0 mic, ch1 system) → Deepgram `channels=2&multichannel=true`; mono fallback when no monitor. Source-energy log for dominance |
+| Transcription | Nova-3 with the macOS query contract, `SpeakerIdentityState` + `segmentBySpeaker` ports, echo reconciliation (350 ms ordering buffer, 4 s pending-mic window, LCS/contiguous-run suppression), `CloseStream` drain on stop, bounded reconnect with timeline offsets |
+| Credentials | BYOK (`Token`) or managed (`POST /api/session` Bearer grant, refreshed before reconnects, `session/end` on stop). Backend key injected at build time via `MINITI_API_KEY` |
+| Layout | macOS three-pane: history sidebar (Pinned / Today / Yesterday / This week / Older, auto-collapses on record, Ctrl+[), transcript + notes, insights rail (Ctrl+]) with lowercase summary / questions / coaching and Sales / Playbook under More. Same view live and saved |
+| Insights | Live engine ported from `AppState` (cadence policies, staggering, incremental delta + rolling state, degraded/stale/out-of-order safety, auto title until rename). Managed via `/api/insights`; BYOK via OpenAI with the backend prompts verbatim. Background final pass on stop; regenerate; catch me up; investigate (web / codebase); speaker naming that never overwrites manual renames; sales suggestion + investigation-moment heuristics |
+| Playbook | Streamable-HTTP MCP client (backend SSRF guard, tool discovery, chunk normalization), topic extraction every 20 s, per-topic lookup state, auto lookups for BYOK/Pro |
+| Coaching | `TrainingMetrics` + `CoachingAdvisor` ports; focus / stats / history; verbatim per-language filler lists |
+| History | search, pin, rename, delete, speaker rename, mark-as-you, trim (turn / before / after with regeneration), copy transcript, Markdown export (macOS section order), Granola CSV import with duplicate protection |
+| Desktop shell | Tray with live timer + Start/Stop + decision rows, close-to-tray, floating recording surface (always-on-top window with timer/stop/decisions/nudges), desktop notifications with the surface-aware rule, deep links for OAuth returns |
+| Smart meetings | `CallLifecycleEngine` port over PipeWire capture clients; quiet-ended prompts (threshold table + :00/:30 boundary); calendar transition prompt with Remind-in-2-min and gated 15 s handoff; calendar auto-start countdown; silence auto-stop; 10 s ending grace; live guidance nudges |
+| Integrations | Google Calendar (upcoming five, prep notes seeding live notes, auto title/attendees), Attio + Twenty send sheet (search, payload preview, per-task inclusion) — all via the backend |
+| Gates / Pro | force-update via `/api/version`, terms, onboarding; Polar subscribe / portal / restore; usage pill |
+| Settings | macOS destinations (General … Privacy & Support) with sidebar + Ctrl+F search that scrolls to the control |
 
-### Contract-only (typed, tested, not called from any runtime path)
+### Known Linux limits (documented, not faked)
 
-- `insights` — `/api/insights` request/response shapes for every backend mode (`standard`, `meddpicc`, `questions`, `speaker_names`, `catchup`, `investigation`, `docs`, `docs_topics`) with mode-specific validation. The live insights loop (staggered incremental calls, apply-safety, UI) is Phase 2.
-- `call_sensor` — known-app classifier + `pactl source-outputs` parser (corked streams and Miniti's own clients excluded). The Smart-meetings lifecycle engine is Phase 4.
-
-### Not started
-
-- System audio **into the transcript**: `parec` monitor capture is metered only. Stereo interleave utilities exist; the live mic+system sync engine, `channels=2&multichannel=true` sessions, and echo reconciliation are still the Phase 0 kill-criteria spike.
-- Tray, floating presence, notifications, deep links (Phase 3). Prefs toggles exist but do nothing yet and are labelled as such in Settings.
-- Insights UI, Playbook/Docs MCP, catch-up, investigation (Phase 2). Google Calendar, Attio/Twenty, Granola import, markdown export (Phase 5).
-- Design tokens are placeholders until `../miniti` `ColorPalette` is ported.
+- System audio needs PipeWire with the pulse shim (`pactl` / `parec`); Bluetooth route changes are not yet auto-recovered (macOS has a stall watchdog).
+- Call detection is PipeWire-client based: native apps are strong signals, browsers weak; no per-process HAL.
+- Floating surface placement may be ignored on Wayland compositors.
+- No in-app silent updater: AUR / pacman or the release tarball; `/api/version` only hard-gates.
+- Long transcripts rely on `content-visibility: auto` rather than a native text view.
 
 ### Verification
 
-`cargo test --manifest-path src-tauri/Cargo.toml` (93 tests) and `pnpm build` both pass on macOS as of 2026-09-05. Nothing here has been run against a live Deepgram socket or the production backend yet — the next engineering step is exactly that, on Arch with a BYOK key, then the multichannel spike.
+`cargo test --manifest-path src-tauri/Cargo.toml` (150 tests), `cargo clippy` clean, and `pnpm build` pass on macOS. On the Arch ThinkPad, the mono BYOK/managed path has been run live; the dual-source, Smart-meetings and integration paths were built against the documented contracts and still need a real-hardware pass.
 
 - Dev environment for Cloud Agents: `.cursor/environment.json` (bootstrap `.cursor/install.sh`). Run locally per [README.md](README.md) § Develop.
 - Cursor-hosted repo: `ian/miniti-linux` (`https://origin.cursor.com/ian/miniti-linux.git`); page: https://cursor.com/codebase/ian/miniti-linux

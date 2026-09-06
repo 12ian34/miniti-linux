@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Miniti — native Linux desktop meeting assistant (Tauri 2 + Rust)"
 authors = ["Miniti"]
 edition = "2021"
+rust-version = "1.85"
 
 [lib]
 # `_lib` suffix keeps the lib name distinct from the `miniti` binary

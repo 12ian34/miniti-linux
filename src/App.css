@@ -363,3 +363,20 @@ code { font-family: var(--mono); background: var(--surface-card); padding: 1px 5
 .input.date { width: auto; margin-left: auto; padding: var(--s-1) var(--s-3); }
 .payload { font-size: 11px; background: var(--bg-tertiary); padding: var(--s-4); border-radius: var(--r-md); overflow: auto; max-height: 200px; }
 .sheet-footer { position: sticky; bottom: 0; background: var(--surface-card); padding-top: var(--s-4); }
+
+/* ---- Step 8: settings destinations, long transcripts ------------------------- */
+.settings { display: flex; flex: 1; min-height: 0; }
+.settings-side { width: 230px; flex: none; border-right: 1px solid var(--border); background: var(--bg-secondary); padding: var(--s-6) var(--s-4); display: flex; flex-direction: column; gap: var(--s-4); overflow-y: auto; }
+.small-title { font-size: 15px; }
+.settings-nav { display: flex; flex-direction: column; gap: var(--s-1); }
+.settings-nav .side-item { text-transform: none; }
+.settings-results { display: flex; flex-direction: column; gap: var(--s-1); }
+.settings-result { display: flex; flex-direction: column; align-items: flex-start; background: transparent; border: 1px solid transparent; border-radius: var(--r-md); padding: var(--s-3) var(--s-5); color: var(--text); cursor: pointer; text-align: left; }
+.settings-result:hover { background: var(--bg-tertiary); border-color: var(--border-light); }
+.settings-detail { flex: 1; min-width: 0; overflow-y: auto; padding: var(--s-10) clamp(16px, 3vw, 40px); max-width: 760px; }
+.setting { border-radius: var(--r-lg); padding: var(--s-2) var(--s-3); margin: 0 calc(-1 * var(--s-3)); transition: background 400ms; }
+.setting.flash { background: rgba(88, 166, 255, 0.12); }
+.sticky-save { position: sticky; bottom: 0; background: var(--bg); padding: var(--s-6) 0; margin-top: var(--s-10); border-top: 1px solid var(--border); }
+/* Long transcripts: let the engine skip layout/paint for off-screen turns while
+   keeping one selectable document (WebKitGTK ≥ 2.46; ignored elsewhere). */
+.turn { content-visibility: auto; contain-intrinsic-size: auto 56px; }

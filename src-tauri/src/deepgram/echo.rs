@@ -263,7 +263,7 @@ impl DualChannelReconciler {
         let pending: Vec<TranscriptEvent> = self.pending_mic.drain(..).map(|p| p.ev).collect();
         let now = Instant::now();
         self.enqueue_ordered(pending, now);
-        let all: Vec<Ordered> = self.ordered.drain(..).collect();
+        let all: Vec<Ordered> = std::mem::take(&mut self.ordered);
         Self::commit(all)
     }
 

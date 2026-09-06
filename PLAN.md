@@ -338,6 +338,10 @@ Phase 1 core is wired (not just scaffolded): SQLite persistence, prefs, keyring 
 
 **Stop and reassess (Qt?) if system audio cannot be made reliable on Arch + one other distro.**
 
+### Status 2026-09-06
+
+Phases 1–5 are implemented in code (see AGENTS.md § Status for the wired table). Mono transcription is verified on Arch; the dual-source spike (step 4 above) and the Smart-meetings / integration paths need their real-hardware pass. Remaining engineering after that pass: Bluetooth/route-change recovery for the system tap, release CI on the Ubuntu 22.04 baseline, and the AUR PKGBUILDs.
+
 ### Phase 1 — Core meeting (8–12 weeks)
 
 SQLite meetings, save/resume, BYOK + managed session, history, gates, settings shell, debug log.

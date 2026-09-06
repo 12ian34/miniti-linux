@@ -687,6 +687,7 @@ impl MonitorState {
     }
 
     /// Live guidance evaluation (called by the runtime with fresh transcript data).
+    #[allow(clippy::too_many_arguments)]
     pub fn evaluate_nudges(&mut self, app: &AppHandle, prefs: &crate::prefs::Prefs, you_recent: &[YouSegment], you_run: &[YouSegment], high_questions: &[String], transcript_end: f64, now: Instant) {
         if !prefs.live_guidance_enabled {
             return;

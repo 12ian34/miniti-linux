@@ -601,7 +601,7 @@ fn copy_for(metric: CoachingMetric, value: f64) -> (&'static str, &'static str, 
 /// one focus, up to two strengths.
 pub fn analyze(snapshots: &[CoachingSnapshot]) -> Option<CoachingReport> {
     let mut sorted: Vec<&CoachingSnapshot> = snapshots.iter().collect();
-    sorted.sort_by(|a, b| b.date.cmp(&a.date));
+    sorted.sort_by_key(|s| std::cmp::Reverse(s.date));
     if sorted.is_empty() {
         return None;
     }
