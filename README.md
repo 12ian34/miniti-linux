@@ -15,11 +15,10 @@ Mac desk gets.
 
 <sub>the meeting view (captured on macOS; the Linux app uses the same layout)</sub>
 
-- website: https://miniti.app
-- documentation: https://miniti.app/docs
-- changelog for every platform: https://miniti.app/changelog · this app's own [CHANGELOG.md](CHANGELOG.md)
-- releases: https://github.com/12ian34/miniti-linux/releases
-- issues and ideas: https://github.com/12ian34/miniti-linux/issues
+start at the [website](https://miniti.app), read the [documentation](https://miniti.app/docs),
+follow the [changelog for every platform](https://miniti.app/changelog) or this app's own
+[CHANGELOG.md](CHANGELOG.md), grab a build from [releases](https://github.com/12ian34/miniti-linux/releases),
+and bring [issues and ideas](https://github.com/12ian34/miniti-linux/issues) to the tracker.
 
 ## what miniti does
 
@@ -48,6 +47,13 @@ git clone https://github.com/12ian34/miniti-linux.git
 cd miniti-linux/packaging/aur/miniti-bin
 makepkg -si
 ```
+
+**Omarchy.** It is Arch underneath, so the Arch package above is the one to use
+(and `yay -S miniti-bin` once the AUR listing is live). PipeWire is already
+there. Omarchy runs Hyprland, a Wayland compositor, so the floating recording
+surface may not appear where miniti asks; the tray timer and notifications are
+unaffected. If you see anything Omarchy-specific,
+[open an issue](https://github.com/12ian34/miniti-linux/issues).
 
 **Debian / Ubuntu.** Download `miniti_<version>_amd64.deb` from the
 [latest release](https://github.com/12ian34/miniti-linux/releases/latest), then:
