@@ -54,17 +54,47 @@ The `.deb` (Debian/Ubuntu) is written to
 `src-tauri/target/release/bundle/deb/`. The tarball is the primary,
 distro-agnostic artifact and its bundled `README.md` lists the runtime deps.
 
-### Install on Arch Linux
+## Install
+
+Prebuilt releases: https://github.com/12ian34/miniti-linux/releases/latest
+(x86_64, built on Ubuntu 22.04 / glibc 2.35, so they run on Ubuntu 22.04+,
+Debian 12+, Fedora, Arch and other rolling distros).
+
+**Arch Linux** — build the package from the PKGBUILD in this repo (AUR
+publication is pending while AUR registration is closed; the package will be
+`miniti-bin` there and will install identically):
 
 ```bash
-sudo pacman -S --needed webkit2gtk-4.1 gtk3 libsoup3 librsvg \
-  libappindicator-gtk3 openssl pipewire pipewire-pulse libpulse libsecret libnotify
+git clone https://github.com/12ian34/miniti-linux.git
+cd miniti-linux/packaging/aur/miniti-bin
+makepkg -si          # downloads the release tarball, verifies its checksum, installs
+```
+
+**Debian / Ubuntu** — download `Miniti_<version>_amd64.deb` from the release and:
+
+```bash
+sudo apt install ./Miniti_*_amd64.deb
+```
+
+**Any distro** — the tarball:
+
+```bash
 tar xzf miniti-*-x86_64-unknown-linux-gnu.tar.gz && cd miniti-*-x86_64-unknown-linux-gnu
 install -Dm755 miniti ~/.local/bin/miniti
 install -Dm644 miniti.desktop ~/.local/share/applications/miniti.desktop
 cp -r icons/hicolor/* ~/.local/share/icons/hicolor/
 miniti
 ```
+
+Runtime libraries (Arch names; the tarball's own README lists Debian names):
+`webkit2gtk-4.1 gtk3 libsoup3 librsvg libappindicator-gtk3 openssl pipewire
+pipewire-pulse libpulse libsecret libnotify`. A secret service such as
+`gnome-keyring` is optional; without one, credentials are kept in
+`~/.local/share/miniti/auth.json` with mode 0600.
+
+**First launch.** Pick Managed (create an anonymous recovery key in the app, no
+email or password) or BYOK (your own Deepgram and OpenAI keys). System audio for
+remote callers needs PipeWire with the pulse shim.
 
 Release binaries must be built on the **Ubuntu 22.04** baseline (glibc 2.35) so they
 run on Ubuntu 22.04+, Debian 12+ and rolling distros — see
