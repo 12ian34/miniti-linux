@@ -12,6 +12,12 @@ rust-version = "1.85"
 name = "miniti_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+[features]
+# Production builds MUST enable this (the Tauri CLI does it for `tauri build`).
+# Without it `tauri::generate_context!` treats the build as dev and points the
+# window at the Vite dev server ("Could not connect to localhost").
+custom-protocol = ["tauri/custom-protocol"]
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 

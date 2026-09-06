@@ -79,6 +79,9 @@ PKGBUILDs live in `packaging/aur/miniti-bin/PKGBUILD` (prebuilt tarball) and `pa
 
 ### Local release (no CI)
 
+If you drive `cargo` yourself instead of `pnpm tauri build`, pass `--features custom-protocol` for any binary that will be run outside `tauri dev`. Tauri decides dev vs production from that feature, not from `--release`; without it the window shows "Could not connect to localhost: Connection refused" because it is looking for the Vite dev server.
+
+
 ```bash
 pnpm tauri build                       # binary + .deb
 packaging/make-tarball.sh              # dist-release/miniti-<ver>-x86_64-unknown-linux-gnu.tar.gz + .sha256

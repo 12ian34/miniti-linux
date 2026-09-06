@@ -58,7 +58,7 @@ jobs:
         with: { workspaces: src-tauri }
       - run: pnpm install --frozen-lockfile
       - name: Build frontend + release binary
-        run: pnpm build && cargo build --release --manifest-path src-tauri/Cargo.toml
+        run: pnpm build && cargo build --release --features custom-protocol --manifest-path src-tauri/Cargo.toml
       - name: Launch under Xvfb and screenshot
         env:
           RUST_LOG: info

@@ -4,6 +4,12 @@ public changelog for miniti for Linux. the changelog for every platform lives at
 
 ## releases
 
+### unreleased - v0.4.1
+
+- fix: Builds from source (the `miniti` Arch package, or a plain `cargo build --release`) opened to "Could not connect to localhost" because the frontend was not embedded; they now build the way the release tarball does. The prebuilt tarball, `.deb`, and `miniti-bin` were not affected
+- improvement: A release build made without the frontend embedded now logs a clear error instead of showing a blank window
+- improvement: CI launches the built app on a virtual display and fails if the window is blank
+
 ### 2026-09-06 - v0.4.0
 
 the parity release: everything the Mac app does that Linux can do, it now does.

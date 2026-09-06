@@ -143,6 +143,9 @@ cargo test --manifest-path src-tauri/Cargo.toml   # Rust unit tests
 pnpm tauri build        # release binary + .deb bundle
 ```
 
+Building with plain cargo? Add `--features custom-protocol` to any release
+build you intend to run; `pnpm tauri build` does this for you.
+
 Debug logging: `RUST_LOG=debug pnpm tauri dev`. Headless machines can run the
 app under a virtual display:
 

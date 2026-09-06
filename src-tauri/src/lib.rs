@@ -35,16 +35,14 @@ use state::{
     auth_remove_device, auth_restore_account, auth_rotate_recovery_key, auth_sign_out, auth_status,
     catch_up, coaching_overview, coaching_report, complete_onboarding, debug_log_clear,
     debug_log_export, debug_log_path, debug_log_reveal, debug_log_tail, delete_meeting,
-    delete_segment, disable_nudge_kind, environment_health, export_markdown, get_device_id,
-    get_levels, get_meeting, get_meeting_detail, get_prefs, get_segments, get_usage,
+    delete_segment, disable_nudge_kind, environment_health, export_markdown, frontend_ready,
+    get_device_id, get_levels, get_meeting, get_meeting_detail, get_prefs, get_segments, get_usage,
     import_granola_csv, insights_finishing, investigate, launch_gate, list_meetings,
-    lookup_doc_topic, mark_as_you, meeting_markdown, pick_folder, portal_url, probe_docs_mcp,
-    recording_presence, recording_status, regenerate_insights, restore_license, search_meetings,
-    set_meeting_title, set_notes, set_pinned, set_prefs, set_sales_enabled, set_speaker_name,
-    start_recording, stop_recording, subscribe_url, trim_transcript, AppState, Levels,
-    RecordingSession,
-    list_templates, set_template,
-    frontend_ready,
+    list_templates, lookup_doc_topic, mark_as_you, meeting_markdown, pick_folder, portal_url,
+    probe_docs_mcp, recording_presence, recording_status, regenerate_insights, restore_license,
+    search_meetings, set_meeting_title, set_notes, set_pinned, set_prefs, set_sales_enabled,
+    set_speaker_name, set_template, start_recording, stop_recording, subscribe_url,
+    trim_transcript, AppState, Levels, RecordingSession,
 };
 
 /// Keeps the non-blocking log writer alive for the life of the process.
@@ -152,6 +150,11 @@ fn apply_webkit_workarounds() {
 pub fn run() {
     init_tracing();
     apply_webkit_workarounds();
+    #[cfg(all(not(debug_assertions), not(feature = "custom-protocol")))]
+    tracing::error!(
+        "release binary built without the `custom-protocol` feature: the window will try to load the Vite dev server. \
+         Build with `cargo build --release --features custom-protocol` (or `pnpm tauri build`)."
+    );
     tauri::Builder::default()
         .manage(shell::TraySlot::new(None))
         .manage(smart::MonitorSlot::new(smart::MonitorState::default()))

@@ -35,7 +35,9 @@ build() {
   export CARGO_NET_OFFLINE=true
   # No Tauri updater / signing: pacman owns updates.
   pnpm build
-  cargo build --release --frozen --manifest-path src-tauri/Cargo.toml
+  # --features custom-protocol embeds the built frontend; without it the window
+  # would try to load the Vite dev server.
+  cargo build --release --frozen --features custom-protocol --manifest-path src-tauri/Cargo.toml
 }
 
 package() {
