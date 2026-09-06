@@ -85,7 +85,7 @@ pub async fn connect_and_stream(
 
     let (ws, _resp) = tokio_tungstenite::connect_async(request)
         .await
-        .map_err(|e| StreamError::Connect(e.to_string()))?;
+        .map_err(|e| StreamError::Connect(describe_connect_error(e)))?;
     on_connected();
     let (mut write, mut read) = ws.split();
 
@@ -168,6 +168,29 @@ pub async fn connect_and_stream(
                 }
             }
         }
+    }
+}
+
+/// Include Deepgram's HTTP status and error body on handshake rejections so a
+/// 400/401 says *why* (bad query param, expired grant, …).
+fn describe_connect_error(e: tokio_tungstenite::tungstenite::Error) -> String {
+    use tokio_tungstenite::tungstenite::Error;
+    match e {
+        Error::Http(resp) => {
+            let status = resp.status();
+            let body = resp
+                .body()
+                .as_ref()
+                .map(|b| String::from_utf8_lossy(b).trim().to_string())
+                .filter(|b| !b.is_empty())
+                .unwrap_or_default();
+            if body.is_empty() {
+                format!("HTTP {status}")
+            } else {
+                format!("HTTP {status}: {body}")
+            }
+        }
+        other => other.to_string(),
     }
 }
 

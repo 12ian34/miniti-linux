@@ -72,7 +72,8 @@ pub fn build_ws_url(cfg: &DeepgramConfig) -> String {
         ("model".into(), "nova-3".into()),
         ("smart_format".into(), "true".into()),
         ("filler_words".into(), "true".into()),
-        ("diarize".into(), "true".into()),
+        // diarize_model alone, never with the deprecated diarize=true: Deepgram
+        // returns 400 when both are present (matches the macOS client).
         ("diarize_model".into(), "latest".into()),
         ("interim_results".into(), "true".into()),
         ("utterance_end_ms".into(), "1000".into()),
@@ -716,6 +717,8 @@ mod tests {
             assert!(url.contains(p), "missing {p} in {url}");
         }
         assert!(!url.contains("punctuate="), "must not send punctuate with smart_format");
+        assert!(url.contains("diarize_model=latest"));
+        assert!(!url.contains("diarize=true"), "deprecated diarize=true with diarize_model → 400");
     }
 
     #[test]
