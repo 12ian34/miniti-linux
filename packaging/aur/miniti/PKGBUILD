@@ -15,7 +15,7 @@ optdepends=('gnome-keyring: keep the account credentials and device id in the se
 provides=('miniti')
 conflicts=('miniti-bin' 'miniti-git')
 source=("miniti-${pkgver}.tar.gz::https://github.com/12ian34/miniti-linux/archive/refs/tags/v${pkgver}.tar.gz")
-sha256sums=('SKIP')
+sha256sums=('62607992928bf55330346d11b4d107fd226823bb47295c2249c0327fe304f9d9')
 
 prepare() {
   cd "miniti-linux-${pkgver}"

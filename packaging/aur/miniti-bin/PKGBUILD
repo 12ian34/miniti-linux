@@ -14,7 +14,7 @@ optdepends=('gnome-keyring: keep the account credentials and device id in the se
 provides=('miniti')
 conflicts=('miniti' 'miniti-git')
 source=("https://github.com/12ian34/miniti-linux/releases/download/v${pkgver}/miniti-${pkgver}-x86_64-unknown-linux-gnu.tar.gz")
-sha256sums=('SKIP') # replace with the .sha256 published next to the tarball
+sha256sums=('0b63c03019d624a2cc97aea0b9f92d3bb608e00ca02b629835513892aa4b390b')
 
 package() {
   cd "miniti-${pkgver}-x86_64-unknown-linux-gnu"
