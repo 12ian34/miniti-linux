@@ -2,33 +2,35 @@
 
 **your meetings know more than you.**
 
-most meeting tools stop at notes. notes and AI summaries are table stakes.
-miniti transcribes every meeting live, surfaces the questions worth asking while
-they can still be asked, and coaches you to speak with clarity and confidence.
+most meeting tools stop at notes.
+notes and AI summaries are table stakes.
+miniti transcribes every meeting live and surfaces the questions worth asking while they can still be asked.
+it coaches you to speak with clarity and confidence.
 your transcripts and insights stay on your machine, and you own them forever.
 
-this is the native Linux app, built with Tauri 2 and Rust. same backend, same
-insights, same meeting data as the Mac app, so a Linux desk gets everything a
-Mac desk gets.
+this is the native Linux app, built with Tauri 2 and Rust.
+same backend, same insights, same meeting data as the Mac app.
+a Linux desk gets everything a Mac desk gets.
 
 ![miniti during a live call: transcript with named speakers on the left, live questions on the right](docs/screenshots/recording-questions.png)
 
 <sub>the meeting view (captured on macOS; the Linux app uses the same layout)</sub>
 
-start at the [website](https://miniti.app), read the [documentation](https://miniti.app/docs),
-follow the [changelog for every platform](https://miniti.app/changelog) or this app's own
-[CHANGELOG.md](CHANGELOG.md), grab a build from [releases](https://github.com/12ian34/miniti-linux/releases),
-and bring [issues and ideas](https://github.com/12ian34/miniti-linux/issues) to the tracker.
+- 🌐 [website](https://miniti.app)
+- 📖 [documentation](https://miniti.app/docs)
+- 📝 [changelog for every platform](https://miniti.app/changelog) · this app's own [CHANGELOG.md](CHANGELOG.md)
+- 📦 [releases](https://github.com/12ian34/miniti-linux/releases)
+- 💬 [issues and ideas](https://github.com/12ian34/miniti-linux/issues)
 
 ## what miniti does
 
-- **live transcript** in 11 languages, with remote callers and the people in the room kept apart as separate speakers, and names inferred from the conversation and your calendar
-- **insights while you talk**: a rolling summary, the open questions worth asking next, and coaching on fillers, pace, talk ratio, monologue length and clarity
-- **specialist views** when you need them: Sales for live MEDDPICC analysis with CRM sync to Attio or Twenty, Playbook for cited answers from your own docs
-- **catch me up** when you zoned out, and **investigate** a question on the web or in a local codebase without leaving the call
-- **coaching over time**: your speaking stats across meetings, with one practical focus for the next one
-- **smart meetings**: notices when a call may have ended or the next one is about to start, with Google Calendar auto-start and auto-stop
-- **your data, your tools**: local history, Markdown export, webhooks to Zapier, Make or n8n, Granola import
+- 🎙️ **live transcript** in 11 languages, with remote callers and the people in the room kept apart as separate speakers, and names inferred from the conversation and your calendar
+- 💡 **insights while you talk**: a rolling summary, the open questions worth asking next, and coaching on fillers, pace, talk ratio, monologue length and clarity
+- 🎯 **specialist views** when you need them: Sales for live MEDDPICC analysis with CRM sync to Attio or Twenty, Playbook for cited answers from your own docs
+- ⏪ **catch me up** when you zoned out, and **investigate** a question on the web or in a local codebase without leaving the call
+- 📈 **coaching over time**: your speaking stats across meetings, with one practical focus for the next one
+- 📅 **smart meetings**: notices when a call may have ended or the next one is about to start, with Google Calendar auto-start and auto-stop
+- 🔒 **your data, your tools**: local history, Markdown export, webhooks to Zapier, Make or n8n, Granola import
 
 ![coaching overview: a next-meeting focus, trends, and stats across recent meetings](docs/screenshots/coaching.png)
 
