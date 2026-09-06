@@ -357,6 +357,7 @@ mod linux_surface {
     /// left=0 right=1 top=2 bottom=3; keyboard mode none=0.
     mod layer_shell {
         use gtk::glib::translate::ToGlibPtr;
+        use gtk::prelude::*;
         use libloading::{Library, Symbol};
 
         type GtkWindowPtr = *mut gtk::ffi::GtkWindow;
