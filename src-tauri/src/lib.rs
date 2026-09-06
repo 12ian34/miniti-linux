@@ -134,8 +134,23 @@ fn build_state() -> AppState {
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
+/// WebKitGTK's DMA-BUF renderer produces a blank window on many NVIDIA setups
+/// (the proprietary driver has no usable DMA-BUF export path). Disable it there
+/// unless the user has decided otherwise; other GPUs keep the faster path.
+fn apply_webkit_workarounds() {
+    #[cfg(target_os = "linux")]
+    {
+        let nvidia = std::path::Path::new("/proc/driver/nvidia").exists();
+        if nvidia && std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() {
+            std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+            tracing::info!("NVIDIA driver detected: WEBKIT_DISABLE_DMABUF_RENDERER=1 (set it to 0 to override)");
+        }
+    }
+}
+
 pub fn run() {
     init_tracing();
+    apply_webkit_workarounds();
     tauri::Builder::default()
         .manage(shell::TraySlot::new(None))
         .manage(smart::MonitorSlot::new(smart::MonitorState::default()))

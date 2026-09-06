@@ -6,15 +6,12 @@ import { StoreProvider } from "./store";
 import { Shell } from "./views/Shell";
 import { ForceUpdate, Onboarding, Terms } from "./views/Gates";
 import { Enroll } from "./views/Enroll";
+import { applyInterfaceScale } from "./scale";
 import { Presence } from "./views/Presence";
 
 const IS_PRESENCE = typeof window !== "undefined" && window.location.hash === "#presence";
 
-/** macOS offers compact / standard / large; standard keeps the original metrics here. */
-export function applyInterfaceScale(scale: string | undefined) {
-  if (typeof document === "undefined") return;
-  document.documentElement.dataset.scale = scale === "compact" || scale === "large" ? scale : "standard";
-}
+
 
 function App() {
   if (IS_PRESENCE) return <Presence />;

@@ -36,7 +36,7 @@ import {
 } from "../api";
 import type { AppMode, AuthDevices, AuthStatus, CrmProvider, EnvHealth, Prefs, Usage } from "../types";
 import { Enroll } from "./Enroll";
-import { applyInterfaceScale } from "../App";
+import { applyInterfaceScale } from "../scale";
 import { Sheet } from "./MeetingTools";
 import { useStore } from "../store";
 import { useTauriEvent } from "../useEvent";

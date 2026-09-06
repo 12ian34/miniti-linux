@@ -18,7 +18,8 @@ conflicts=('miniti-bin' 'miniti-git')
 # makepkg's default LTO puts GCC LTO objects into the bundled SQLite archive that
 # rusqlite builds; without a plugin-aware ar the link fails with undefined
 # sqlite3_* symbols. Rust does its own LTO via Cargo.toml.
-options=(!lto)
+# !debug: the release profile already strips symbols, so makepkg's debug split has nothing to index.
+options=(!lto !debug)
 source=("miniti-${pkgver}.tar.gz::https://github.com/12ian34/miniti-linux/archive/refs/tags/v${pkgver}.tar.gz")
 sha256sums=('829d21b24dfaefeaa453f0f8e18274153801d862d73cef6d9745274c4e9ffa80')
 

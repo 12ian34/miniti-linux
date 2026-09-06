@@ -14,6 +14,8 @@ optdepends=('gtk-layer-shell: pin the floating recording surface on Wayland comp
             'xdg-utils: open Polar / OAuth pages in the browser')
 provides=('miniti')
 conflicts=('miniti' 'miniti-git')
+# The prebuilt binary is already stripped; skip makepkg's debug split (it would only warn).
+options=(!debug)
 source=("https://github.com/12ian34/miniti-linux/releases/download/v${pkgver}/miniti-${pkgver}-x86_64-unknown-linux-gnu.tar.gz")
 sha256sums=('1bfa89b051c3b7c66cae2700f0b55fa0aa703a3a04c30405bdc2ace2233fc487')
 
