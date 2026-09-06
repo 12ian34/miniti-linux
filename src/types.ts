@@ -120,6 +120,8 @@ export interface Meeting {
   doc_topics: string;
   manual_speaker_ids: string;
   investigations: string;
+  template_id: string;
+  template_sections: string;
   created_at: number;
 }
 
@@ -381,4 +383,18 @@ export interface AuthDevices {
   device_cap: number | null;
   recovery_version: number | null;
   devices: AuthDevice[];
+}
+
+export interface TemplateSection {
+  key: string;
+  title: string;
+  guidance: string;
+}
+
+export interface InsightTemplate {
+  id: string;
+  name: string;
+  short_name: string;
+  summary: string;
+  sections: TemplateSection[];
 }

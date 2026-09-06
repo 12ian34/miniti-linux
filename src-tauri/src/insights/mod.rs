@@ -13,6 +13,7 @@ use crate::prefs::AppMode;
 pub mod engine;
 pub mod mcp;
 pub mod provider;
+pub mod templates;
 
 /// Port of `buildDocsSearchQuery`: last ~600 chars of transcript as the query.
 pub fn build_docs_search_query(transcript: &str) -> String {
@@ -31,6 +32,8 @@ pub fn build_docs_search_query(transcript: &str) -> String {
 pub enum InsightMode {
     Standard,
     Meddpicc,
+    /// Fill a client-supplied template (Templates specialist view).
+    Template,
     Questions,
     SpeakerNames,
     Catchup,
@@ -44,6 +47,7 @@ impl InsightMode {
         match self {
             InsightMode::Standard => "standard",
             InsightMode::Meddpicc => "meddpicc",
+            InsightMode::Template => "template",
             InsightMode::Questions => "questions",
             InsightMode::SpeakerNames => "speaker_names",
             InsightMode::Catchup => "catchup",
@@ -57,7 +61,10 @@ impl InsightMode {
     pub fn supports_incremental(self) -> bool {
         matches!(
             self,
-            InsightMode::Standard | InsightMode::Meddpicc | InsightMode::Questions
+            InsightMode::Standard
+                | InsightMode::Meddpicc
+                | InsightMode::Questions
+                | InsightMode::Template
         )
     }
 
@@ -105,6 +112,7 @@ pub fn model_for(mode: InsightMode, app_mode: AppMode, incremental: bool) -> &'s
             match mode {
                 InsightMode::Standard
                 | InsightMode::Meddpicc
+                | InsightMode::Template
                 | InsightMode::Questions
                 | InsightMode::Docs
                 | InsightMode::Investigation => MODEL_MINI_LARGE,
@@ -185,6 +193,12 @@ pub struct InsightRequest {
     /// `catchup` only: whole transcript as background; `transcript` is the recent window.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub full_transcript: Option<String>,
+    /// `template` only (required there): `{ id, name, sections: [{ key, title, guidance }] }`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub template: Option<serde_json::Value>,
+    /// `template` only: the current fill used as a stability baseline.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub previous_sections: Option<serde_json::Value>,
 }
 
 pub const FOCUS_MAX_CHARS: usize = 1_000;
@@ -242,6 +256,9 @@ pub fn validate(req: &InsightRequest) -> Result<(), String> {
                 .unwrap_or(true) =>
         {
             Err("docs mode requires docs_mcp_url".into())
+        }
+        "template" if req.template.is_none() => {
+            Err("template mode requires a template definition".into())
         }
         "investigation" => {
             if req.investigation_scope.is_none() {

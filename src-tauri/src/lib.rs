@@ -43,6 +43,7 @@ use state::{
     set_meeting_title, set_notes, set_pinned, set_prefs, set_sales_enabled, set_speaker_name,
     start_recording, stop_recording, subscribe_url, trim_transcript, AppState, Levels,
     RecordingSession,
+    list_templates, set_template,
 };
 
 /// Keeps the non-blocking log writer alive for the life of the process.
@@ -187,6 +188,8 @@ pub fn run() {
             debug_log_reveal,
             debug_log_export,
             debug_log_clear,
+            list_templates,
+            set_template,
             auth_status,
             auth_create_account,
             auth_restore_account,

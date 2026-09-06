@@ -2042,6 +2042,59 @@ pub fn set_sales_enabled(
     db::set_sales_enabled(&conn, &meeting_id, enabled).map_err(|e| e.to_string())
 }
 
+/// Built-in insight templates (Templates specialist view).
+#[tauri::command]
+pub fn list_templates() -> Vec<crate::insights::templates::InsightTemplate> {
+    crate::insights::templates::builtin()
+}
+
+/// Choose, switch, refresh, or clear the template for a meeting. A live meeting
+/// is filled by the running engine on its next tick; a saved meeting is filled
+/// right away in the background.
+#[tauri::command]
+pub fn set_template(
+    app: AppHandle,
+    state: State<AppState>,
+    meeting_id: String,
+    template_id: Option<String>,
+) -> Result<(), String> {
+    let template_id = template_id.unwrap_or_default();
+    if !template_id.is_empty() && crate::insights::templates::find(&template_id).is_none() {
+        return Err("unknown template".into());
+    }
+    {
+        let conn = state.db.lock().map_err(|_| "db poisoned")?;
+        db::set_template_id(&conn, &meeting_id, &template_id).map_err(|e| e.to_string())?;
+    }
+    let _ = app.emit("insights_updated", &meeting_id);
+    if template_id.is_empty() {
+        return Ok(());
+    }
+    let live = state
+        .session
+        .lock()
+        .map(|s| {
+            s.running
+                && s.meeting
+                    .as_ref()
+                    .map(|m| m.id == meeting_id)
+                    .unwrap_or(false)
+        })
+        .unwrap_or(false);
+    if live {
+        // The engine notices the change on its next tick (template state resets).
+        return Ok(());
+    }
+    let prefs = state.prefs_snapshot()?;
+    let cfg = state.engine_config_blocking(&prefs, &meeting_id)?;
+    let db = state.db.clone();
+    tauri::async_runtime::spawn(async move {
+        insights_engine::run_template_once(app.clone(), db, cfg).await;
+        let _ = app.emit("insights_updated", &meeting_id);
+    });
+    Ok(())
+}
+
 /// Re-run the final pass for a saved meeting (after trim, or on demand).
 #[tauri::command]
 pub fn regenerate_insights(

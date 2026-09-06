@@ -10,6 +10,7 @@ import type {
   DeepLinkEvent,
   RecordingNudge,
   RecordingPresence,
+  InsightTemplate,
   SmartPrompt,
   InsightsStatusEvent,
   Investigation,
@@ -132,6 +133,9 @@ export const coachingReport = (limit = 30) =>
 export const insightsFinishing = () => invoke<string[]>("insights_finishing");
 export const setSalesEnabled = (meetingId: string, enabled: boolean) =>
   invoke<void>("set_sales_enabled", { meetingId, enabled });
+export const listTemplates = () => invoke<InsightTemplate[]>("list_templates");
+export const setTemplate = (meetingId: string, templateId: string | null) =>
+  invoke<void>("set_template", { meetingId, templateId });
 export const regenerateInsights = (meetingId: string) =>
   invoke<void>("regenerate_insights", { meetingId });
 export const catchUp = (meetingId: string) => invoke<CatchUp>("catch_up", { meetingId });

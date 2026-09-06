@@ -418,6 +418,33 @@ fn apply_meddpicc(
     Ok(())
 }
 
+/// Managed responses carry `template_sections`; BYOK returns the raw `sections`
+/// object from the prompt. Both are normalized to the template's own keys.
+fn apply_template(
+    conn: &Connection,
+    meeting_id: &str,
+    template: &super::templates::InsightTemplate,
+    v: &Value,
+    state: &mut ModeState,
+    segments: usize,
+) -> Result<(), String> {
+    let raw = v
+        .get("template_sections")
+        .or_else(|| v.get("sections"))
+        .cloned()
+        .unwrap_or(Value::Null);
+    let sections = super::templates::normalize_sections(&raw, template);
+    db::set_template_sections(
+        conn,
+        meeting_id,
+        &Value::Object(sections.clone()).to_string(),
+    )
+    .map_err(|e| e.to_string())?;
+    state.rolling_state = json!({ "template_sections": Value::Object(sections) });
+    state.acked_segments = segments;
+    Ok(())
+}
+
 fn apply_questions(
     conn: &Connection,
     meeting_id: &str,
@@ -540,6 +567,9 @@ pub struct LiveEngine {
     questions: ModeState,
     speaker_names: ModeState,
     docs_topics: ModeState,
+    /// Templates specialist view; reset whenever the meeting's template changes.
+    template: ModeState,
+    last_template_id: String,
     docs_in_flight: Arc<Mutex<HashSet<String>>>,
     last_title_update_count: usize,
     stop: Arc<AtomicBool>,
@@ -582,6 +612,8 @@ impl LiveEngine {
             questions: ModeState::new(),
             speaker_names: ModeState::new(),
             docs_topics: ModeState::new(),
+            template: ModeState::new(),
+            last_template_id: String::new(),
             docs_in_flight: Arc::new(Mutex::new(HashSet::new())),
             last_title_update_count: 0,
             stop: stop.clone(),
@@ -636,6 +668,21 @@ impl LiveEngine {
                 self.meddpicc.last_attempt = Some(now);
                 self.meddpicc.last_fired_segments = n;
                 self.run_meddpicc(&snap, false).await;
+            }
+            if snap.meeting.template_id != self.last_template_id {
+                // Switching templates mid-meeting starts a fresh fill immediately.
+                self.template = ModeState::new();
+                self.last_template_id = snap.meeting.template_id.clone();
+            }
+            if !snap.meeting.template_id.is_empty()
+                && self
+                    .template
+                    .due(MEDDPICC_POLICY, FIRST_MEDDPICC_THRESHOLD, n, now)
+                && (self.template.success_count == 0 || after(MEDDPICC_STAGGER))
+            {
+                self.template.last_attempt = Some(now);
+                self.template.last_fired_segments = n;
+                self.run_template(&snap, false).await;
             }
             if self
                 .questions
@@ -805,6 +852,72 @@ impl LiveEngine {
                 }
             }
             emit(&self.app, &self.cfg.meeting_id, "meddpicc", "applied", None);
+        }
+    }
+
+    /// Fill the meeting's template (macOS Templates view). Incremental once a
+    /// previous fill exists; a full pass otherwise and at the end of the meeting.
+    async fn run_template(&mut self, snap: &Snapshot, final_pass: bool) {
+        let Some(template) = super::templates::find(&snap.meeting.template_id) else {
+            return;
+        };
+        let previous = super::templates::parse_sections(&snap.meeting.template_sections);
+        let has_previous = super::templates::filled(&previous);
+        let incremental = if final_pass || !has_previous {
+            None
+        } else {
+            incremental_payload(
+                &self.template,
+                &snap.segments,
+                &snap.labels,
+                &snap.transcript,
+            )
+        };
+        self.template.request_seq += 1;
+        let mut req = build_request(
+            InsightMode::Template,
+            self.cfg.provider.app_mode(),
+            &snap.transcript,
+            &self.cfg.language,
+            &attendees_of(&snap.meeting),
+            incremental,
+            Some(self.template.request_seq),
+        );
+        req.template = Some(template.request_json());
+        if has_previous {
+            req.previous_sections = Some(Value::Object(previous));
+        }
+        let n = snap.segments.len();
+        if let Some(v) = run_mode(
+            &self.app,
+            &self.cfg,
+            &mut self.template,
+            "template",
+            req,
+            InsightMode::Template,
+        )
+        .await
+        {
+            if let Ok(conn) = self.db.lock() {
+                if let Err(e) = apply_template(
+                    &conn,
+                    &self.cfg.meeting_id,
+                    &template,
+                    &v,
+                    &mut self.template,
+                    n,
+                ) {
+                    emit(
+                        &self.app,
+                        &self.cfg.meeting_id,
+                        "template",
+                        "error",
+                        Some(e),
+                    );
+                    return;
+                }
+            }
+            emit(&self.app, &self.cfg.meeting_id, "template", "applied", None);
         }
     }
 
@@ -1152,6 +1265,30 @@ pub async fn lookup_topic(
 
 /// Background final pass after stop (or regenerate): standard, questions,
 /// MEDDPICC when enabled, speaker names. Never blocks the UI.
+/// Fill (or refill) a saved meeting's template on demand, without the full final pass.
+pub async fn run_template_once(app: AppHandle, db: Arc<Mutex<Connection>>, cfg: EngineConfig) {
+    let mut engine = LiveEngine {
+        app: app.clone(),
+        db: db.clone(),
+        cfg: cfg.clone(),
+        standard: ModeState::new(),
+        meddpicc: ModeState::new(),
+        questions: ModeState::new(),
+        speaker_names: ModeState::new(),
+        docs_topics: ModeState::new(),
+        template: ModeState::new(),
+        last_template_id: String::new(),
+        docs_in_flight: Arc::new(Mutex::new(HashSet::new())),
+        last_title_update_count: 0,
+        stop: Arc::new(AtomicBool::new(false)),
+    };
+    if let Some(snap) = load_snapshot(&db, &cfg.meeting_id) {
+        if !snap.segments.is_empty() && !snap.meeting.template_id.is_empty() {
+            engine.run_template(&snap, true).await;
+        }
+    }
+}
+
 pub async fn finalize_meeting(
     app: AppHandle,
     db: Arc<Mutex<Connection>>,
@@ -1171,6 +1308,8 @@ pub async fn finalize_meeting(
         questions: ModeState::new(),
         speaker_names: ModeState::new(),
         docs_topics: ModeState::new(),
+        template: ModeState::new(),
+        last_template_id: String::new(),
         docs_in_flight: Arc::new(Mutex::new(HashSet::new())),
         last_title_update_count: 0,
         stop: Arc::new(AtomicBool::new(false)),
@@ -1182,6 +1321,9 @@ pub async fn finalize_meeting(
                 engine.run_questions(&snap, true).await;
                 if snap.meeting.sales_enabled {
                     engine.run_meddpicc(&snap, true).await;
+                }
+                if !snap.meeting.template_id.is_empty() {
+                    engine.run_template(&snap, true).await;
                 }
                 if snap.segments.len() >= FIRST_SPEAKER_NAMES_THRESHOLD {
                     engine.run_speaker_names(&snap).await;

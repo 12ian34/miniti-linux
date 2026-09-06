@@ -417,6 +417,7 @@ pub fn build_prompt(
         InsightMode::Meddpicc => {
             "summary, action_items, topics, discussion_flow, title, and MEDDPICC field values"
         }
+        InsightMode::Template => "section values",
         InsightMode::SpeakerNames => {
             "speaker names (use names exactly as spoken in the transcript)"
         }
@@ -471,6 +472,63 @@ Respond in JSON:
 
 {}{appendix}"#, ctx.context_note, ctx.transcript_section),
         ),
+        InsightMode::Template => {
+            // Port of the backend's buildTemplatePrompt (lib/insights.ts).
+            let template = req.template.as_ref().ok_or("template mode requires a template definition")?;
+            let name = template.get("name").and_then(|v| v.as_str()).unwrap_or("template");
+            let sections = template.get("sections").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+            let section_lines = sections
+                .iter()
+                .map(|sec| {
+                    let key = sec.get("key").and_then(|v| v.as_str()).unwrap_or_default();
+                    let title = sec.get("title").and_then(|v| v.as_str()).unwrap_or_default();
+                    let guidance = sec.get("guidance").and_then(|v| v.as_str()).unwrap_or_default();
+                    if guidance.is_empty() { format!("- {key} — {title}") } else { format!("- {key} — {title}: {guidance}") }
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            let schema_lines = sections
+                .iter()
+                .map(|sec| format!("        \"{}\": \"Point one\\nPoint two (or null)\"", sec.get("key").and_then(|v| v.as_str()).unwrap_or_default()))
+                .collect::<Vec<_>>()
+                .join(",\n");
+            let baseline = match &req.previous_sections {
+                Some(prev) => format!(
+                    "Previous sections (baseline from earlier in this meeting; keep wording stable, update only when new transcript evidence supports it, remove a point only when it was contradicted or resolved):\n{}",
+                    serde_json::to_string_pretty(prev).unwrap_or_default()
+                ),
+                None => "This is the start of the meeting. Fill every section the transcript supports.".to_string(),
+            };
+            (
+                "You are a strict structured note-taker. You fill a fixed set of named sections from a meeting transcript using only what was actually said. Do not infer missing facts. If a section has no explicit evidence, return null.".into(),
+                format!(r#"{language_instruction}Task: fill the "{name}" template from the transcript.
+
+{baseline}
+
+Sections to fill (key — title: what belongs here):
+{section_lines}
+
+Hard rules:
+- Return ONLY one valid JSON object. No markdown, no prose, no code fences, no comments.
+- Use exactly the section keys listed above under "sections". Do not add keys. Do not rename keys.
+- For each section: either return null OR a newline-separated string of points. Do NOT prefix lines with "- " or "• " or any bullet character - the UI adds bullets automatically.
+- Null policy: if evidence is missing, ambiguous, or implied-but-not-stated, return null.
+- Dedupe policy: merge semantically identical points; do not repeat the same fact across lines or across sections.
+- Normalization policy: normalize wording, tense, and entity names; keep canonical phrasing stable across updates.
+- Contradictions: if newer transcript evidence conflicts with older evidence, keep the newer fact only.
+- Attribute statements to the person who made them when the transcript makes that clear.
+- Keep content concise: max 4 points per section; each point <= 160 chars.
+
+Respond in JSON:
+{{
+    "sections": {{
+{schema_lines}
+    }}
+}}
+
+{}{appendix}"#, ctx.transcript_section),
+            )
+        }
         InsightMode::SpeakerNames => {
             let candidate_list = if req.candidates.is_empty() {
                 String::new()

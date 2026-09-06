@@ -171,6 +171,13 @@ pub fn insights_as_markdown(meeting: &Meeting) -> String {
             }
         }
     }
+    if let Some(template) = crate::insights::templates::find(&meeting.template_id) {
+        let sections = crate::insights::templates::parse_sections(&meeting.template_sections);
+        let block = crate::insights::templates::markdown(&template, &sections, 3);
+        if !block.is_empty() {
+            md.push_str(&block);
+        }
+    }
     md.trim().to_string()
 }
 

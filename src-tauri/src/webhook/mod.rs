@@ -38,6 +38,9 @@ pub struct MeetingData {
     pub notes: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub meddpicc: Option<serde_json::Value>,
+    /// Templates view: `{ "id", "name", "sections": { key: text } }` when filled.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub template: Option<serde_json::Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub training: Option<TrainingData>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -134,6 +137,25 @@ fn json_array(raw: &str) -> Option<Vec<serde_json::Value>> {
         .filter(|v| !v.is_empty())
 }
 
+fn template_or_none(meeting: &Meeting) -> Option<serde_json::Value> {
+    let template = crate::insights::templates::find(&meeting.template_id)?;
+    let sections = crate::insights::templates::parse_sections(&meeting.template_sections);
+    if !crate::insights::templates::filled(&sections) {
+        return None;
+    }
+    let filled: serde_json::Map<String, serde_json::Value> = template
+        .ordered(&sections)
+        .into_iter()
+        .map(|(sec, v)| {
+            (
+                sec.key.to_string(),
+                serde_json::Value::String(v.to_string()),
+            )
+        })
+        .collect();
+    Some(serde_json::json!({ "id": template.id, "name": template.name, "sections": filled }))
+}
+
 fn meddpicc_or_none(raw: &str) -> Option<serde_json::Value> {
     let v: serde_json::Value = serde_json::from_str(raw).ok()?;
     let obj = v.as_object()?;
@@ -219,6 +241,7 @@ pub fn payload_from_meeting(
             discussion_flow: json_array_of_strings(&meeting.discussion_flow),
             notes: meeting.notes.clone(),
             meddpicc: meddpicc_or_none(&meeting.meddpicc),
+            template: template_or_none(meeting),
             training: Some(training_data(&metrics)),
             questions: json_array(&meeting.suggested_questions),
             docs: json_array(&meeting.docs),

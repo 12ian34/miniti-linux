@@ -4,18 +4,20 @@ import {
   coachingOverview,
   errorMessage,
   hasBridge,
+  listTemplates,
   lookupDocTopic,
   onInsightsStatus,
   onInsightsUpdated,
   onSalesSuggested,
   regenerateInsights,
   setSalesEnabled,
+  setTemplate,
 } from "../api";
 import { fmt1, parseJsonArray, parseJsonObject } from "../format";
 import { useTauriEvent } from "../useEvent";
-import type { DocTopic, InsightsStatusEvent, Investigation, Meeting, TrainingMetrics } from "../types";
+import type { DocTopic, InsightTemplate, InsightsStatusEvent, Investigation, Meeting, TrainingMetrics } from "../types";
 
-type Tab = "summary" | "questions" | "coaching" | "sales" | "playbook";
+type Tab = "summary" | "questions" | "coaching" | "sales" | "playbook" | "templates";
 
 interface Props {
   meetingId: string;
@@ -57,6 +59,22 @@ export function InsightsRail({ meetingId, meeting, live, finishing, onMeetingCha
   const [status, setStatus] = useState<Record<string, InsightsStatusEvent>>({});
   const [salesSuggested, setSalesSuggested] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [templates, setTemplates] = useState<InsightTemplate[]>([]);
+  useEffect(() => { if (hasBridge) listTemplates().then(setTemplates).catch(() => {}); }, []);
+  const activeTemplate = templates.find((t) => t.id === meeting.template_id) ?? null;
+  const templateSections = parseJsonObject<Record<string, string | null>>(meeting.template_sections) ?? {};
+  const templateRunning = status.template?.state === "running";
+  async function chooseTemplate(id: string | null) {
+    setError(null);
+    setMore(false);
+    try {
+      await setTemplate(meetingId, id);
+      await onMeetingChanged();
+      if (id) setTab("templates");
+    } catch (e) {
+      setError(errorMessage(e));
+    }
+  }
 
   useTauriEvent(onInsightsUpdated, (id) => {
     if (id === meetingId) void onMeetingChanged();
@@ -132,13 +150,16 @@ export function InsightsRail({ meetingId, meeting, live, finishing, onMeetingCha
           </button>
         ))}
         <div className="more">
-          <button className={`tab ${tab === "sales" || tab === "playbook" ? "active" : ""}`} onClick={() => setMore(!more)}>
-            more ▾
+          <button className={`tab ${tab === "sales" || tab === "playbook" || tab === "templates" ? "active" : ""}`} onClick={() => setMore(!more)}>
+            {tab === "templates" && activeTemplate ? activeTemplate.short_name.toLowerCase() : "more"} ▾
           </button>
           {more && (
             <div className="menu" onMouseLeave={() => setMore(false)}>
               <button onClick={() => (setTab("sales"), setMore(false))}>
                 <span style={{ color: "var(--tab-sales)" }}>◆</span> sales{meeting.sales_enabled ? " ✓" : hasSales ? " •" : ""}
+              </button>
+              <button onClick={() => (setTab("templates"), setMore(false))}>
+                <span style={{ color: "var(--tab-templates)" }}>◆</span> templates{activeTemplate ? ` · ${activeTemplate.short_name.toLowerCase()}` : ""}
               </button>
               <button onClick={() => (setTab("playbook"), setMore(false))}><span style={{ color: "var(--tab-playbook)" }}>◆</span> playbook</button>
               {!live && (
@@ -268,6 +289,60 @@ export function InsightsRail({ meetingId, meeting, live, finishing, onMeetingCha
                         {name}
                       </div>
                       <ul>{v.split("\n").filter(Boolean).map((line, i) => <li key={i}>{line}</li>)}</ul>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </>
+        )}
+
+        {tab === "templates" && (
+          <>
+            {!activeTemplate ? (
+              <>
+                <p className="muted">A template is a fixed set of sections filled live from the conversation, and again when the meeting ends. Pick one:</p>
+                <div className="template-picker">
+                  {templates.map((t) => (
+                    <button key={t.id} className="template-option" onClick={() => chooseTemplate(t.id)}>
+                      <strong>{t.name}</strong>
+                      <span>{t.summary}</span>
+                    </button>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <div className="template-fill">
+                <div className="template-head">
+                  <span className="insight-title" style={{ color: "var(--tab-templates)" }}>{activeTemplate.name}</span>
+                  <span className="grow" />
+                  <button className="control quiet" disabled={templateRunning} onClick={() => chooseTemplate(activeTemplate.id)} title="Fill the template again from the current transcript">
+                    {templateRunning ? "filling…" : "↻ update"}
+                  </button>
+                  <div className="more">
+                    <button className="control quiet" onClick={() => setMore(!more)}>switch ▾</button>
+                    {more && (
+                      <div className="menu" onMouseLeave={() => setMore(false)}>
+                        {templates.map((t) => (
+                          <button key={t.id} onClick={() => chooseTemplate(t.id)}>{t.name}{t.id === activeTemplate.id ? " ✓" : ""}</button>
+                        ))}
+                        <button onClick={() => chooseTemplate(null)}>no template</button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                {status.template?.state === "error" && <div className="banner error">{status.template.message}</div>}
+                {activeTemplate.sections.map((sec, i) => {
+                  const v = templateSections[sec.key];
+                  const color = `var(--template-${(i % 8) + 1})`;
+                  return (
+                    <div className="template-section" key={sec.key}>
+                      <div className="insight-title" style={{ color }}>{sec.title}</div>
+                      {v && v.trim() ? (
+                        <ul>{v.split("\n").filter(Boolean).map((line, k) => <li key={k}>{line}</li>)}</ul>
+                      ) : (
+                        <div className="pending">{live ? "listening…" : templateRunning ? "filling…" : "nothing in the transcript yet"}</div>
+                      )}
                     </div>
                   );
                 })}
