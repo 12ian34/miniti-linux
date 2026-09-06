@@ -98,6 +98,10 @@ Tauri 2 + Rust + React/TypeScript, `identifier=com.miniti.linux`, binary `miniti
 - Dev environment for Cloud Agents: `.cursor/environment.json` (bootstrap `.cursor/install.sh`). Run locally per [README.md](README.md) § Develop.
 - Cursor-hosted repo: `ian/miniti-linux` (`https://origin.cursor.com/ian/miniti-linux.git`); page: https://cursor.com/codebase/ian/miniti-linux
 
+## Changelog
+
+Every release adds an entry to `CHANGELOG.md`; the rules are in [docs/changelog-style.md](docs/changelog-style.md).
+
 ## When in doubt
 
 1. Read [PLAN.md](PLAN.md).

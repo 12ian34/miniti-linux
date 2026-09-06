@@ -1,44 +1,26 @@
-# Changelog
+# changelog
 
-Public-facing changelog for miniti for Linux. The hosted changelog covering
-every platform lives at `https://miniti.app/changelog`; end-user documentation
-at `https://miniti.app/docs`.
+public changelog for miniti for Linux. the changelog for every platform lives at https://miniti.app/changelog; end-user documentation at https://miniti.app/docs.
 
-## Style
-
-- Write entries as human-readable descriptions for a public audience. No code references, function names, file paths, or implementation details. Write what changed from the user's perspective.
-- Never modify older changelog entries after they are written unless a historical correction is explicitly requested. Add corrections, clarifications, or reversals only as a new entry at the top.
-- While a release is still being prepared, its top entry may use `### Unreleased - vX.Y.Z`. Replace `Unreleased` with the ship date only when the release actually goes out.
-- Release headers contain only the date and version. Linux versions are independent of the macOS and iOS version numbers.
-- The GitHub Release notes for a tag are copied from that version's entry here.
-
-## Releases
+## releases
 
 ### 2026-09-06 - v0.3.0
 
 first public release of miniti for Linux. Available as a release tarball, a `.deb`, and an Arch package built from the PKGBUILD in this repository (AUR publication follows when registration reopens).
 
-#### New features
-
 - new: Managed mode no longer needs anything baked into the app. On first launch you create an anonymous recovery key, with no email or password, and miniti enrolls this computer with a per-device key. Restore the same account on another computer with the recovery key
 - new: Settings → Account & Plan shows the account, reveals or rotates the recovery key, lists the devices on the account, removes a device, signs this computer out, or deletes the account
 - new: Managed mode is available in every build, including builds from source, because there is no secret to compile in
 
-#### Experience improvements
-
 - improvement: The app is now distributed as a signed-checksum release tarball, a `.deb`, and an Arch package, all built on the Ubuntu 22.04 baseline so they run on Ubuntu 22.04+, Debian 12+, Fedora and rolling distributions
 - improvement: A command that fails inside the app now reports an error instead of leaving a button spinning
 - improvement: Credentials are stored in the desktop secret service when one is running, with a private file fallback when none is, and the app says which it used
-
-#### Fixes
 
 - fix: Creating a recovery key could hang forever on some desktops; the keyring call now runs off the app's main runtime with a timeout
 
 ### 2026-09-06 - v0.2.0
 
 Internal test build. Feature parity pass against the macOS app.
-
-#### New features
 
 - new: System audio joins the microphone in the transcript through PipeWire, with remote speakers kept separate from you and echo of your own voice removed
 - new: Live insights while you talk: Summary, Questions, Coaching, Sales (MEDDPICC), and Playbook lookups from a Docs MCP server, on the same schedule as macOS, plus a final pass when the meeting ends
@@ -48,8 +30,6 @@ Internal test build. Feature parity pass against the macOS app.
 - new: Smart meetings: notices when a meeting may have ended or another is approaching, with calendar handoff
 - new: Google Calendar, Attio and Twenty integrations; upcoming meetings on Home with prep notes
 - new: The macOS layout: history sidebar with pinned and dated groups, transcript with speaker legend and resizable notes, an insights rail, searchable Settings destinations, keyboard shortcuts, and the miniti app icon
-
-#### Fixes
 
 - fix: Confirmed transcript lines no longer appear twice
 - fix: Live transcription connects reliably in managed mode
