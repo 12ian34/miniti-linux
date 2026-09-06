@@ -51,6 +51,12 @@ CREATE TABLE IF NOT EXISTS transcript_segments (
     created_at  INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS calendar_prep (
+    event_id    TEXT PRIMARY KEY,
+    notes       TEXT NOT NULL DEFAULT '',
+    updated_at  INTEGER NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_segments_meeting ON transcript_segments(meeting_id, start_s);
 CREATE INDEX IF NOT EXISTS idx_meetings_pinned ON meetings(pinned, started_at);
 "#;
@@ -461,6 +467,33 @@ pub fn replace_segments(conn: &Connection, meeting_id: &str, segments: &[Transcr
     Ok(())
 }
 
+pub fn get_prep_notes(conn: &Connection, event_id: &str) -> DbResult<String> {
+    conn.query_row("SELECT notes FROM calendar_prep WHERE event_id=?1", params![event_id], |r| r.get(0))
+        .optional()
+        .map(|o| o.unwrap_or_default())
+}
+
+pub fn set_prep_notes(conn: &Connection, event_id: &str, notes: &str) -> DbResult<()> {
+    if notes.trim().is_empty() {
+        conn.execute("DELETE FROM calendar_prep WHERE event_id=?1", params![event_id])?;
+        return Ok(());
+    }
+    conn.execute(
+        "INSERT INTO calendar_prep (event_id, notes, updated_at) VALUES (?1, ?2, ?3)
+         ON CONFLICT(event_id) DO UPDATE SET notes=?2, updated_at=?3",
+        params![event_id, notes, Utc::now().timestamp()],
+    )?;
+    Ok(())
+}
+
+/// Prep notes older than a week are pruned (port of `pruneExpiredCalendarPrepNotes`).
+pub fn prune_prep_notes(conn: &Connection) -> DbResult<usize> {
+    conn.execute(
+        "DELETE FROM calendar_prep WHERE updated_at < ?1",
+        params![Utc::now().timestamp() - 7 * 86_400],
+    )
+}
+
 pub fn find_by_import_source(conn: &Connection, source: &str) -> DbResult<Vec<String>> {
     let mut stmt = conn.prepare("SELECT import_source FROM meetings WHERE import_source LIKE ?1")?;
     let rows = stmt.query_map(params![format!("{source}:%")], |r| r.get::<_, String>(0))?;
@@ -553,6 +586,26 @@ pub fn trim_segments_after(conn: &Connection, meeting_id: &str, to_s: f64) -> Db
         params![meeting_id, to_s],
     )?;
     Ok(n)
+}
+
+/// Segments at or after `from_s` (cheap window for nudges / catch-up).
+pub fn list_segments_since(conn: &Connection, meeting_id: &str, from_s: f64) -> DbResult<Vec<TranscriptSegment>> {
+    let mut stmt = conn.prepare(
+        "SELECT id,meeting_id,speaker,text,start_s,end_s,source \
+         FROM transcript_segments WHERE meeting_id=?1 AND end_s >= ?2 ORDER BY start_s ASC, created_at ASC",
+    )?;
+    let rows = stmt.query_map(params![meeting_id, from_s], |row| {
+        Ok(TranscriptSegment {
+            id: row.get(0)?,
+            meeting_id: row.get(1)?,
+            speaker: row.get(2)?,
+            text: row.get(3)?,
+            start_s: row.get(4)?,
+            end_s: row.get(5)?,
+            source: row.get(6)?,
+        })
+    })?;
+    rows.collect()
 }
 
 /// Trim: drop segments starting before `from_s` (used by history trimming).

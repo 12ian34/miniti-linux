@@ -33,16 +33,31 @@ pub const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 /// How long stop waits for Deepgram to flush finals after `CloseStream`.
 const STOP_DRAIN_BUDGET: Duration = Duration::from_secs(4);
 
-/// Lock-free mic/system RMS levels for the waveform meters.
+/// RMS above this counts as speech-like audio activity (Smart meetings quiet rules).
+const SPEECH_LIKE_LEVEL: f32 = 0.01;
+
+/// Lock-free mic/system RMS levels for the waveform meters, plus the last
+/// time either source carried speech-like energy.
 #[derive(Default)]
 pub struct Levels {
     mic: AtomicU32,
     system: AtomicU32,
+    last_activity: Mutex<Option<Instant>>,
 }
 
 impl Levels {
     fn set(slot: &AtomicU32, v: f32) {
         slot.store(v.to_bits(), Ordering::Relaxed);
+    }
+    fn note_activity(&self, level: f32) {
+        if level >= SPEECH_LIKE_LEVEL {
+            if let Ok(mut t) = self.last_activity.lock() {
+                *t = Some(Instant::now());
+            }
+        }
+    }
+    pub fn audio_gap(&self) -> f64 {
+        self.last_activity.lock().ok().and_then(|t| *t).map(|t| t.elapsed().as_secs_f64()).unwrap_or(f64::INFINITY)
     }
     fn get(slot: &AtomicU32) -> f32 {
         f32::from_bits(slot.load(Ordering::Relaxed))
@@ -56,7 +71,46 @@ impl Levels {
     fn reset(&self) {
         Self::set(&self.mic, 0.0);
         Self::set(&self.system, 0.0);
+        if let Ok(mut t) = self.last_activity.lock() {
+            *t = None;
+        }
     }
+}
+
+/// Transcript activity for Smart meetings (updated by the persist consumer).
+#[derive(Default)]
+pub struct ActivityTrack {
+    pub last_final_at: Mutex<Option<Instant>>,
+    pub meaningful_finals: std::sync::atomic::AtomicUsize,
+}
+
+impl ActivityTrack {
+    fn reset(&self) {
+        if let Ok(mut t) = self.last_final_at.lock() {
+            *t = None;
+        }
+        self.meaningful_finals.store(0, Ordering::Relaxed);
+    }
+    fn note_final(&self, text: &str) {
+        if let Ok(mut t) = self.last_final_at.lock() {
+            *t = Some(Instant::now());
+        }
+        if text.split_whitespace().count() >= 3 {
+            self.meaningful_finals.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+    pub fn transcript_gap(&self) -> f64 {
+        self.last_final_at.lock().ok().and_then(|t| *t).map(|t| t.elapsed().as_secs_f64()).unwrap_or(f64::INFINITY)
+    }
+}
+
+/// How a meeting is started (Home button, tray, calendar event, call prompt).
+#[derive(Debug, Clone, Default)]
+pub struct StartOptions {
+    pub title: Option<String>,
+    pub calendar_event_id: Option<String>,
+    pub attendees_json: Option<String>,
+    pub notes: Option<String>,
 }
 
 /// What the current meeting is authenticated with.
@@ -153,10 +207,12 @@ impl RecordingSession {
         levels: Arc<Levels>,
         last_status: Arc<Mutex<Option<StreamStatus>>>,
         prefs: &Prefs,
-        title: String,
+        opts: StartOptions,
         credential: Credential,
         engine_cfg: Option<EngineConfig>,
+        activity: Arc<ActivityTrack>,
     ) -> Result<String, String> {
+        let title = opts.title.clone().map(|t| t.trim().to_string()).filter(|t| !t.is_empty()).unwrap_or_else(|| "New meeting".to_string());
         // Microphone first: without it there is nothing to transcribe.
         let (mic_tx, mic_rx) = audio::frame_channel();
         let mic = audio::start_microphone(mic_tx)
@@ -180,9 +236,21 @@ impl RecordingSession {
 
         let mut meeting = Meeting::new(title, prefs.language.clone());
         meeting.sales_enabled = prefs.sales_insights_default;
+        meeting.calendar_event_id = opts.calendar_event_id.clone();
+        if let Some(a) = opts.attendees_json.clone() {
+            meeting.attendees = a;
+        }
+        if let Some(n) = opts.notes.clone().filter(|n| !n.trim().is_empty()) {
+            meeting.notes = n;
+        }
+        if opts.title.is_some() {
+            // Calendar / user-supplied titles are not overwritten by suggestions.
+            meeting.title_auto = false;
+        }
         if let Credential::Managed { session_id, .. } = &credential {
             meeting.managed_session_id = session_id.clone();
         }
+        activity.reset();
         {
             let conn = db.lock().map_err(|_| "db poisoned")?;
             db::upsert_meeting(&conn, &meeting).map_err(|e| e.to_string())?;
@@ -218,6 +286,7 @@ impl RecordingSession {
         let meeting_id = meeting.id.clone();
         let sales_default = prefs.sales_insights_default;
         let mixer_for_consumer = mixer.clone();
+        let activity_for_consumer = activity.clone();
         self.consumer_tasks.push(tauri::async_runtime::spawn(async move {
             let mut finals = 0usize;
             let mut sales_suggested = sales_default;
@@ -227,6 +296,7 @@ impl RecordingSession {
             };
             let mut persist_final = |ev: &TranscriptEvent| -> Option<String> {
                 finals += 1;
+                activity_for_consumer.note_final(&ev.text);
                 if let Some(focus) = insights_engine::detect_investigation_moment(&ev.text) {
                     let _ = persist_app.emit("investigation_suggested", serde_json::json!({
                         "meeting_id": meeting_id, "focus": focus
@@ -307,6 +377,7 @@ impl RecordingSession {
         self.readers.push(std::thread::spawn(move || {
             while let Ok(frame) = mic_rx.recv() {
                 Levels::set(&levels_mic.mic, frame.level);
+                levels_mic.note_activity(frame.level);
                 let bytes = if dual {
                     let interleaved = match mixer_for_mic.lock() {
                         Ok(mut m) => m.interleave_mic(&frame.samples),
@@ -330,6 +401,7 @@ impl RecordingSession {
             self.readers.push(std::thread::spawn(move || {
                 while let Ok(frame) = sys_rx.recv() {
                     Levels::set(&levels_sys.system, frame.level);
+                    levels_sys.note_activity(frame.level);
                     if let Ok(mut m) = mixer_for_sys.lock() {
                         m.push_system(&frame.samples);
                     }
@@ -393,6 +465,8 @@ pub struct AppState {
     pub last_status: Arc<Mutex<Option<StreamStatus>>>,
     /// Meetings whose final insights are still being generated.
     pub finishing: Finishing,
+    /// Transcript activity for Smart meetings.
+    pub activity: Arc<ActivityTrack>,
 }
 
 /// Personal dictionary + system terms as Deepgram keyterms (capped in the URL builder).
@@ -787,40 +861,38 @@ async fn resolve_credential(state: &AppState, prefs: &Prefs) -> Result<Credentia
     }
 }
 
-#[tauri::command]
-pub async fn start_recording(
-    app: AppHandle,
-    state: State<'_, AppState>,
-    title: Option<String>,
-) -> Result<String, String> {
+/// Start a meeting (shared by the Home button, tray, calendar and call prompts).
+pub async fn start_meeting(app: AppHandle, state: State<'_, AppState>, opts: StartOptions) -> Result<String, String> {
     let prefs = state.prefs_snapshot()?;
     if state.session.lock().map_err(|_| "session poisoned")?.running {
         return Err("already recording".into());
     }
     let credential = resolve_credential(&state, &prefs).await?;
-
-    let title = title
-        .map(|t| t.trim().to_string())
-        .filter(|t| !t.is_empty())
-        .unwrap_or_else(|| "New meeting".to_string());
-    // The meeting id is created inside start(); the engine config is keyed by it,
-    // so build the config with a placeholder and patch the id after start.
     let engine_cfg = state.engine_config(&app, &prefs, "pending", true).await;
     let db = state.db.clone();
     let levels = state.levels.clone();
     let last_status = state.last_status.clone();
+    let activity = state.activity.clone();
     let mut session = state.session.lock().map_err(|_| "session poisoned")?;
     if session.running {
         return Err("already recording".into());
     }
-    // Start capture first (may fail), then bind the engine to the real id.
-    let id = session.start(app.clone(), db.clone(), levels, last_status, &prefs, title, credential, None)?;
+    let id = session.start(app.clone(), db.clone(), levels, last_status, &prefs, opts, credential, None, activity)?;
     if let Some(mut cfg) = engine_cfg {
         cfg.meeting_id = id.clone();
         session.engine = Some(LiveEngine::spawn(app, db, cfg.clone()));
         session.engine_cfg = Some(cfg);
     }
     Ok(id)
+}
+
+#[tauri::command]
+pub async fn start_recording(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    title: Option<String>,
+) -> Result<String, String> {
+    start_meeting(app, state, StartOptions { title, ..Default::default() }).await
 }
 
 #[tauri::command]
@@ -925,7 +997,7 @@ pub async fn toggle_recording_from_shell(app: AppHandle) {
     let result = if running {
         stop_recording(app.clone(), state.clone()).await.map(|_| ())
     } else {
-        start_recording(app.clone(), state.clone(), None).await.map(|id| {
+        start_meeting(app.clone(), state.clone(), StartOptions::default()).await.map(|id| {
             let _ = app.emit("navigate_meeting", &id);
         })
     };
@@ -979,6 +1051,396 @@ pub fn notify(app: AppHandle, title: String, body: String) {
 #[tauri::command]
 pub fn show_main_window(app: AppHandle) {
     crate::shell::show_main(&app);
+}
+
+// ---- Smart meetings runtime ---------------------------------------------------
+
+fn calendar_snapshot(app: &AppHandle) -> Vec<crate::integrations::CalendarEvent> {
+    app.try_state::<crate::integrations::CalendarSlot>()
+        .and_then(|c| c.lock().ok().map(|c| c.events.clone()))
+        .unwrap_or_default()
+}
+
+async fn perform_smart_action(app: &AppHandle, action: crate::smart::Action) {
+    use crate::smart::Action;
+    let state = app.state::<AppState>();
+    let result: Result<(), String> = match action {
+        Action::Stop { reason } => {
+            tracing::info!("smart: stopping ({reason})");
+            let r = stop_recording(app.clone(), state.clone()).await.map(|_| ());
+            if reason != "user" {
+                crate::shell::notify(app, "Miniti", &format!("Recording saved ({reason})."));
+            }
+            r
+        }
+        Action::StartFromEvent(event) => start_from_event(app, &state, &event).await.map(|id| {
+            let _ = app.emit("navigate_meeting", &id);
+        }),
+        Action::StartFromCall(_) => start_meeting(app.clone(), state.clone(), StartOptions::default()).await.map(|id| {
+            let _ = app.emit("navigate_meeting", &id);
+        }),
+        Action::EndAndStartEvent(event) => {
+            let stopped = stop_recording(app.clone(), state.clone()).await.map(|_| ());
+            match stopped {
+                Ok(()) => start_from_event(app, &state, &event).await.map(|id| {
+                    let _ = app.emit("navigate_meeting", &id);
+                }),
+                Err(e) => Err(e),
+            }
+        }
+        Action::EndAndStartNew => {
+            let stopped = stop_recording(app.clone(), state.clone()).await.map(|_| ());
+            match stopped {
+                Ok(()) => start_meeting(app.clone(), state.clone(), StartOptions::default()).await.map(|id| {
+                    let _ = app.emit("navigate_meeting", &id);
+                }),
+                Err(e) => Err(e),
+            }
+        }
+    };
+    if let Err(e) = result {
+        tracing::warn!("smart action failed: {e}");
+        crate::shell::notify(app, "Miniti", &e);
+    }
+}
+
+async fn start_from_event(app: &AppHandle, state: &State<'_, AppState>, event: &crate::integrations::CalendarEvent) -> Result<String, String> {
+    let notes = {
+        let conn = state.db.lock().map_err(|_| "db poisoned")?;
+        db::get_prep_notes(&conn, &event.id).unwrap_or_default()
+    };
+    start_meeting(
+        app.clone(),
+        state.clone(),
+        StartOptions {
+            title: Some(event.title.clone()).filter(|t| !t.trim().is_empty()),
+            calendar_event_id: Some(event.id.clone()),
+            attendees_json: Some(event.attendees_json()),
+            notes: Some(notes),
+        },
+    )
+    .await
+}
+
+/// 1 Hz Smart-meetings monitor + live guidance.
+pub fn spawn_smart_monitor(app: AppHandle) {
+    tauri::async_runtime::spawn(async move {
+        let mut tick = tokio::time::interval(Duration::from_secs(1));
+        loop {
+            tick.tick().await;
+            let state = app.state::<AppState>();
+            let Ok(prefs) = state.prefs_snapshot() else { continue };
+            let (recording, elapsed, meeting_id, event_id) = state
+                .session
+                .lock()
+                .map(|s| (
+                    s.running,
+                    s.started_at.map(|t| t.elapsed().as_secs_f64()).unwrap_or(0.0),
+                    s.meeting.as_ref().map(|m| m.id.clone()),
+                    s.meeting.as_ref().and_then(|m| m.calendar_event_id.clone()),
+                ))
+                .unwrap_or((false, 0.0, None, None));
+            let activity = crate::smart::Activity {
+                recording,
+                recording_duration: elapsed,
+                transcript_gap: state.activity.transcript_gap(),
+                audio_gap: state.levels.audio_gap(),
+                meaningful_finals: state.activity.meaningful_finals.load(Ordering::Relaxed),
+                now_unix: chrono::Utc::now().timestamp(),
+            };
+            let events = calendar_snapshot(&app);
+            let sensor = if prefs.smart_meetings_enabled {
+                tokio::task::spawn_blocking(crate::call_sensor::snapshot_capture_clients).await.ok().flatten()
+            } else {
+                None
+            };
+            let actions = {
+                let Some(slot) = crate::smart::slot(&app) else { continue };
+                let Ok(mut m) = slot.lock() else { continue };
+                m.current_meeting = meeting_id.clone();
+                m.tick(&app, &prefs, activity, event_id.as_deref(), &events, sensor, Instant::now())
+            };
+            for a in actions {
+                perform_smart_action(&app, a).await;
+            }
+            if recording && prefs.live_guidance_enabled {
+                if let Some(mid) = meeting_id {
+                    evaluate_live_guidance(&app, &prefs, &mid, elapsed);
+                }
+            }
+        }
+    });
+}
+
+fn evaluate_live_guidance(app: &AppHandle, prefs: &Prefs, meeting_id: &str, elapsed: f64) {
+    use crate::smart::YouSegment;
+    let state = app.state::<AppState>();
+    let fillers = state.fillers(prefs);
+    let filler_tokens: Vec<Vec<String>> = fillers.iter().map(|f| coaching::tokenize(f)).filter(|t| !t.is_empty()).collect();
+    let (meeting, segments) = {
+        let Ok(conn) = state.db.lock() else { return };
+        let Ok(Some(meeting)) = db::get_meeting(&conn, meeting_id) else { return };
+        let Ok(segments) = db::list_segments_since(&conn, meeting_id, (elapsed - 400.0).max(0.0)) else { return };
+        (meeting, segments)
+    };
+    let self_ids = meeting.self_speaker_ids().unwrap_or_else(|| vec![deepgram::MIC_SPEAKER_ID]);
+    let you: Vec<(usize, YouSegment)> = segments
+        .iter()
+        .enumerate()
+        .filter(|(_, s)| self_ids.contains(&s.speaker))
+        .map(|(i, s)| {
+            let toks = coaching::tokenize(&s.text);
+            let fillers = filler_tokens.iter().map(|p| coaching::count_phrase_occurrences(p, &toks)).sum();
+            (i, YouSegment { start: s.start_s, end: s.end_s, words: toks.len(), fillers })
+        })
+        .collect();
+    // Trailing uninterrupted "You" run.
+    let mut run: Vec<YouSegment> = Vec::new();
+    for (i, s) in segments.iter().enumerate().rev() {
+        if self_ids.contains(&s.speaker) {
+            if let Some((_, y)) = you.iter().find(|(j, _)| *j == i) {
+                run.push(y.clone());
+            }
+        } else {
+            break;
+        }
+    }
+    run.reverse();
+    let recent: Vec<YouSegment> = you.iter().map(|(_, y)| y.clone()).collect();
+    let high: Vec<String> = serde_json::from_str::<Vec<serde_json::Value>>(&meeting.suggested_questions)
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|q| q.get("priority").and_then(|p| p.as_str()) == Some("high"))
+        .filter_map(|q| q.get("question").and_then(|s| s.as_str()).map(String::from))
+        .collect();
+    let transcript_end = segments.last().map(|s| s.end_s).unwrap_or(elapsed);
+    if let Some(slot) = crate::smart::slot(app) {
+        if let Ok(mut m) = slot.lock() {
+            m.evaluate_nudges(app, prefs, &recent, &run, &high, transcript_end, Instant::now());
+        }
+    }
+}
+
+#[tauri::command]
+pub async fn smart_decision(app: AppHandle, prompt_id: String, choice: String) -> Result<(), String> {
+    let actions = {
+        let slot = crate::smart::slot(&app).ok_or("smart monitor unavailable")?;
+        let mut m = slot.lock().map_err(|_| "monitor poisoned")?;
+        m.decide(&app, &prompt_id, &choice, Instant::now())
+    };
+    for a in actions {
+        perform_smart_action(&app, a).await;
+    }
+    Ok(())
+}
+
+// ---- Calendar + CRM ---------------------------------------------------------------
+
+async fn refresh_calendar(app: &AppHandle) {
+    let state = app.state::<AppState>();
+    let Ok(prefs) = state.prefs_snapshot() else { return };
+    let Ok(client) = state.api_client(&prefs) else { return };
+    let status = client.google_status().await;
+    let slot = app.state::<crate::integrations::CalendarSlot>();
+    match status {
+        Ok(st) if st.connected => {
+            let now = chrono::Utc::now();
+            let min = now.to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+            let max = (now + chrono::Duration::days(7)).to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+            match client.google_events(&min, &max, 50).await {
+                Ok(ev) => {
+                    if let Ok(mut c) = slot.lock() {
+                        c.connected = true;
+                        c.email = st.email;
+                        c.events = ev.events;
+                        c.fetched_at = Some(Instant::now());
+                        c.last_error = None;
+                    }
+                    let _ = app.emit("calendar_updated", ());
+                }
+                Err(e) => {
+                    if let Ok(mut c) = slot.lock() {
+                        c.connected = true;
+                        c.last_error = Some(e.to_string());
+                    }
+                }
+            }
+        }
+        Ok(_) => {
+            if let Ok(mut c) = slot.lock() {
+                c.connected = false;
+                c.email = None;
+                c.events.clear();
+                c.last_error = None;
+            }
+        }
+        Err(e) => {
+            if let Ok(mut c) = slot.lock() {
+                c.last_error = Some(e.to_string());
+            }
+        }
+    }
+}
+
+/// Refresh calendar status + events every 60 s (macOS cadence) when a backend key exists.
+pub fn spawn_calendar_refresher(app: AppHandle) {
+    tauri::async_runtime::spawn(async move {
+        let mut tick = tokio::time::interval(Duration::from_secs(60));
+        loop {
+            tick.tick().await;
+            if app.state::<AppState>().api_key.is_none() {
+                continue;
+            }
+            refresh_calendar(&app).await;
+            if let Ok(conn) = app.state::<AppState>().db.lock() {
+                let _ = db::prune_prep_notes(&conn);
+            }
+        }
+    });
+}
+
+#[derive(Serialize)]
+pub struct CalendarView {
+    pub connected: bool,
+    pub email: Option<String>,
+    pub events: Vec<crate::integrations::CalendarEvent>,
+    pub upcoming: Vec<crate::integrations::CalendarEvent>,
+    pub error: Option<String>,
+    pub available: bool,
+}
+
+#[tauri::command]
+pub async fn calendar_events(app: AppHandle, state: State<'_, AppState>, refresh: Option<bool>) -> Result<CalendarView, String> {
+    if refresh.unwrap_or(false) && state.api_key.is_some() {
+        refresh_calendar(&app).await;
+    }
+    let slot = app.state::<crate::integrations::CalendarSlot>();
+    let c = slot.lock().map_err(|_| "calendar poisoned")?;
+    let now = chrono::Utc::now().timestamp();
+    Ok(CalendarView {
+        connected: c.connected,
+        email: c.email.clone(),
+        events: c.events.clone(),
+        upcoming: crate::integrations::upcoming(&c.events, now, 5),
+        error: c.last_error.clone(),
+        available: state.api_key.is_some(),
+    })
+}
+
+#[tauri::command]
+pub async fn google_status(state: State<'_, AppState>) -> Result<crate::integrations::GoogleStatus, String> {
+    let prefs = state.prefs_snapshot()?;
+    let client = state.api_client(&prefs).map_err(|e| e.to_string())?;
+    client.google_status().await.map_err(|e| e.to_string())
+}
+
+/// Returns the authorize URL; the UI opens it in the browser. The return
+/// arrives as a `miniti-google://oauth-callback` deep link.
+#[tauri::command]
+pub async fn google_connect(state: State<'_, AppState>) -> Result<String, String> {
+    let prefs = state.prefs_snapshot()?;
+    let client = state.api_client(&prefs).map_err(|e| e.to_string())?;
+    client.google_connect_start().await.map(|c| c.auth_url).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn google_disconnect(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
+    let prefs = state.prefs_snapshot()?;
+    let client = state.api_client(&prefs).map_err(|e| e.to_string())?;
+    client.google_disconnect().await.map_err(|e| e.to_string())?;
+    refresh_calendar(&app).await;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn get_prep_notes(state: State<AppState>, event_id: String) -> Result<String, String> {
+    let conn = state.db.lock().map_err(|_| "db poisoned")?;
+    db::get_prep_notes(&conn, &event_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn set_prep_notes(state: State<AppState>, event_id: String, notes: String) -> Result<(), String> {
+    let conn = state.db.lock().map_err(|_| "db poisoned")?;
+    db::set_prep_notes(&conn, &event_id, &notes).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn start_meeting_from_event(app: AppHandle, state: State<'_, AppState>, event_id: String) -> Result<String, String> {
+    let event = calendar_snapshot(&app).into_iter().find(|e| e.id == event_id).ok_or("event not found")?;
+    if let Some(slot) = crate::smart::slot(&app) {
+        if let Ok(mut m) = slot.lock() {
+            m.clear_prompt(&app);
+        }
+    }
+    start_from_event(&app, &state, &event).await
+}
+
+#[tauri::command]
+pub async fn crm_status(state: State<'_, AppState>, provider: crate::integrations::CrmProvider) -> Result<crate::integrations::CrmStatus, String> {
+    let prefs = state.prefs_snapshot()?;
+    let client = state.api_client(&prefs).map_err(|e| e.to_string())?;
+    client.crm_status(provider).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn crm_connect(state: State<'_, AppState>, provider: crate::integrations::CrmProvider) -> Result<String, String> {
+    let prefs = state.prefs_snapshot()?;
+    let client = state.api_client(&prefs).map_err(|e| e.to_string())?;
+    client.crm_connect_start(provider).await.map(|c| c.auth_url).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn crm_search(state: State<'_, AppState>, provider: crate::integrations::CrmProvider, query: String) -> Result<Vec<crate::integrations::CrmRecord>, String> {
+    let prefs = state.prefs_snapshot()?;
+    let client = state.api_client(&prefs).map_err(|e| e.to_string())?;
+    if query.trim().chars().count() < 2 {
+        return Ok(Vec::new());
+    }
+    client.crm_search(provider, query.trim(), provider.objects()).await.map(|r| r.data).map_err(|e| e.to_string())
+}
+
+#[derive(Serialize)]
+pub struct CrmPreview {
+    pub payload: serde_json::Value,
+    pub tasks: Vec<crate::integrations::CrmTask>,
+}
+
+#[tauri::command]
+pub fn crm_preview(state: State<AppState>, meeting_id: String) -> Result<CrmPreview, String> {
+    let conn = state.db.lock().map_err(|_| "db poisoned")?;
+    let meeting = db::get_meeting(&conn, &meeting_id).map_err(|e| e.to_string())?.ok_or("meeting not found")?;
+    let segments = db::list_segments(&conn, &meeting_id).map_err(|e| e.to_string())?;
+    let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+    Ok(CrmPreview {
+        payload: crate::integrations::crm_meeting_payload(&meeting, &segments),
+        tasks: crate::integrations::default_tasks(&meeting, &today),
+    })
+}
+
+#[tauri::command]
+pub async fn crm_send(
+    state: State<'_, AppState>,
+    provider: crate::integrations::CrmProvider,
+    meeting_id: String,
+    target_object: String,
+    target_record_id: String,
+    tasks: Vec<crate::integrations::CrmTask>,
+) -> Result<serde_json::Value, String> {
+    let prefs = state.prefs_snapshot()?;
+    let client = state.api_client(&prefs).map_err(|e| e.to_string())?;
+    let payload = {
+        let conn = state.db.lock().map_err(|_| "db poisoned")?;
+        let meeting = db::get_meeting(&conn, &meeting_id).map_err(|e| e.to_string())?.ok_or("meeting not found")?;
+        let segments = db::list_segments(&conn, &meeting_id).map_err(|e| e.to_string())?;
+        crate::integrations::crm_meeting_payload(&meeting, &segments)
+    };
+    let body = serde_json::json!({
+        "target_object": target_object,
+        "target_record_id": target_record_id,
+        "meeting": payload,
+        "tasks": tasks,
+    });
+    client.crm_send(provider, &body).await.map_err(|e| e.to_string())
 }
 
 // ---- Insights commands -----------------------------------------------------

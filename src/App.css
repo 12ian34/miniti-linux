@@ -349,3 +349,17 @@ code { font-family: var(--mono); background: var(--surface-card); padding: 1px 5
 .presence-nudge.question { border-top-color: var(--coach-questions); }
 .presence-nudge.monologue { border-top-color: var(--coach-monologue); }
 .presence-nudge.filler { border-top-color: var(--coach-fillers); }
+
+/* ---- Steps 6–7: calendar, CRM, smart prompts --------------------------------- */
+.events { display: flex; flex-direction: column; gap: var(--s-2); }
+.event-row { display: flex; align-items: center; gap: var(--s-5); background: var(--bg-tertiary); border: 1px solid var(--border); border-radius: var(--r-md); padding: var(--s-4) var(--s-5); color: var(--text); cursor: pointer; text-align: left; }
+.event-row:hover { border-color: var(--border-hover); }
+.event-when { font-family: var(--mono); font-variant-numeric: tabular-nums; color: var(--text-dim); font-size: 12px; min-width: 120px; }
+.smart-banner { margin: var(--s-4) var(--s-6) 0; }
+.crm-results { display: flex; flex-direction: column; gap: var(--s-2); max-height: 220px; overflow-y: auto; }
+.crm-row { display: flex; align-items: center; gap: var(--s-4); background: var(--bg-tertiary); border: 1px solid var(--border); border-radius: var(--r-md); padding: var(--s-3) var(--s-5); color: var(--text); cursor: pointer; text-align: left; }
+.crm-row:hover { border-color: var(--border-hover); }
+.crm-selected { display: flex; align-items: center; gap: var(--s-4); }
+.input.date { width: auto; margin-left: auto; padding: var(--s-1) var(--s-3); }
+.payload { font-size: 11px; background: var(--bg-tertiary); padding: var(--s-4); border-radius: var(--r-md); overflow: auto; max-height: 200px; }
+.sheet-footer { position: sticky; bottom: 0; background: var(--surface-card); padding-top: var(--s-4); }

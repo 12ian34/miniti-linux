@@ -13,8 +13,10 @@ import {
   setPrefs,
   subscribeUrl,
 } from "../api";
-import type { AppMode, Prefs, Usage } from "../types";
+import type { AppMode, CrmProvider, Prefs, Usage } from "../types";
 import { useStore } from "../store";
+import { useTauriEvent } from "../useEvent";
+import { crmConnect, crmStatus, googleConnect, googleDisconnect, googleStatus, onDeepLink } from "../api";
 
 const LANGUAGES = ["en", "es", "fr", "de", "pt", "it", "nl", "sv", "el", "pl", "ru"];
 
@@ -28,6 +30,32 @@ export function Settings() {
   const [error, setError] = useState<string | null>(null);
   const [licenseKey, setLicenseKey] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
+  const [google, setGoogle] = useState<{ connected: boolean; email: string | null } | null>(null);
+  const [crm, setCrm] = useState<Record<CrmProvider, { connected: boolean; account_label: string | null } | null>>({ attio: null, twenty: null });
+
+  const refreshIntegrations = () => {
+    if (!hasBridge || backendKey === false) return;
+    googleStatus().then(setGoogle).catch(() => setGoogle(null));
+    (["attio", "twenty"] as CrmProvider[]).forEach((p) =>
+      crmStatus(p).then((s) => setCrm((c) => ({ ...c, [p]: s }))).catch(() => setCrm((c) => ({ ...c, [p]: null }))),
+    );
+  };
+  useEffect(refreshIntegrations, [backendKey]);
+  useTauriEvent(onDeepLink, (ev) => {
+    if (ev.query.status === "success") setNotice(`${ev.scheme.replace("miniti-", "")} connected.`);
+    else if (ev.query.status === "error") setError(ev.query.message ?? "Connection failed.");
+    refreshIntegrations();
+  });
+  async function connect(kind: "google" | CrmProvider) {
+    setError(null);
+    try {
+      const url = kind === "google" ? await googleConnect() : await crmConnect(kind);
+      await openUrl(url);
+      setNotice("Finish signing in in your browser; Miniti picks up the return automatically.");
+    } catch (e) {
+      setError(errorMessage(e));
+    }
+  }
 
   useEffect(() => {
     if (!hasBridge) return;
@@ -326,6 +354,33 @@ export function Settings() {
           checked={prefs.live_guidance_enabled}
           onChange={(v) => update("live_guidance_enabled", v)}
         />
+      </section>
+
+      <section className="card">
+        <h2 className="card-title">Integrations</h2>
+        {managedUnavailable ? (
+          <p className="muted">Google Calendar, Attio and Twenty connect through the Miniti backend and need a build with the backend key.</p>
+        ) : (
+          <div className="rows">
+            <div className="row-line">
+              <span className="k">Google Calendar</span>
+              <span className="v">{google === null ? "…" : google.connected ? `connected${google.email ? ` (${google.email})` : ""}` : "not connected"}</span>
+              {google?.connected ? (
+                <button className="ghost" onClick={() => googleDisconnect().then(refreshIntegrations).catch((e) => setError(errorMessage(e)))}>disconnect</button>
+              ) : (
+                <button className="btn small" onClick={() => connect("google")}>Connect</button>
+              )}
+            </div>
+            {(["attio", "twenty"] as CrmProvider[]).map((p) => (
+              <div className="row-line" key={p}>
+                <span className="k">{p === "attio" ? "Attio" : "Twenty"}</span>
+                <span className="v">{crm[p] === null ? "…" : crm[p]!.connected ? `connected${crm[p]!.account_label ? ` (${crm[p]!.account_label})` : ""}` : "not connected"}</span>
+                {!crm[p]?.connected && <button className="btn small" onClick={() => connect(p)}>Connect</button>}
+              </div>
+            ))}
+            <p className="muted tiny">OAuth returns via miniti-google:// / miniti-attio:// / miniti-twenty:// — the .desktop file registers these handlers.</p>
+          </div>
+        )}
       </section>
 
       <section className="card">

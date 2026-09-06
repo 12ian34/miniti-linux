@@ -19,9 +19,11 @@ pub mod device_id;
 pub mod export;
 pub mod gates;
 pub mod import;
+pub mod integrations;
 pub mod insights;
 pub mod prefs;
 pub mod shell;
+pub mod smart;
 pub mod state;
 pub mod webhook;
 
@@ -66,6 +68,7 @@ fn build_state() -> AppState {
         session: Mutex::new(RecordingSession::default()),
         last_status: Arc::new(Mutex::new(None)),
         finishing: Arc::new(Mutex::new(std::collections::HashSet::new())),
+        activity: Arc::new(state::ActivityTrack::default()),
     }
 }
 
@@ -74,6 +77,8 @@ pub fn run() {
     init_tracing();
     tauri::Builder::default()
         .manage(shell::TraySlot::new(None))
+        .manage(smart::MonitorSlot::new(smart::MonitorState::default()))
+        .manage(integrations::CalendarSlot::new(integrations::CalendarState::default()))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
@@ -90,7 +95,9 @@ pub fn run() {
                 .unwrap_or(true);
             shell::setup_tray(&handle, show_tray);
             shell::setup_deep_links(&handle);
-            state::spawn_shell_ticker(handle);
+            state::spawn_shell_ticker(handle.clone());
+            state::spawn_smart_monitor(handle.clone());
+            state::spawn_calendar_refresher(handle);
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -153,6 +160,19 @@ pub fn run() {
             trim_transcript,
             state::notify,
             state::show_main_window,
+            state::smart_decision,
+            state::google_status,
+            state::google_connect,
+            state::google_disconnect,
+            state::calendar_events,
+            state::get_prep_notes,
+            state::set_prep_notes,
+            state::start_meeting_from_event,
+            state::crm_status,
+            state::crm_connect,
+            state::crm_search,
+            state::crm_preview,
+            state::crm_send,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -8,6 +8,7 @@ import { Home } from "./Home";
 import { MeetingView } from "./Meeting";
 import { Coaching } from "./Coaching";
 import { Settings } from "./Settings";
+import { SmartPromptBanner } from "./SmartPromptBanner";
 
 /**
  * macOS layout: history sidebar (collapsible, auto-collapses when recording
@@ -67,7 +68,10 @@ export function Shell({ gate }: { gate: LaunchGate | null }) {
   return (
     <div className={`shell ${sidebarOpen ? "" : "sidebar-collapsed"}`}>
       <Sidebar />
-      <main className="content">{content}</main>
+      <main className="content">
+        <SmartPromptBanner />
+        {content}
+      </main>
     </div>
   );
 }

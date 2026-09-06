@@ -271,3 +271,50 @@ export interface TranscriptEventPayload {
   source: string;
   channel_index: number | null;
 }
+
+export type CrmProvider = "attio" | "twenty";
+
+export interface CalendarAttendee {
+  email: string;
+  displayName: string | null;
+  responseStatus: string | null;
+  organizer: boolean;
+  self: boolean;
+  domain: string | null;
+}
+
+export interface CalendarEvent {
+  id: string;
+  title: string;
+  start: string;
+  end: string;
+  isAllDay: boolean;
+  status: string | null;
+  meetLink: string | null;
+  conferenceUrl: string | null;
+  attendees: CalendarAttendee[];
+}
+
+export interface CalendarView {
+  connected: boolean;
+  email: string | null;
+  events: CalendarEvent[];
+  upcoming: CalendarEvent[];
+  error: string | null;
+  available: boolean;
+}
+
+export interface CrmRecord {
+  id: { workspace_id: string; object_id: string; record_id: string };
+  record_text: string;
+  record_image: string | null;
+  object_slug: string;
+  record_email: string | null;
+  record_domain: string | null;
+  record_detail: string | null;
+}
+
+export interface CrmTask {
+  content: string;
+  deadline_at?: string | null;
+}

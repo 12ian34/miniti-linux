@@ -29,6 +29,7 @@ import { useTauriEvent } from "../useEvent";
 import type { Levels, MeetingDetail, StreamStatus, TranscriptEventPayload } from "../types";
 import { InsightsRail } from "./InsightsRail";
 import { CatchUpButton, InvestigateButton } from "./MeetingTools";
+import { CrmSheet } from "./CrmSheet";
 import {
   deleteSegment,
   exportMarkdown,
@@ -70,6 +71,7 @@ export function MeetingView({ id }: { id: string }) {
   const [suggestedFocus, setSuggestedFocus] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [trimMode, setTrimMode] = useState(false);
+  const [crmOpen, setCrmOpen] = useState(false);
 
   async function copyTranscript() {
     try {
@@ -314,6 +316,9 @@ export function MeetingView({ id }: { id: string }) {
               </button>
             ) : (
               <>
+                {prefs && (
+                  <button className="ghost" onClick={() => setCrmOpen(true)} title="Send to Attio or Twenty">crm</button>
+                )}
                 <button className="ghost" onClick={copyTranscript} title="Copy transcript">copy</button>
                 <button className="ghost" onClick={exportMd} title="Export as Markdown">export</button>
                 <button className={`ghost ${trimMode ? "on" : ""}`} onClick={() => setTrimMode(!trimMode)} title="Trim transcript">
@@ -414,6 +419,7 @@ export function MeetingView({ id }: { id: string }) {
         </div>
       </div>
 
+      {crmOpen && <CrmSheet meetingId={id} onClose={() => setCrmOpen(false)} />}
       {insightsOpen && detail && (
         <InsightsRail meetingId={id} meeting={detail.meeting} live={live} finishing={finishing} onMeetingChanged={load} />
       )}

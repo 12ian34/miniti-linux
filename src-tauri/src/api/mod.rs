@@ -267,6 +267,7 @@ pub fn map_error(status: u16, body: &str) -> Option<ApiError> {
     let parsed: ErrorBody = serde_json::from_str(body).unwrap_or_default();
     Some(match (status, parsed.error.as_str()) {
         (401, "unauthorized") | (401, "") => ApiError::Unauthorized,
+        (401, code) => ApiError::Http { status: 401, code: code.into(), message: parsed.message },
         (402, _) => ApiError::LimitReached {
             resets_at: parsed.resets_at,
         },
@@ -311,6 +312,20 @@ impl ApiClient {
 
     pub fn context(&self) -> &HeaderContext {
         &self.ctx
+    }
+
+    pub fn base_url(&self) -> &str {
+        &self.base
+    }
+
+    /// GET an absolute URL and decode JSON (integrations).
+    pub async fn get_json<T: for<'de> Deserialize<'de>>(&self, url: &str) -> Result<T, ApiError> {
+        self.send_json(self.http.get(url)).await
+    }
+
+    /// POST JSON to an absolute URL and decode JSON (integrations).
+    pub async fn post_json<T: for<'de> Deserialize<'de>>(&self, url: &str, body: &serde_json::Value) -> Result<T, ApiError> {
+        self.send_json(self.http.post(url).json(body)).await
     }
 
     fn apply_headers(&self, mut req: reqwest::RequestBuilder) -> reqwest::RequestBuilder {

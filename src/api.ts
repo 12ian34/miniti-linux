@@ -1,8 +1,12 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type {
+  CalendarView,
   CatchUp,
   CoachingOverview,
+  CrmProvider,
+  CrmRecord,
+  CrmTask,
   DeepLinkEvent,
   RecordingNudge,
   SmartPrompt,
@@ -105,6 +109,24 @@ export const notify = (title: string, body: string) => invoke<void>("notify", { 
 export const showMainWindow = () => invoke<void>("show_main_window");
 export const smartDecision = (promptId: string, choice: "primary" | "secondary" | "tertiary") =>
   invoke<void>("smart_decision", { promptId, choice });
+
+export const googleStatus = () => invoke<{ connected: boolean; email: string | null }>("google_status");
+export const googleConnect = () => invoke<string>("google_connect");
+export const googleDisconnect = () => invoke<void>("google_disconnect");
+export const calendarEvents = (refresh = false) => invoke<CalendarView>("calendar_events", { refresh });
+export const getPrepNotes = (eventId: string) => invoke<string>("get_prep_notes", { eventId });
+export const setPrepNotes = (eventId: string, notes: string) => invoke<void>("set_prep_notes", { eventId, notes });
+export const startMeetingFromEvent = (eventId: string) => invoke<string>("start_meeting_from_event", { eventId });
+export const crmStatus = (provider: CrmProvider) =>
+  invoke<{ connected: boolean; account_label: string | null }>("crm_status", { provider });
+export const crmConnect = (provider: CrmProvider) => invoke<string>("crm_connect", { provider });
+export const crmSearch = (provider: CrmProvider, query: string) => invoke<CrmRecord[]>("crm_search", { provider, query });
+export const crmPreview = (meetingId: string) => invoke<{ payload: unknown; tasks: CrmTask[] }>("crm_preview", { meetingId });
+export const crmSend = (provider: CrmProvider, meetingId: string, targetObject: string, targetRecordId: string, tasks: CrmTask[]) =>
+  invoke<unknown>("crm_send", { provider, meetingId, targetObject, targetRecordId, tasks });
+export function onCalendarUpdated(handler: (payload: unknown) => void): Promise<UnlistenFn> {
+  return listen<unknown>("calendar_updated", (e) => handler(e.payload));
+}
 
 export function onSmartPrompt(handler: (p: SmartPrompt) => void): Promise<UnlistenFn> {
   return listen<SmartPrompt>("smart_prompt", (e) => handler(e.payload));

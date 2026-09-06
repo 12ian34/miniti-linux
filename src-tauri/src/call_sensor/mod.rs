@@ -127,12 +127,18 @@ pub fn parse_source_outputs(text: &str) -> Vec<CaptureClient> {
     clients
 }
 
-/// Live scan via `pactl`. Best-effort: empty when the audio server is unavailable.
-pub fn scan_capture_clients() -> Vec<CaptureClient> {
+/// Live scan via `pactl`. `None` when the audio server / pactl is unavailable
+/// (an unreliable reading, which the lifecycle engine treats as no information).
+pub fn snapshot_capture_clients() -> Option<Vec<CaptureClient>> {
     match Command::new("pactl").args(["list", "source-outputs"]).output() {
-        Ok(o) if o.status.success() => parse_source_outputs(&String::from_utf8_lossy(&o.stdout)),
-        _ => Vec::new(),
+        Ok(o) if o.status.success() => Some(parse_source_outputs(&String::from_utf8_lossy(&o.stdout))),
+        _ => None,
     }
+}
+
+/// Best-effort variant: empty when unavailable.
+pub fn scan_capture_clients() -> Vec<CaptureClient> {
+    snapshot_capture_clients().unwrap_or_default()
 }
 
 #[cfg(test)]
