@@ -36,6 +36,7 @@ export interface Prefs {
   notifications_enabled: boolean;
   live_guidance_enabled: boolean;
   disabled_nudge_kinds: string[];
+  interface_scale: "compact" | "standard" | "large";
   auto_stop_minutes: number;
   calendar_auto_start: boolean;
   calendar_auto_stop: boolean;
@@ -277,9 +278,19 @@ export interface CoachingSnapshot {
   top_filler: string | null;
 }
 
+export interface CoachingExample {
+  metric: CoachingMetric;
+  label: string;
+  quote: string;
+  meeting_id: string;
+  meeting_title: string;
+  date: number;
+}
+
 export interface CoachingOverview {
   report: CoachingReport | null;
   snapshots: CoachingSnapshot[];
+  examples: CoachingExample[];
 }
 
 export interface TranscriptEventPayload {

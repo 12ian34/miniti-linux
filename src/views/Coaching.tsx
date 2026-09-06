@@ -3,12 +3,50 @@ import { coachingOverview, coachingReport, errorMessage, hasBridge, listMeetings
 import { displayTitle, fmt1, dateOnly } from "../format";
 import { useStore } from "../store";
 import type {
+  CoachingExample,
   CoachingMetric,
   CoachingMetricSummary,
   CoachingOverview,
+  CoachingSnapshot,
   Meeting,
   TrainingMetrics,
 } from "../types";
+
+const METRIC_COLOR: Record<CoachingMetric, string> = {
+  fillers: "var(--coach-fillers)",
+  pace: "var(--coach-pace)",
+  clarity: "var(--coach-clarity)",
+  questions: "var(--coach-questions)",
+  talk_ratio: "var(--coach-talk)",
+  monologue: "var(--coach-monologue)",
+};
+
+const METRIC_UNIT: Record<CoachingMetric, string> = {
+  fillers: "per min",
+  pace: "wpm",
+  clarity: "words / turn",
+  questions: "per 30 min",
+  talk_ratio: "% you",
+  monologue: "words",
+};
+
+/** Broad conversational ranges shown as a faint band (matches the advisor's thresholds). */
+const METRIC_BAND: Partial<Record<CoachingMetric, [number, number]>> = {
+  pace: [110, 180],
+  clarity: [5, 20],
+  talk_ratio: [35, 65],
+};
+
+function metricValue(metric: CoachingMetric, s: CoachingSnapshot): number | null {
+  switch (metric) {
+    case "fillers": return s.fillers_per_minute;
+    case "pace": return s.words_per_minute;
+    case "clarity": return s.avg_words_per_turn;
+    case "questions": return s.questions_per_30_minutes;
+    case "talk_ratio": return s.talk_ratio == null ? null : s.talk_ratio * 100;
+    case "monologue": return s.longest_monologue_words;
+  }
+}
 
 const METRIC_LABEL: Record<CoachingMetric, string> = {
   fillers: "fillers",
@@ -116,16 +154,26 @@ export function Coaching() {
 }
 
 function Focus({ overview }: { overview: CoachingOverview | null }) {
+  const { navigate } = useStore();
   if (!overview?.report) {
     return <p className="muted">Record a meeting where you speak to see coaching guidance.</p>;
   }
   const r = overview.report;
+  const focusExamples = overview.examples.filter((e) => e.metric === r.focus.metric);
+  const otherExamples = overview.examples.filter((e) => e.metric !== r.focus.metric);
   return (
     <>
       <section className="card">
         <h2 className="card-title">focus · {METRIC_LABEL[r.focus.metric]}</h2>
         <Summary s={r.focus} />
+        {focusExamples.length > 0 && <Examples items={focusExamples} onOpen={(id) => navigate({ kind: "meeting", id })} />}
       </section>
+      {otherExamples.length > 0 && (
+        <section className="card">
+          <h2 className="card-title">from your recent meetings</h2>
+          <Examples items={otherExamples} onOpen={(id) => navigate({ kind: "meeting", id })} />
+        </section>
+      )}
       {r.strengths.length > 0 && (
         <section className="card">
           <h2 className="card-title">strengths</h2>
@@ -175,19 +223,108 @@ function Stats({ overview }: { overview: CoachingOverview | null }) {
   if (!overview?.report) {
     return <p className="muted">No coaching data yet.</p>;
   }
+  // Snapshots arrive newest first; charts read left to right in meeting order.
+  const series = [...overview.snapshots].reverse();
   return (
-    <div className="stat-list">
-      {overview.report.summaries.map((s) => (
-        <div className="stat" key={s.metric}>
-          <div className="stat-head">
-            <span className="k">{METRIC_LABEL[s.metric]}</span>
-            <span className="metric-value">{s.recent_value}</span>
-            <span className={`tone ${toneClass(s)}`}>
-              {s.previous_value ? `was ${s.previous_value}` : "building baseline"}
-            </span>
+    <>
+      <div className="stat-list">
+        {overview.report.summaries.map((s) => (
+          <div className="stat" key={s.metric}>
+            <div className="stat-head">
+              <span className="k">{METRIC_LABEL[s.metric]}</span>
+              <span className="metric-value">{s.recent_value}</span>
+              <span className={`tone ${toneClass(s)}`}>
+                {s.previous_value ? `was ${s.previous_value}` : "building baseline"}
+              </span>
+            </div>
+            <p className="muted">{METRIC_HELP[s.metric]}</p>
           </div>
-          <p className="muted">{METRIC_HELP[s.metric]}</p>
-        </div>
+        ))}
+      </div>
+      {overview.report.summaries.map((s) => (
+        <TrendChart key={s.metric} metric={s.metric} series={series} />
+      ))}
+    </>
+  );
+}
+
+/**
+ * One card per metric (macOS Coaching overview): categorical meeting index on x
+ * so every meeting gets equal spacing, quiet dashed grid, low-opacity area fade,
+ * ringed latest point, numeric y labels, and a faint band for the broad range.
+ */
+function TrendChart({ metric, series }: { metric: CoachingMetric; series: CoachingSnapshot[] }) {
+  const points = series.map((s, i) => ({ i, v: metricValue(metric, s), s }));
+  const present = points.filter((p) => p.v != null) as { i: number; v: number; s: CoachingSnapshot }[];
+  if (present.length === 0) {
+    return (
+      <section className="chart-card">
+        <div className="chart-head"><span className="k">{METRIC_LABEL[metric]}</span><span className="unit">{metric === "talk_ratio" ? "needs a meeting with another speaker" : "no data yet"}</span></div>
+      </section>
+    );
+  }
+  const W = 560, H = 120, padL = 34, padR = 12, padT = 10, padB = 22;
+  const n = Math.max(points.length, 2);
+  const band = METRIC_BAND[metric];
+  const values = present.map((p) => p.v).concat(band ?? []);
+  let min = Math.min(0, ...values);
+  let max = Math.max(...values);
+  if (max === min) max = min + 1;
+  const pad = (max - min) * 0.1;
+  min = Math.max(metric === "talk_ratio" ? 0 : min - pad, 0);
+  max = metric === "talk_ratio" ? Math.max(max + pad, 100) : max + pad;
+  const x = (i: number) => padL + (i / (n - 1)) * (W - padL - padR);
+  const y = (v: number) => padT + (1 - (v - min) / (max - min)) * (H - padT - padB);
+  const path = present.map((p, k) => `${k === 0 ? "M" : "L"}${x(p.i).toFixed(1)},${y(p.v).toFixed(1)}`).join(" ");
+  const area = `${path} L${x(present[present.length - 1].i).toFixed(1)},${y(min).toFixed(1)} L${x(present[0].i).toFixed(1)},${y(min).toFixed(1)} Z`;
+  const ticks = [min, (min + max) / 2, max];
+  const fmt = (v: number) => (max - min > 20 ? Math.round(v).toString() : v.toFixed(1));
+  const last = present[present.length - 1];
+  const color = METRIC_COLOR[metric];
+  const everyLabel = points.length <= 8 ? 1 : Math.ceil(points.length / 6);
+  return (
+    <section className="chart-card" aria-label={`${METRIC_LABEL[metric]} trend: latest ${fmt(last.v)} ${METRIC_UNIT[metric]} on ${dateOnly(last.s.date)} across ${present.length} meetings`}>
+      <div className="chart-head">
+        <span className="k">{METRIC_LABEL[metric]}</span>
+        <span className="latest" style={{ color }}>{fmt(last.v)}</span>
+        <span className="unit">{METRIC_UNIT[metric]} · {dateOnly(last.s.date)}</span>
+      </div>
+      <svg className="chart" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="img">
+        {band && <rect className="band" x={padL} y={y(Math.min(band[1], max))} width={W - padL - padR} height={Math.max(0, y(Math.max(band[0], min)) - y(Math.min(band[1], max)))} />}
+        {ticks.map((t) => (
+          <g key={t}>
+            <line className="grid" x1={padL} x2={W - padR} y1={y(t)} y2={y(t)} />
+            <text className="axis" x={padL - 4} y={y(t) + 3} textAnchor="end">{fmt(t)}</text>
+          </g>
+        ))}
+        <path d={area} fill={color} opacity={0.12} />
+        <path d={path} fill="none" stroke={color} strokeWidth={1.5} />
+        {present.map((p) => <circle key={p.i} cx={x(p.i)} cy={y(p.v)} r={2} fill={color} />)}
+        <circle cx={x(last.i)} cy={y(last.v)} r={4.5} fill="none" stroke={color} strokeWidth={1.5} />
+        {points.map((p) => (p.i % everyLabel === 0 || p.i === points.length - 1) && (
+          <text key={p.i} className="xlabel" x={x(p.i)} y={H - 8}>{p.i + 1}</text>
+        ))}
+        <text className="xlabel" x={(padL + W - padR) / 2} y={H - 0.5}>meeting</text>
+      </svg>
+    </section>
+  );
+}
+
+/** Clickable source passages (label + quote left, meeting title above date right). */
+function Examples({ items, onOpen }: { items: CoachingExample[]; onOpen: (id: string) => void }) {
+  return (
+    <div className="example-list">
+      {items.map((e) => (
+        <button key={`${e.metric}-${e.meeting_id}`} className="example" onClick={() => onOpen(e.meeting_id)} title="open meeting">
+          <div className="ex-main">
+            <span className="ex-label" style={{ color: METRIC_COLOR[e.metric] }}>{e.label}</span>
+            <span className="ex-quote">“{e.quote}”</span>
+          </div>
+          <div className="ex-meta">
+            <span className="t">{e.meeting_title}</span>
+            <span>{dateOnly(e.date)}</span>
+          </div>
+        </button>
       ))}
     </div>
   );

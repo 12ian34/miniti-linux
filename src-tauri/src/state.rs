@@ -7,7 +7,7 @@
 //! rather than silently producing an empty meeting.
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
@@ -189,6 +189,8 @@ pub struct RecordingSession {
     started_at: Option<Instant>,
     mic: Option<audio::CaptureHandle>,
     system: Option<audio::CaptureHandle>,
+    /// Tells the reader threads to exit (they own restartable capture handles).
+    reader_stop: Arc<AtomicBool>,
     readers: Vec<JoinHandle<()>>,
     dg_task: Option<tauri::async_runtime::JoinHandle<()>>,
     consumer_tasks: Vec<tauri::async_runtime::JoinHandle<()>>,
@@ -227,7 +229,10 @@ impl RecordingSession {
         credential: Credential,
         engine_cfg: Option<EngineConfig>,
         activity: Arc<ActivityTrack>,
+        audio_health: Arc<Mutex<AudioHealth>>,
     ) -> Result<String, String> {
+        self.reader_stop = Arc::new(AtomicBool::new(false));
+        set_health(&audio_health, AudioHealth::Healthy);
         let title = opts
             .title
             .clone()
@@ -428,17 +433,66 @@ impl RecordingSession {
         }));
 
         // ---- System reader: meter + ring buffer for the mic thread to drain.
+        // The thread owns the parec handle so it can restart capture when the
+        // monitor stalls (Bluetooth route change, sink switch, PipeWire restart):
+        // macOS keeps a stall watchdog on the system tap; this is the equivalent.
         if let (Some(handle), Some(sys_rx)) = (system_capture, system_rx) {
-            self.system = Some(handle);
             let levels_sys = levels.clone();
             let mixer_for_sys = mixer.clone();
+            let health = audio_health.clone();
+            let stop_flag = self.reader_stop.clone();
             self.readers.push(std::thread::spawn(move || {
-                while let Ok(frame) = sys_rx.recv() {
-                    Levels::set(&levels_sys.system, frame.level);
-                    levels_sys.note_activity(frame.level);
-                    if let Ok(mut m) = mixer_for_sys.lock() {
-                        m.push_system(&frame.samples);
+                let mut handle = Some(handle);
+                let mut rx = sys_rx;
+                let mut failures = 0u32;
+                loop {
+                    match rx.recv_timeout(SYSTEM_STALL_TIMEOUT) {
+                        Ok(frame) => {
+                            failures = 0;
+                            Levels::set(&levels_sys.system, frame.level);
+                            levels_sys.note_activity(frame.level);
+                            if let Ok(mut m) = mixer_for_sys.lock() {
+                                m.push_system(&frame.samples);
+                            }
+                        }
+                        Err(std::sync::mpsc::RecvTimeoutError::Disconnected) if stop_flag.load(Ordering::SeqCst) => break,
+                        Err(_) => {
+                            if stop_flag.load(Ordering::SeqCst) {
+                                break;
+                            }
+                            failures += 1;
+                            if failures > SYSTEM_STALL_MAX_RESTARTS {
+                                set_health(&health, AudioHealth::Degraded);
+                                tracing::warn!("system audio stalled and could not be recovered; continuing with the microphone only");
+                                // Keep draining so the sender never blocks; no more restarts.
+                                match rx.recv() {
+                                    Ok(_) => continue,
+                                    Err(_) => break,
+                                }
+                            }
+                            set_health(&health, AudioHealth::Recovering);
+                            tracing::warn!("system audio stalled for {SYSTEM_STALL_TIMEOUT:?}; restarting capture (attempt {failures})");
+                            if let Some(h) = handle.take() {
+                                h.stop();
+                            }
+                            let (tx, new_rx) = audio::frame_channel();
+                            match audio::start_system(tx) {
+                                Ok(h) => {
+                                    handle = Some(h);
+                                    rx = new_rx;
+                                    set_health(&health, AudioHealth::Healthy);
+                                    tracing::info!("system audio capture restarted");
+                                }
+                                Err(e) => {
+                                    tracing::warn!("system audio restart failed: {e}");
+                                    std::thread::sleep(Duration::from_secs(2));
+                                }
+                            }
+                        }
                     }
+                }
+                if let Some(h) = handle.take() {
+                    h.stop();
                 }
             }));
         }
@@ -469,6 +523,7 @@ impl RecordingSession {
         if let Some(h) = self.system.take() {
             h.stop();
         }
+        self.reader_stop.store(true, Ordering::SeqCst);
         for join in self.readers.drain(..) {
             let _ = join.join();
         }
@@ -541,6 +596,16 @@ pub struct RecordingPresence {
     pub grace_remaining_seconds: Option<u64>,
     pub grace_app_name: Option<String>,
     pub call_app_name: Option<String>,
+}
+
+/// No system-audio frames for this long while recording means the monitor stalled.
+const SYSTEM_STALL_TIMEOUT: Duration = Duration::from_secs(4);
+const SYSTEM_STALL_MAX_RESTARTS: u32 = 3;
+
+fn set_health(health: &Arc<Mutex<AudioHealth>>, value: AudioHealth) {
+    if let Ok(mut h) = health.lock() {
+        *h = value;
+    }
 }
 
 pub fn presence_duration(seconds: f64) -> String {
@@ -883,6 +948,138 @@ pub struct MeetingDetail {
 pub struct CoachingOverview {
     pub report: Option<CoachingReport>,
     pub snapshots: Vec<CoachingSnapshot>,
+    /// Grounded examples: real passages from recent meetings behind each metric.
+    #[serde(default)]
+    pub examples: Vec<CoachingExample>,
+}
+
+/// A quoted passage from a recent meeting that illustrates a coaching metric
+/// (macOS Coaching overview "source examples").
+#[derive(Serialize, Clone, Debug, PartialEq)]
+pub struct CoachingExample {
+    pub metric: coaching::CoachingMetric,
+    pub label: String,
+    pub quote: String,
+    pub meeting_id: String,
+    pub meeting_title: String,
+    pub date: i64,
+}
+
+fn filler_hits(text: &str, fillers: &[String]) -> usize {
+    let lower = format!(
+        " {} ",
+        text.to_lowercase()
+            .replace(|c: char| !c.is_alphanumeric() && c != '\'', " ")
+    );
+    fillers
+        .iter()
+        .map(|f| {
+            let needle = format!(" {} ", f.to_lowercase());
+            lower.matches(&needle).count()
+        })
+        .sum()
+}
+
+fn word_count(text: &str) -> usize {
+    text.split_whitespace().count()
+}
+
+fn clip_quote(text: &str) -> String {
+    let t = text.trim();
+    if t.chars().count() <= 180 {
+        return t.to_string();
+    }
+    let cut: String = t.chars().take(177).collect();
+    format!("{}…", cut.trim_end())
+}
+
+/// Pick one passage per metric from the user's own turns in recent meetings.
+pub fn grounded_examples(
+    rows: &[(Meeting, Vec<TranscriptSegment>)],
+    fillers: &[String],
+) -> Vec<CoachingExample> {
+    use coaching::CoachingMetric as M;
+    let mut best: HashMap<&'static str, (f64, CoachingExample)> = HashMap::new();
+    let mut consider = |key: &'static str, score: f64, ex: CoachingExample| {
+        let better = best.get(key).map(|(s, _)| score > *s).unwrap_or(true);
+        if better {
+            best.insert(key, (score, ex));
+        }
+    };
+    for (m, segments) in rows {
+        let self_ids = m.self_speaker_ids();
+        let is_self = |sid: i64| {
+            self_ids
+                .as_deref()
+                .map(|ids| ids.contains(&sid))
+                .unwrap_or(sid == 1000)
+        };
+        let title = m.display_title();
+        let date = m.started_at.unwrap_or(m.created_at);
+        let mk = |metric: M, label: &str, text: &str| CoachingExample {
+            metric,
+            label: label.to_string(),
+            quote: clip_quote(text),
+            meeting_id: m.id.clone(),
+            meeting_title: title.clone(),
+            date,
+        };
+        for seg in segments
+            .iter()
+            .filter(|s| is_self(s.speaker) && word_count(&s.text) >= 4)
+        {
+            let words = word_count(&seg.text) as f64;
+            let hits = filler_hits(&seg.text, fillers);
+            if hits >= 2 {
+                consider(
+                    "fillers",
+                    hits as f64 * 10.0 + date as f64 * 1e-9,
+                    mk(
+                        M::Fillers,
+                        "A recent passage behind this pattern",
+                        &seg.text,
+                    ),
+                );
+            }
+            if words >= 40.0 {
+                consider(
+                    "monologue",
+                    words,
+                    mk(M::Monologue, "Your longest recent stretch", &seg.text),
+                );
+            }
+            if seg.text.contains('?') {
+                consider(
+                    "questions",
+                    date as f64,
+                    mk(M::Questions, "A question you asked", &seg.text),
+                );
+            }
+            if (5.0..=20.0).contains(&words) && hits == 0 && seg.text.trim_end().ends_with('.') {
+                consider(
+                    "clarity",
+                    date as f64 + words,
+                    mk(M::Clarity, "A clean recent turn", &seg.text),
+                );
+            }
+            let dur = seg.end_s - seg.start_s;
+            if words >= 12.0 && dur > 2.0 {
+                let wpm = words / dur * 60.0;
+                if (60.0..=400.0).contains(&wpm) {
+                    consider(
+                        "pace",
+                        wpm,
+                        mk(M::Pace, "Your fastest recent stretch", &seg.text),
+                    );
+                }
+            }
+        }
+    }
+    let order = ["fillers", "pace", "clarity", "questions", "monologue"];
+    order
+        .iter()
+        .filter_map(|k| best.remove(k).map(|(_, ex)| ex))
+        .collect()
 }
 
 fn speaker_labels_for(
@@ -1119,6 +1316,7 @@ pub async fn start_meeting(
         credential,
         None,
         activity,
+        state.audio_health.clone(),
     )?;
     if let Some(mut cfg) = engine_cfg {
         cfg.meeting_id = id.clone();
@@ -2309,10 +2507,14 @@ pub fn coaching_report(
     let conn = state.db.lock().map_err(|_| "db poisoned")?;
     let meetings = db::list_meetings(&conn, limit.unwrap_or(30)).map_err(|e| e.to_string())?;
     let mut snapshots = Vec::new();
+    let mut recent_rows: Vec<(Meeting, Vec<TranscriptSegment>)> = Vec::new();
     for m in &meetings {
         let segments = db::list_segments(&conn, &m.id).map_err(|e| e.to_string())?;
         if segments.is_empty() {
             continue;
+        }
+        if recent_rows.len() < 6 {
+            recent_rows.push((m.clone(), segments.clone()));
         }
         let metrics = metrics_for(m, &segments, &fillers);
         if let Some(snap) = CoachingSnapshot::from_metrics(
@@ -2326,6 +2528,7 @@ pub fn coaching_report(
     }
     Ok(CoachingOverview {
         report: coaching::analyze(&snapshots),
+        examples: grounded_examples(&recent_rows, &fillers),
         snapshots,
     })
 }

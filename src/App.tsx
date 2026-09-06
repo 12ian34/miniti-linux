@@ -10,6 +10,12 @@ import { Presence } from "./views/Presence";
 
 const IS_PRESENCE = typeof window !== "undefined" && window.location.hash === "#presence";
 
+/** macOS offers compact / standard / large; standard keeps the original metrics here. */
+export function applyInterfaceScale(scale: string | undefined) {
+  if (typeof document === "undefined") return;
+  document.documentElement.dataset.scale = scale === "compact" || scale === "large" ? scale : "standard";
+}
+
 function App() {
   if (IS_PRESENCE) return <Presence />;
   return <MainApp />;
@@ -27,6 +33,7 @@ function MainApp() {
       .then(([g, prefs, auth]) => {
         setGate(g);
         setNeedsEnroll(prefs.app_mode === "managed" && !auth.enrolled);
+        applyInterfaceScale(prefs.interface_scale);
       })
       .catch(() => setGate(null))
       .finally(() => setGateChecked(true));

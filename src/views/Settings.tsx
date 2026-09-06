@@ -36,6 +36,7 @@ import {
 } from "../api";
 import type { AppMode, AuthDevices, AuthStatus, CrmProvider, EnvHealth, Prefs, Usage } from "../types";
 import { Enroll } from "./Enroll";
+import { applyInterfaceScale } from "../App";
 import { Sheet } from "./MeetingTools";
 import { useStore } from "../store";
 import { useTauriEvent } from "../useEvent";
@@ -197,6 +198,7 @@ export function Settings() {
   const controls: Control[] = useMemo(() => [
     { id: "tray", dest: "general", label: "Tray icon", keywords: "tray menu bar timer icon" },
     { id: "presence", dest: "general", label: "Floating recording surface", keywords: "floating window indicator presence always on top" },
+    { id: "scale", dest: "general", label: "Interface scale", keywords: "interface scale text size compact standard large zoom" },
     { id: "mode", dest: "account", label: "Mode", keywords: "managed byok mode api backend" },
     { id: "plan", dest: "account", label: "Plan & usage", keywords: "pro upgrade subscription minutes usage polar portal restore license" },
     { id: "recovery", dest: "account", label: "Recovery key & devices", keywords: "recovery key account devices sign out delete rotate reveal" },
@@ -288,6 +290,15 @@ export function Settings() {
           <>
             <C id="tray"><Toggle label="Show tray icon with recording timer (takes effect after restart)" checked={prefs.show_tray} onChange={(v) => update("show_tray", v)} /></C>
             <C id="presence"><Toggle label="Floating recording surface while recording (always on top; Wayland may ignore placement)" checked={prefs.show_floating_indicator} onChange={(v) => update("show_floating_indicator", v)} /></C>
+            <C id="scale">
+              <Field label="Interface scale">
+                <select className="input" value={prefs.interface_scale ?? "standard"} onChange={(e) => { const v = e.currentTarget.value as Prefs["interface_scale"]; update("interface_scale", v); applyInterfaceScale(v); }}>
+                  <option value="compact">Compact — original metrics</option>
+                  <option value="standard">Standard (default)</option>
+                  <option value="large">Large — roomier text</option>
+                </select>
+              </Field>
+            </C>
             <p className="muted small">Shortcuts: Ctrl+R record/stop · Ctrl+[ history · Ctrl+] insights · Ctrl+, settings · Ctrl+F search settings.</p>
           </>
         )}

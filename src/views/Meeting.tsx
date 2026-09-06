@@ -28,7 +28,7 @@ import { useStore } from "../store";
 import { useTauriEvent } from "../useEvent";
 import type { Levels, MeetingDetail, StreamStatus, TranscriptEventPayload } from "../types";
 import { InsightsRail } from "./InsightsRail";
-import { CatchUpButton, InvestigateButton } from "./MeetingTools";
+import { CatchUpButton, InvestigateButton, Sheet } from "./MeetingTools";
 import { CrmSheet } from "./CrmSheet";
 
 interface Line {
@@ -80,6 +80,7 @@ export function MeetingView({ id }: { id: string }) {
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
   const [speakerMenu, setSpeakerMenu] = useState<number | null>(null);
+  const [renaming, setRenaming] = useState<{ sid: number; name: string; you: boolean } | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
   const notesTimer = useRef<number | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -247,12 +248,21 @@ export function MeetingView({ id }: { id: string }) {
     } catch { return [1000]; }
   }, [detail]);
   const isYou = (sid: number) => selfIds.includes(sid);
-  async function renameSpeaker(sid: number) {
+  function renameSpeaker(sid: number) {
     setSpeakerMenu(null);
-    const next = window.prompt("speaker name (empty to clear)", isYou(sid) ? "" : label(sid));
-    if (next === null) return;
-    await setSpeakerName(id, sid, next);
-    await load();
+    setRenaming({ sid, name: isYou(sid) ? "" : label(sid), you: isYou(sid) });
+  }
+  async function saveRename() {
+    if (!renaming) return;
+    const { sid, name, you } = renaming;
+    setRenaming(null);
+    try {
+      if (you !== isYou(sid)) await markAsYou(id, sid, you);
+      if (!you) await setSpeakerName(id, sid, name.trim());
+      await load();
+    } catch (e) {
+      setError(errorMessage(e));
+    }
   }
   async function toggleYou(sid: number) {
     setSpeakerMenu(null);
@@ -397,6 +407,31 @@ export function MeetingView({ id }: { id: string }) {
       </div>
 
       {crmOpen && <CrmSheet meetingId={id} onClose={() => setCrmOpen(false)} />}
+      {renaming && (
+        <Sheet title="speaker" onClose={() => setRenaming(null)}>
+          <div className="speaker-sheet">
+            <p className="muted small"><span className="swatch" style={{ background: speakerColor(renaming.sid, renaming.you) }} />{fallbackSpeakerLabel(renaming.sid)} · rename for this meeting, or mark the voice as yours so coaching counts it</p>
+            <label className="toggle">
+              <input type="checkbox" checked={renaming.you} onChange={(e) => setRenaming({ ...renaming, you: e.currentTarget.checked })} />
+              <span>this is me</span>
+            </label>
+            {!renaming.you && (
+              <input
+                className="input"
+                autoFocus
+                placeholder="name (empty to clear)"
+                value={renaming.name}
+                onChange={(e) => setRenaming({ ...renaming, name: e.currentTarget.value })}
+                onKeyDown={(e) => { if (e.key === "Enter") void saveRename(); if (e.key === "Escape") setRenaming(null); }}
+              />
+            )}
+            <div className="save-row">
+              <button className="control primary" onClick={saveRename}>save</button>
+              <button className="control" onClick={() => setRenaming(null)}>cancel</button>
+            </div>
+          </div>
+        </Sheet>
+      )}
       {insightsOpen && detail ? (
         <InsightsRail meetingId={id} meeting={detail.meeting} live={live} finishing={finishing} onMeetingChanged={load} onCopy={() => copySection("insights")} copied={copied === "insights"} onCollapse={() => setInsightsOpen(false)} />
       ) : !insightsOpen ? (
