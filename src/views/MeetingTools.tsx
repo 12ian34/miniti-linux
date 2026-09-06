@@ -129,7 +129,7 @@ export function InvestigateButton({
         <Sheet title="investigate" onClose={() => setOpen(false)}>
           <textarea
             className="notes-area short"
-            placeholder="What should Miniti look into?"
+            placeholder="What should miniti look into?"
             value={focus}
             onChange={(e) => setFocus(e.currentTarget.value)}
             maxLength={1000}

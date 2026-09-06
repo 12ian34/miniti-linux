@@ -1,10 +1,10 @@
 # Maintainer: Ian Ahuja <hello@miniti.app>
-# Miniti Linux built from source. Managed mode needs no build-time secret: the
+# miniti Linux built from source. Managed mode needs no build-time secret: the
 # app enrolls at runtime with a device-bound key and an anonymous recovery key.
 pkgname=miniti
 pkgver=0.3.0
 pkgrel=1
-pkgdesc="Miniti — AI meeting assistant with live transcription, insights and coaching"
+pkgdesc="miniti — AI meeting assistant with live transcription, insights and coaching"
 arch=('x86_64' 'aarch64')
 url="https://github.com/12ian34/miniti-linux"
 license=('Elastic-2.0')

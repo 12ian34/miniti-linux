@@ -54,7 +54,7 @@ install -m 0644 "$repo_root/src-tauri/icons/128x128@2x.png" "$stage/icons/hicolo
 install -m 0644 "$repo_root/src-tauri/icons/icon.png"        "$stage/icons/hicolor/512x512/apps/miniti.png"
 
 cat > "$stage/README.md" <<EOF
-# Miniti $version (Linux, x86_64)
+# miniti $version (Linux, x86_64)
 
 Native desktop meeting assistant (Tauri 2 + Rust). Dynamically linked binary —
 install the runtime libraries below, then run \`./miniti\`.

@@ -48,7 +48,7 @@ export const INVOKE_DEADLINE_MS = 120_000;
 function invoke<T>(cmd: string, args?: InvokeArgs, deadlineMs = INVOKE_DEADLINE_MS): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const timer = setTimeout(
-      () => reject(new Error(`Miniti stopped responding (${cmd}). Restart the app; if it repeats, send the log from Settings → Privacy & Support.`)),
+      () => reject(new Error(`miniti stopped responding (${cmd}). Restart the app; if it repeats, send the log from Settings → Privacy & Support.`)),
       deadlineMs,
     );
     tauriInvoke<T>(cmd, args).then(

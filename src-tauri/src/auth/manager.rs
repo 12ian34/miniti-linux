@@ -221,7 +221,7 @@ impl AuthManager {
         let app_version = app_version.into();
         let http = reqwest::Client::builder()
             .timeout(HTTP_TIMEOUT)
-            .user_agent(format!("Miniti-Linux/{app_version}"))
+            .user_agent(format!("miniti-Linux/{app_version}"))
             .build()
             .unwrap_or_else(|_| reqwest::Client::new());
         Self {

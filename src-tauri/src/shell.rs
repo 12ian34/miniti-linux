@@ -1,7 +1,7 @@
 //! Desktop shell: tray icon with elapsed timer and Smart-meeting actions, the
 //! non-activating floating recording surface, desktop notifications (used
-//! when Miniti is not frontmost or the surface is off), deep-link handling
-//! for OAuth returns, and close-to-tray so Miniti stays reachable after the
+//! when miniti is not frontmost or the surface is off), deep-link handling
+//! for OAuth returns, and close-to-tray so miniti stays reachable after the
 //! main window is closed (port of the macOS menu bar / NSPanel behaviour).
 
 use std::sync::Mutex;
@@ -31,13 +31,13 @@ fn build_menu(app: &AppHandle) -> Result<(Menu<Wry>, TrayHandles, TrayIcon<Wry>)
         .enabled(false)
         .build(app)?;
     let toggle = MenuItemBuilder::with_id("toggle", "Start meeting").build(app)?;
-    let open = MenuItemBuilder::with_id("open", "Open Miniti").build(app)?;
+    let open = MenuItemBuilder::with_id("open", "Open miniti").build(app)?;
     let decision = MenuItemBuilder::with_id("decision", "")
         .enabled(false)
         .build(app)?;
     let decision_primary = MenuItemBuilder::with_id("decision_primary", "").build(app)?;
     let decision_secondary = MenuItemBuilder::with_id("decision_secondary", "").build(app)?;
-    let quit = MenuItemBuilder::with_id("quit", "Quit Miniti").build(app)?;
+    let quit = MenuItemBuilder::with_id("quit", "Quit miniti").build(app)?;
     let menu = MenuBuilder::new(app)
         .item(&status)
         .item(&toggle)
@@ -51,7 +51,7 @@ fn build_menu(app: &AppHandle) -> Result<(Menu<Wry>, TrayHandles, TrayIcon<Wry>)
         .build()?;
     let mut builder = TrayIconBuilder::with_id("miniti")
         .menu(&menu)
-        .tooltip("Miniti");
+        .tooltip("miniti");
     if let Some(icon) = app.default_window_icon() {
         builder = builder.icon(icon.clone());
     }
@@ -141,7 +141,7 @@ pub fn update_tray(
         let _ = h.tray.set_title(Some(format!("● {title}")));
         let _ = h
             .tray
-            .set_tooltip(Some(format!("Miniti — recording {title}")));
+            .set_tooltip(Some(format!("miniti — recording {title}")));
         let _ = h.status.set_text(match stream_state {
             Some("reconnecting") => format!("Recording {title} · reconnecting…"),
             Some("failed") => format!("Recording {title} · transcription failed"),
@@ -150,7 +150,7 @@ pub fn update_tray(
         let _ = h.toggle.set_text("Stop meeting");
     } else {
         let _ = h.tray.set_title(None::<String>);
-        let _ = h.tray.set_tooltip(Some("Miniti"));
+        let _ = h.tray.set_tooltip(Some("miniti"));
         let _ = h.status.set_text("Not recording");
         let _ = h.toggle.set_text("Start meeting");
     }
@@ -196,7 +196,7 @@ pub fn show_presence(app: &AppHandle) {
     }
     let url = WebviewUrl::App("index.html#presence".into());
     let mut builder = WebviewWindowBuilder::new(app, PRESENCE_LABEL, url)
-        .title("Miniti")
+        .title("miniti")
         .inner_size(PRESENCE_W, PRESENCE_H)
         .min_inner_size(200.0, 44.0)
         .decorations(false)
@@ -269,7 +269,7 @@ pub fn notify(app: &AppHandle, title: &str, body: &str) {
     }
 }
 
-/// Surface-aware delivery contract: when Miniti is frontmost the floating
+/// Surface-aware delivery contract: when miniti is frontmost the floating
 /// surface / in-app UI carries the message; otherwise Notification Center.
 pub fn deliver_guidance(app: &AppHandle, title: &str, body: &str, surface_enabled: bool) {
     if surface_enabled && main_is_focused(app) {

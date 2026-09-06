@@ -502,7 +502,7 @@ pub struct AppState {
 
 /// Personal dictionary + system terms as Deepgram keyterms (capped in the URL builder).
 fn deepgram_keyterms(prefs: &Prefs) -> Vec<String> {
-    let mut terms: Vec<String> = vec!["Miniti".into()];
+    let mut terms: Vec<String> = vec!["miniti".into()];
     for t in &prefs.personal_dictionary {
         let t = t.trim();
         if !t.is_empty() && !terms.iter().any(|x| x.eq_ignore_ascii_case(t)) {
@@ -710,7 +710,7 @@ pub struct EnvHealth {
     pub tauri_bridge: bool,
     pub microphone_available: bool,
     pub system_audio_available: bool,
-    /// Whether this installation is enrolled with the Miniti backend (managed mode).
+    /// Whether this installation is enrolled with the miniti backend (managed mode).
     pub enrolled: bool,
     pub device_id: String,
 }
@@ -809,7 +809,7 @@ fn metrics_for(
 #[tauri::command]
 pub fn environment_health(state: State<AppState>) -> EnvHealth {
     EnvHealth {
-        app_name: "Miniti Linux".to_string(),
+        app_name: "miniti Linux".to_string(),
         app_version: APP_VERSION.to_string(),
         platform: api::PLATFORM.to_string(),
         pcm_contract: "16 kHz PCM16 LE • mono mic, or stereo mic+system (multichannel)".to_string(),
@@ -1130,7 +1130,7 @@ pub async fn toggle_recording_from_shell(app: AppHandle) {
             })
     };
     if let Err(e) = result {
-        crate::shell::notify(&app, "Miniti", &e);
+        crate::shell::notify(&app, "miniti", &e);
     }
 }
 
@@ -1208,7 +1208,7 @@ async fn perform_smart_action(app: &AppHandle, action: crate::smart::Action) {
             tracing::info!("smart: stopping ({reason})");
             let r = stop_recording(app.clone(), state.clone()).await.map(|_| ());
             if reason != "user" {
-                crate::shell::notify(app, "Miniti", &format!("Recording saved ({reason})."));
+                crate::shell::notify(app, "miniti", &format!("Recording saved ({reason})."));
             }
             r
         }
@@ -1245,7 +1245,7 @@ async fn perform_smart_action(app: &AppHandle, action: crate::smart::Action) {
     };
     if let Err(e) = result {
         tracing::warn!("smart action failed: {e}");
-        crate::shell::notify(app, "Miniti", &e);
+        crate::shell::notify(app, "miniti", &e);
     }
 }
 
@@ -2221,7 +2221,7 @@ where
         Err(e) => {
             tracing::error!("command task failed: {e}");
             Err(
-                "Miniti hit an internal error; please restart and send the log if it repeats"
+                "miniti hit an internal error; please restart and send the log if it repeats"
                     .to_string(),
             )
         }

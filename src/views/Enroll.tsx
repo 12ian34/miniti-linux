@@ -69,7 +69,7 @@ export function Enroll({ onDone, inline = false }: { onDone: () => void; inline?
       <div className={wrap}>
         {!inline && <h1 className="view-title">Save your recovery key</h1>}
         <p>
-          This key is your Miniti account. It is the only way to restore your plan and devices on
+          This key is your miniti account. It is the only way to restore your plan and devices on
           another computer, and it cannot be recovered if lost. Store it in your password manager.
         </p>
         <div className="recovery-key">{recoveryKey}</div>
@@ -112,7 +112,7 @@ export function Enroll({ onDone, inline = false }: { onDone: () => void; inline?
     <div className={wrap}>
       {!inline && <h1 className="view-title">Set up managed mode</h1>}
       <p className="muted">
-        Managed mode uses the Miniti backend for transcription and insights. Instead of an email or
+        Managed mode uses the miniti backend for transcription and insights. Instead of an email or
         password, your account is an anonymous recovery key that only you hold.
       </p>
       {error && <div className="banner error">{error}</div>}
@@ -127,7 +127,7 @@ export function Enroll({ onDone, inline = false }: { onDone: () => void; inline?
         </button>
         <button className="choice" disabled={busy} onClick={useByok}>
           <strong>Use my own keys instead</strong>
-          <span>BYOK: your Deepgram and OpenAI keys, nothing goes through the Miniti backend.</span>
+          <span>BYOK: your Deepgram and OpenAI keys, nothing goes through the miniti backend.</span>
         </button>
       </div>
     </div>

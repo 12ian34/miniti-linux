@@ -162,7 +162,7 @@ export function Settings() {
     try {
       const url = kind === "google" ? await googleConnect() : await crmConnect(kind);
       await openUrl(url);
-      setNotice("Finish signing in in your browser; Miniti picks up the return automatically.");
+      setNotice("Finish signing in in your browser; miniti picks up the return automatically.");
     } catch (e) {
       setError(errorMessage(e));
     }
@@ -290,7 +290,7 @@ export function Settings() {
             <C id="mode">
               <Field label="Mode">
                 <select className="input" value={prefs.app_mode} onChange={(e) => update("app_mode", e.currentTarget.value as AppMode)}>
-                  <option value="managed">Managed (Miniti backend)</option>
+                  <option value="managed">Managed (miniti backend)</option>
                   <option value="byok">BYOK (your own keys)</option>
                 </select>
               </Field>
@@ -402,7 +402,7 @@ export function Settings() {
                 <h2 className="card-title">Models</h2>
                 <div className="rows">
                   <Row k="transcription" v="Deepgram Nova-3 (streaming, diarized)" />
-                  <Row k="insights" v={prefs.app_mode === "byok" ? "gpt-5-mini (investigations: gpt-5.4-mini) via your OpenAI key" : "gpt-5.4-mini full passes · gpt-5-mini incremental, via the Miniti backend"} />
+                  <Row k="insights" v={prefs.app_mode === "byok" ? "gpt-5-mini (investigations: gpt-5.4-mini) via your OpenAI key" : "gpt-5.4-mini full passes · gpt-5-mini incremental, via the miniti backend"} />
                   <Row k="coaching" v="computed locally, never sent anywhere" />
                 </div>
               </section>
@@ -421,8 +421,8 @@ export function Settings() {
 
         {dest === "notifications" && (
           <>
-            <p className="muted small">Decisions and guidance show on the floating surface while Miniti is in front, and as desktop notifications otherwise. The tray menu always carries the same decisions.</p>
-            <C id="notify"><Toggle label="Desktop notifications when Miniti is not in front (Smart-meeting decisions, guidance)" checked={prefs.notifications_enabled} onChange={(v) => update("notifications_enabled", v)} /></C>
+            <p className="muted small">Decisions and guidance show on the floating surface while miniti is in front, and as desktop notifications otherwise. The tray menu always carries the same decisions.</p>
+            <C id="notify"><Toggle label="Desktop notifications when miniti is not in front (Smart-meeting decisions, guidance)" checked={prefs.notifications_enabled} onChange={(v) => update("notifications_enabled", v)} /></C>
             <C id="guidance"><Toggle label="Live guidance nudges (high-priority questions, long monologues, filler bursts)" checked={prefs.live_guidance_enabled} onChange={(v) => update("live_guidance_enabled", v)} /></C>
           </>
         )}
@@ -451,7 +451,7 @@ export function Settings() {
         )}
 
         {dest === "crm" && (
-          notEnrolled ? <p className="muted">Attio and Twenty connect through the Miniti backend; set up managed mode under Account &amp; Plan first.</p> : (
+          notEnrolled ? <p className="muted">Attio and Twenty connect through the miniti backend; set up managed mode under Account &amp; Plan first.</p> : (
             <>
               {(["attio", "twenty"] as CrmProvider[]).map((p) => (
                 <C id={p} key={p}>
@@ -519,7 +519,7 @@ export function Settings() {
             <section className="card">
               <h2 className="card-title">About</h2>
               <div className="rows">
-                <Row k="version" v={health ? `Miniti Linux ${health.app_version}` : "…"} />
+                <Row k="version" v={health ? `miniti Linux ${health.app_version}` : "…"} />
                 <Row k="platform" v={health ? `${health.platform} · ${health.os}` : "…"} />
                 <Row k="managed mode" v={auth ? (auth.enrolled ? `enrolled (${auth.storage === "file" ? "credentials in ~/.local/share/miniti/auth.json" : "credentials in the secret service"})` : "not enrolled") : "…"} />
                 <Row k="data" v="~/.local/share/miniti · prefs in ~/.config/miniti" />
@@ -530,7 +530,7 @@ export function Settings() {
                 <button className="ghost" onClick={() => openUrl("https://miniti.app/terms")}>terms & privacy</button>
                 <button className="ghost" onClick={() => openUrl("https://github.com/12ian34/miniti-linux/issues")}>report an issue</button>
               </div>
-              <p className="muted small">Diagnostics: run with <code>RUST_LOG=debug miniti</code> and share the terminal output. Transcripts and audio never leave the device except to Deepgram and, in managed mode, the Miniti backend.</p>
+              <p className="muted small">Diagnostics: run with <code>RUST_LOG=debug miniti</code> and share the terminal output. Transcripts and audio never leave the device except to Deepgram and, in managed mode, the miniti backend.</p>
             </section>
           </C>
         )}

@@ -1,4 +1,4 @@
-//! Miniti Linux — native desktop meeting assistant (Tauri 2 + Rust).
+//! miniti Linux — native desktop meeting assistant (Tauri 2 + Rust).
 //!
 //! Module map (PLAN.md): `audio` (capture, PCM, dual-source mixer), `deepgram`
 //! (live transcription, speaker identity/segmentation, echo reconciliation),
@@ -122,7 +122,7 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            // Close-to-tray: Miniti stays reachable after the main window closes.
+            // Close-to-tray: miniti stays reachable after the main window closes.
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 if window.label() == shell::MAIN_LABEL {
                     let keep_alive = window

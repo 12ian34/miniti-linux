@@ -1,6 +1,6 @@
-# Miniti Linux — Build Plan & Full Context
+# miniti Linux — Build Plan & Full Context
 
-Self-contained context for `miniti-linux`, a **Tauri 2 + Rust** rewrite of the Miniti meeting assistant targeting **macOS feature parity** on Linux. Agents in this repo may not have the Swift tree open — every contract needed to build lives here (with pointers to sibling repos for prompts and fine detail).
+Self-contained context for `miniti-linux`, a **Tauri 2 + Rust** rewrite of the miniti meeting assistant targeting **macOS feature parity** on Linux. Agents in this repo may not have the Swift tree open — every contract needed to build lives here (with pointers to sibling repos for prompts and fine detail).
 
 **Tagline:** multi-dimensional meetings  
 **Sibling Apple app:** `../miniti` (macOS + iOS)  
@@ -9,7 +9,7 @@ Self-contained context for `miniti-linux`, a **Tauri 2 + Rust** rewrite of the M
 
 ---
 
-## 1. What Miniti is
+## 1. What miniti is
 
 Records mic (and on desktop, system audio), streams to Deepgram for live transcription with speaker diarization, generates AI insights via OpenAI (managed proxy or BYOK), and adds Smart meetings, calendar, CRM, Coaching, and Playbook.
 

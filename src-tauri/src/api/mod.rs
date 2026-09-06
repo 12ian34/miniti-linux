@@ -180,7 +180,7 @@ pub struct InsightsResponse {
 #[derive(Debug, Clone, thiserror::Error, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ApiError {
-    #[error("managed mode needs a Miniti account on this device: create or restore a recovery key in Settings → Account")]
+    #[error("managed mode needs a miniti account on this device: create or restore a recovery key in Settings → Account")]
     NotEnrolled,
     #[error("this device is already enrolled")]
     AlreadyEnrolled,
@@ -314,7 +314,7 @@ impl ApiClient {
     pub fn new(base: impl Into<String>, ctx: HeaderContext, auth: Arc<AuthManager>) -> Self {
         let http = reqwest::Client::builder()
             .timeout(HTTP_TIMEOUT)
-            .user_agent(format!("Miniti-Linux/{}", ctx.app_version))
+            .user_agent(format!("miniti-Linux/{}", ctx.app_version))
             .build()
             .unwrap_or_else(|_| reqwest::Client::new());
         Self {

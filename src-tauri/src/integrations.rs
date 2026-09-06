@@ -1,5 +1,5 @@
 //! Google Calendar, Attio and Twenty integrations. All OAuth and third-party
-//! traffic goes through the Miniti backend (contract in
+//! traffic goes through the miniti backend (contract in
 //! `../miniti-api/docs/agents/04-api-reference.md`); the app opens the
 //! authorize URL in the browser and receives the return via a deep link
 //! (`miniti-google://oauth-callback?status=success`, etc.).

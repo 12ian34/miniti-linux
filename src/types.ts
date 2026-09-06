@@ -9,7 +9,7 @@ export interface EnvHealth {
   tauri_bridge: boolean;
   microphone_available: boolean;
   system_audio_available: boolean;
-  /** Enrolled with the Miniti backend (managed mode available). */
+  /** Enrolled with the miniti backend (managed mode available). */
   enrolled: boolean;
   device_id: string;
 }

@@ -1,20 +1,41 @@
-# Miniti for Linux
+# miniti for Linux
 
-Miniti is an AI meeting assistant: live transcription with speaker separation,
-insights while you talk (summary, open questions, coaching, sales analysis,
-playbook lookups), and a searchable history of every meeting, stored on your
-machine. This repository is the native Linux desktop app, built with Tauri 2
-and Rust.
+**your meetings know more than you.**
 
-- Website: https://miniti.app
-- Documentation: https://miniti.app/docs
-- Changelog for all platforms: https://miniti.app/changelog · this app's own [CHANGELOG.md](CHANGELOG.md)
-- Releases: https://github.com/12ian34/miniti-linux/releases
-- Issues and feature requests: https://github.com/12ian34/miniti-linux/issues
+most meeting tools stop at notes. notes and AI summaries are table stakes.
+miniti transcribes every meeting live, surfaces the questions worth asking while
+they can still be asked, and coaches you to speak with clarity and confidence.
+your transcripts and insights stay on your machine, and you own them forever.
 
-## Install
+this is the native Linux app, built with Tauri 2 and Rust. same backend, same
+insights, same meeting data as the Mac app, so a Linux desk gets everything a
+Mac desk gets.
 
-Prebuilt x86_64 releases are built on Ubuntu 22.04 (glibc 2.35), so they run on
+![miniti during a live call: transcript with named speakers on the left, live questions on the right](docs/screenshots/recording-questions.png)
+
+<sub>the meeting view (captured on macOS; the Linux app uses the same layout)</sub>
+
+- website: https://miniti.app
+- documentation: https://miniti.app/docs
+- changelog for every platform: https://miniti.app/changelog · this app's own [CHANGELOG.md](CHANGELOG.md)
+- releases: https://github.com/12ian34/miniti-linux/releases
+- issues and ideas: https://github.com/12ian34/miniti-linux/issues
+
+## what miniti does
+
+- **live transcript** in 11 languages, with remote callers and the people in the room kept apart as separate speakers, and names inferred from the conversation and your calendar
+- **insights while you talk**: a rolling summary, the open questions worth asking next, and coaching on fillers, pace, talk ratio, monologue length and clarity
+- **specialist views** when you need them: Sales for live MEDDPICC analysis with CRM sync to Attio or Twenty, Playbook for cited answers from your own docs
+- **catch me up** when you zoned out, and **investigate** a question on the web or in a local codebase without leaving the call
+- **coaching over time**: your speaking stats across meetings, with one practical focus for the next one
+- **smart meetings**: notices when a call may have ended or the next one is about to start, with Google Calendar auto-start and auto-stop
+- **your data, your tools**: local history, Markdown export, webhooks to Zapier, Make or n8n, Granola import
+
+![coaching overview: a next-meeting focus, trends, and stats across recent meetings](docs/screenshots/coaching.png)
+
+## install
+
+prebuilt x86_64 releases are built on Ubuntu 22.04 (glibc 2.35), so they run on
 Ubuntu 22.04+, Debian 12+, Fedora, Arch and other rolling distributions.
 
 **Arch Linux.** Build the package from the PKGBUILD in this repo. It downloads
@@ -28,11 +49,11 @@ cd miniti-linux/packaging/aur/miniti-bin
 makepkg -si
 ```
 
-**Debian / Ubuntu.** Download `Miniti_<version>_amd64.deb` from the
+**Debian / Ubuntu.** Download `miniti_<version>_amd64.deb` from the
 [latest release](https://github.com/12ian34/miniti-linux/releases/latest), then:
 
 ```bash
-sudo apt install ./Miniti_*_amd64.deb
+sudo apt install ./miniti_*_amd64.deb
 ```
 
 **Any distribution.** Download the tarball from the latest release, then:
@@ -51,28 +72,27 @@ pipewire-pulse libpulse libsecret libnotify`. A secret service such as
 `gnome-keyring` is optional: without one, credentials are kept in
 `~/.local/share/miniti/auth.json` with mode 0600.
 
-### First launch
+### first launch
 
-Choose how Miniti should run:
+Choose how miniti should run:
 
-- **Managed** uses the Miniti backend. Your account is an anonymous recovery
-  key created in the app, with no email or password. Free minutes every month;
-  Pro is a Polar subscription. Keep the recovery key somewhere safe: it is the
-  only way to restore your account on another computer.
+- **Managed** uses the miniti backend. Your account is an anonymous recovery
+  key created in the app, with no email or password. 500 free minutes every
+  month; Pro is a Polar subscription. Keep the recovery key somewhere safe: it
+  is the only way to restore your account on another computer.
 - **BYOK** uses your own Deepgram and OpenAI API keys and never talks to the
-  Miniti backend.
+  miniti backend.
 
 System audio for remote callers needs PipeWire with the pulse shim
-(`pipewire-pulse`). Without it Miniti transcribes the microphone only.
+(`pipewire-pulse`). Without it miniti transcribes the microphone only.
 
 Updates come through your package manager or the releases page. The app
 checks the minimum supported version on launch but does not update itself.
 
-## What is in the Linux app
+## what is in the Linux app
 
-Miniti for Linux follows the macOS app feature for feature wherever Linux
-allows it. The same backend, the same insights, and the same meeting data model
-mean a Linux user sees what a Mac user sees.
+miniti for Linux follows the Mac app feature for feature wherever Linux allows
+it.
 
 | Area | Linux | Notes |
 | --- | --- | --- |
@@ -92,7 +112,7 @@ mean a Linux user sees what a Mac user sees.
 
 Known limits and verification status are tracked in [AGENTS.md](AGENTS.md) § Status.
 
-## Develop and run locally
+## develop and run locally
 
 Prerequisites (Debian/Ubuntu package names):
 
@@ -119,17 +139,17 @@ Xvfb :99 -screen 0 1280x800x24 &
 DISPLAY=:99 WEBKIT_DISABLE_DMABUF_RENDERER=1 dbus-run-session -- pnpm tauri dev
 ```
 
-### No secrets in the binary
+### no secrets in the binary
 
 Nothing is baked into a build. On the first managed-mode launch the app creates
 (or restores) an anonymous recovery key and a per-device P-256 installation
-key; the backend then issues short-lived, device-bound tokens (see the Miniti
+key; the backend then issues short-lived, device-bound tokens (see the miniti
 API reference, "Device-bound client authorization"). Credentials live in the
 desktop secret service (`com.miniti.linux` / `device-auth`), or in
 `~/.local/share/miniti/auth.json` (0600) when no secret service is running. Any
 build, from source or CI, can use managed mode.
 
-## Release
+## release
 
 Releases are cut by pushing a `v*` tag. CI builds on Ubuntu 22.04 (the glibc
 2.35 baseline) and publishes the tarball, its checksum and the `.deb` to a
@@ -142,8 +162,8 @@ pnpm tauri build                 # local equivalent: binary + .deb
 packaging/make-tarball.sh        # -> dist-release/miniti-<ver>-x86_64-unknown-linux-gnu.tar.gz
 ```
 
-## License
+## license
 
 Elastic License 2.0 (see `LICENSE`): use, modify and redistribute freely, but you
-may not offer Miniti as a hosted or managed service, remove the notices, or
+may not offer miniti as a hosted or managed service, remove the notices, or
 circumvent the Pro entitlement checks.

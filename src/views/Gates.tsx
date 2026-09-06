@@ -44,8 +44,8 @@ export function Terms({ gate, onDone }: GateProps) {
     <div className="gate">
       <h1 className="view-title">Before you start</h1>
       <p>
-        Miniti records audio from your microphone (and, where enabled, system audio), streams it to
-        Deepgram for transcription, and in managed mode sends transcripts to the Miniti backend for
+        miniti records audio from your microphone (and, where enabled, system audio), streams it to
+        Deepgram for transcription, and in managed mode sends transcripts to the miniti backend for
         insights. Meetings are stored locally on this device.
       </p>
       <p className="muted">
@@ -75,15 +75,15 @@ export function Onboarding({ onDone }: GateProps) {
   }
   return (
     <div className="gate">
-      <h1 className="view-title">Welcome to Miniti</h1>
+      <h1 className="view-title">Welcome to miniti</h1>
       <ol className="steps">
         <li>
-          <strong>Pick a mode</strong>: Managed (Miniti backend, free minutes each month; your account
+          <strong>Pick a mode</strong>: Managed (miniti backend, free minutes each month; your account
           is an anonymous recovery key you create next) or BYOK (your own Deepgram key).
         </li>
         <li>
           <strong>Check audio</strong> on Home: your microphone must be detected. System audio
-          (remote callers) needs PipeWire with the pulse shim so Miniti can read the monitor.
+          (remote callers) needs PipeWire with the pulse shim so miniti can read the monitor.
         </li>
         <li>
           <strong>Record</strong>, then review the transcript in History and your speaking habits in

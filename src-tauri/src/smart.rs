@@ -565,7 +565,7 @@ fn emit_prompt(app: &AppHandle, prompt: &SmartPrompt, surface_enabled: bool, not
     if notifications && !(surface_enabled && crate::shell::main_is_focused(app)) {
         crate::shell::notify(
             app,
-            "Miniti",
+            "miniti",
             &format!(
                 "{} ({} / {})",
                 prompt.message, prompt.primary, prompt.secondary

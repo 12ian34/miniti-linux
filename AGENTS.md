@@ -1,4 +1,4 @@
-# Miniti Linux
+# miniti Linux
 
 Native Linux desktop client for [Miniti](https://miniti.app) — AI meeting assistant with live transcription, insights, and Smart meetings. Sibling of the Apple apps in `../miniti`, the Android port in `../miniti-android`, and the backend in `../miniti-api`.
 

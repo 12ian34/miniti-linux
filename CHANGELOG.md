@@ -1,6 +1,6 @@
 # Changelog
 
-Public-facing changelog for Miniti for Linux. The hosted changelog covering
+Public-facing changelog for miniti for Linux. The hosted changelog covering
 every platform lives at `https://miniti.app/changelog`; end-user documentation
 at `https://miniti.app/docs`.
 
@@ -16,11 +16,11 @@ at `https://miniti.app/docs`.
 
 ### 2026-09-06 - v0.3.0
 
-First public release. Available as a release tarball, a `.deb`, and an Arch package built from the PKGBUILD in this repository (AUR publication follows when registration reopens).
+first public release of miniti for Linux. Available as a release tarball, a `.deb`, and an Arch package built from the PKGBUILD in this repository (AUR publication follows when registration reopens).
 
 #### New features
 
-- new: Managed mode no longer needs anything baked into the app. On first launch you create an anonymous recovery key, with no email or password, and Miniti enrolls this computer with a per-device key. Restore the same account on another computer with the recovery key
+- new: Managed mode no longer needs anything baked into the app. On first launch you create an anonymous recovery key, with no email or password, and miniti enrolls this computer with a per-device key. Restore the same account on another computer with the recovery key
 - new: Settings → Account & Plan shows the account, reveals or rotates the recovery key, lists the devices on the account, removes a device, signs this computer out, or deletes the account
 - new: Managed mode is available in every build, including builds from source, because there is no secret to compile in
 
@@ -47,7 +47,7 @@ Internal test build. Feature parity pass against the macOS app.
 - new: Desktop shell: tray icon with a timer, floating recording surface with live nudges, desktop notifications, and browser handoff for OAuth
 - new: Smart meetings: notices when a meeting may have ended or another is approaching, with calendar handoff
 - new: Google Calendar, Attio and Twenty integrations; upcoming meetings on Home with prep notes
-- new: The macOS layout: history sidebar with pinned and dated groups, transcript with speaker legend and resizable notes, an insights rail, searchable Settings destinations, keyboard shortcuts, and the Miniti app icon
+- new: The macOS layout: history sidebar with pinned and dated groups, transcript with speaker legend and resizable notes, an insights rail, searchable Settings destinations, keyboard shortcuts, and the miniti app icon
 
 #### Fixes
 

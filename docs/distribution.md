@@ -1,6 +1,6 @@
 # Distribution — binary tarball + AUR
 
-Miniti Linux ships as a **normal dynamically linked desktop binary**, not Flatpak/AppImage/Snap. Arch users install from the **AUR**. Everyone else downloads a GitHub Release tarball (optional `.deb` later).
+miniti Linux ships as a **normal dynamically linked desktop binary**, not Flatpak/AppImage/Snap. Arch users install from the **AUR**. Everyone else downloads a GitHub Release tarball (optional `.deb` later).
 
 ## Artifacts
 
@@ -108,7 +108,7 @@ Do **not** rely on Tauri’s signed updater as the primary Arch path.
 
 ```ini
 [Desktop Entry]
-Name=Miniti
+Name=miniti
 Comment=AI meeting assistant
 Exec=miniti %U
 Icon=miniti

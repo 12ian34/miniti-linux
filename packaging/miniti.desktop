@@ -1,5 +1,5 @@
 [Desktop Entry]
-Name=Miniti
+Name=miniti
 Comment=AI meeting assistant — live transcription and insights
 Exec=miniti %U
 Icon=miniti
