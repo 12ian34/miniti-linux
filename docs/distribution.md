@@ -84,6 +84,14 @@ packaging/make-tarball.sh              # dist-release/miniti-<ver>-x86_64-unknow
 cd packaging/aur/miniti-bin && makepkg -si   # after pointing source= at the tarball (file:// works for local tests)
 ```
 
+## Release checklist
+
+1. Add the version's entry at the top of `CHANGELOG.md` (public wording, no implementation details) and bump `version` in `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, and `pkgver` in both PKGBUILDs.
+2. Push `main`, wait for `ci` to pass, then tag `vX.Y.Z` and push the tag; the `release` workflow publishes the tarball, `.sha256`, and `.deb`.
+3. Paste the changelog entry into the GitHub Release notes.
+4. Put the tarball's sha256 into `packaging/aur/miniti-bin/PKGBUILD`, regenerate `.SRCINFO` with `packaging/aur/srcinfo.py`, and push to AUR.
+5. Update `LINUX_LATEST_VERSION` (and `LINUX_MIN_VERSION` if the release is a forced floor) on the backend.
+
 ## Updates
 
 | Channel | Mechanism |
