@@ -20,7 +20,7 @@ conflicts=('miniti-bin' 'miniti-git')
 # sqlite3_* symbols. Rust does its own LTO via Cargo.toml.
 options=(!lto)
 source=("miniti-${pkgver}.tar.gz::https://github.com/12ian34/miniti-linux/archive/refs/tags/v${pkgver}.tar.gz")
-sha256sums=('62607992928bf55330346d11b4d107fd226823bb47295c2249c0327fe304f9d9')
+sha256sums=('829d21b24dfaefeaa453f0f8e18274153801d862d73cef6d9745274c4e9ffa80')
 
 prepare() {
   cd "miniti-linux-${pkgver}"

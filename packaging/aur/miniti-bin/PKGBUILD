@@ -15,7 +15,7 @@ optdepends=('gtk-layer-shell: pin the floating recording surface on Wayland comp
 provides=('miniti')
 conflicts=('miniti' 'miniti-git')
 source=("https://github.com/12ian34/miniti-linux/releases/download/v${pkgver}/miniti-${pkgver}-x86_64-unknown-linux-gnu.tar.gz")
-sha256sums=('0b63c03019d624a2cc97aea0b9f92d3bb608e00ca02b629835513892aa4b390b')
+sha256sums=('1bfa89b051c3b7c66cae2700f0b55fa0aa703a3a04c30405bdc2ace2233fc487')
 
 package() {
   cd "miniti-${pkgver}-x86_64-unknown-linux-gnu"
