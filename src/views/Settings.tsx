@@ -12,10 +12,12 @@ import {
   subscribeUrl,
 } from "../api";
 import type { AppMode, Prefs, Usage } from "../types";
+import { useStore } from "../store";
 
 const LANGUAGES = ["en", "es", "fr", "de", "pt", "it", "nl", "sv", "el", "pl", "ru"];
 
 export function Settings() {
+  const { back, refreshPrefs } = useStore();
   const [prefs, setPrefsState] = useState<Prefs | null>(null);
   const [saved, setSaved] = useState(false);
   const [backendKey, setBackendKey] = useState<boolean | null>(null);
@@ -51,6 +53,7 @@ export function Settings() {
     setError(null);
     try {
       await setPrefs(prefs);
+      await refreshPrefs();
       setSaved(true);
     } catch (e) {
       setError(errorMessage(e));
@@ -94,7 +97,10 @@ export function Settings() {
 
   return (
     <div className="view">
-      <h1 className="view-title">Settings</h1>
+      <div className="detail-head">
+        <button className="ghost" onClick={back}>‹ back</button>
+        <h1 className="view-title">Settings</h1>
+      </div>
       {error && <div className="banner error">{error}</div>}
       {notice && <div className="banner ok">{notice}</div>}
 

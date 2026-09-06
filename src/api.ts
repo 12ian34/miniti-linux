@@ -58,6 +58,7 @@ export const getSegments = (meetingId: string) =>
   invoke<TranscriptSegment[]>("get_segments", { meetingId });
 export const setPinned = (id: string, pinned: boolean) =>
   invoke<void>("set_pinned", { id, pinned });
+export const setNotes = (id: string, notes: string) => invoke<void>("set_notes", { id, notes });
 export const setMeetingTitle = (id: string, title: string) =>
   invoke<void>("set_meeting_title", { id, title });
 export const setSpeakerName = (meetingId: string, speakerId: number, name: string) =>

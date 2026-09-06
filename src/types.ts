@@ -185,6 +185,8 @@ export interface CoachingOverview {
 }
 
 export interface TranscriptEventPayload {
+  meeting_id: string;
+  segment_id: string | null;
   text: string;
   speaker_id: number;
   speaker_label: string;

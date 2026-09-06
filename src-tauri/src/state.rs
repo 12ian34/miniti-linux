@@ -191,6 +191,7 @@ impl RecordingSession {
         let meeting_id = meeting.id.clone();
         self.consumer_tasks.push(tauri::async_runtime::spawn(async move {
             while let Some(ev) = ev_rx.recv().await {
+                let mut segment_id = None;
                 if ev.is_final {
                     let seg = TranscriptSegment::new(
                         &meeting_id,
@@ -205,8 +206,12 @@ impl RecordingSession {
                             tracing::warn!("failed to persist segment: {e}");
                         }
                     }
+                    segment_id = Some(seg.id);
                 }
-                let _ = persist_app.emit("transcript", TranscriptPayload::from(&ev));
+                let _ = persist_app.emit(
+                    "transcript",
+                    TranscriptPayload::new(&meeting_id, segment_id, &ev),
+                );
             }
         }));
 
@@ -325,6 +330,10 @@ impl AppState {
 
 #[derive(Serialize, Clone)]
 pub struct TranscriptPayload {
+    pub meeting_id: String,
+    /// Persisted segment id for finals (None for interims) — lets the UI dedupe
+    /// against segments it already loaded from the database.
+    pub segment_id: Option<String>,
     pub text: String,
     pub speaker_id: i64,
     /// Default display label (before names / mark-as-you): "You", "Speaker N".
@@ -337,9 +346,11 @@ pub struct TranscriptPayload {
     pub channel_index: Option<u32>,
 }
 
-impl From<&TranscriptEvent> for TranscriptPayload {
-    fn from(ev: &TranscriptEvent) -> Self {
+impl TranscriptPayload {
+    fn new(meeting_id: &str, segment_id: Option<String>, ev: &TranscriptEvent) -> Self {
         Self {
+            meeting_id: meeting_id.to_string(),
+            segment_id,
             text: ev.text.clone(),
             speaker_id: ev.speaker_id,
             speaker_label: coaching::resolved_speaker_label(ev.speaker_id, None, None),
@@ -643,17 +654,20 @@ pub async fn stop_recording(
         *s = None;
     }
 
-    let mut meeting = parts.meeting;
-    meeting.ended_at = Some(chrono::Utc::now().timestamp());
+    let meeting_id = parts.meeting.id.clone();
+    let ended_at = chrono::Utc::now().timestamp();
     let prefs = state.prefs_snapshot()?;
-    let segments = {
+    // Re-read the row: notes, title, names and mark-as-you may have been edited
+    // during the recording and must not be clobbered by the in-memory copy.
+    let (meeting, segments) = {
         let conn = state.db.lock().map_err(|_| "db poisoned")?;
-        if !db::meeting_exists(&conn, &meeting.id).map_err(|e| e.to_string())? {
+        db::set_ended_at(&conn, &meeting_id, ended_at).map_err(|e| e.to_string())?;
+        let Some(meeting) = db::get_meeting(&conn, &meeting_id).map_err(|e| e.to_string())? else {
             // Deleted mid-recording: honour the deletion.
             return Ok(None);
-        }
-        db::upsert_meeting(&conn, &meeting).map_err(|e| e.to_string())?;
-        db::list_segments(&conn, &meeting.id).map_err(|e| e.to_string())?
+        };
+        let segments = db::list_segments(&conn, &meeting_id).map_err(|e| e.to_string())?;
+        (meeting, segments)
     };
 
     // Report managed usage (idempotent server-side; failures are logged).
@@ -769,6 +783,12 @@ pub fn get_segments(state: State<AppState>, meeting_id: String) -> Result<Vec<Tr
 pub fn set_pinned(state: State<AppState>, id: String, pinned: bool) -> Result<(), String> {
     let conn = state.db.lock().map_err(|_| "db poisoned")?;
     db::set_pinned(&conn, &id, pinned).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn set_notes(state: State<AppState>, id: String, notes: String) -> Result<(), String> {
+    let conn = state.db.lock().map_err(|_| "db poisoned")?;
+    db::set_notes(&conn, &id, &notes).map_err(|e| e.to_string())
 }
 
 #[tauri::command]

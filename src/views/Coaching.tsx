@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { coachingOverview, coachingReport, errorMessage, hasBridge, listMeetings } from "../api";
-import { displayTitle, fmt1 } from "../format";
+import { displayTitle, fmt1, dateOnly } from "../format";
+import { useStore } from "../store";
 import type {
   CoachingMetric,
   CoachingMetricSummary,
@@ -30,6 +31,7 @@ const METRIC_HELP: Record<CoachingMetric, string> = {
 type Tab = "focus" | "stats" | "history";
 
 export function Coaching() {
+  const { navigate } = useStore();
   const [tab, setTab] = useState<Tab>("focus");
   const [overview, setOverview] = useState<CoachingOverview | null>(null);
   const [meetings, setMeetings] = useState<Meeting[]>([]);
@@ -71,6 +73,27 @@ export function Coaching() {
       {tab === "stats" && <Stats overview={overview} />}
       {tab === "history" && (
         <>
+          {overview && overview.snapshots.length > 0 && (
+            <div className="table-wrap">
+              <table className="table">
+                <thead>
+                  <tr><th>meeting</th><th>date</th><th>fillers</th><th>pace</th><th>questions</th><th>talk</th></tr>
+                </thead>
+                <tbody>
+                  {overview.snapshots.map((s) => (
+                    <tr key={s.meeting_id} onClick={() => navigate({ kind: "meeting", id: s.meeting_id })}>
+                      <td>{s.meeting_title}</td>
+                      <td>{dateOnly(s.date)}</td>
+                      <td>{fmt1(s.fillers_per_minute)}/min</td>
+                      <td>{Math.round(s.words_per_minute)} wpm</td>
+                      <td>{fmt1(s.questions_per_30_minutes)}</td>
+                      <td>{s.talk_ratio == null ? "—" : `${Math.round(s.talk_ratio * 100)}%`}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
           <select
             className="input"
             value={selectedId}

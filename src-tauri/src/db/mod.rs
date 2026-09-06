@@ -340,6 +340,16 @@ pub fn set_title(conn: &Connection, id: &str, title: &str) -> DbResult<()> {
     Ok(())
 }
 
+pub fn set_ended_at(conn: &Connection, id: &str, ended_at: i64) -> DbResult<()> {
+    conn.execute("UPDATE meetings SET ended_at=?2 WHERE id=?1", params![id, ended_at])?;
+    Ok(())
+}
+
+pub fn set_notes(conn: &Connection, id: &str, notes: &str) -> DbResult<()> {
+    conn.execute("UPDATE meetings SET notes=?2 WHERE id=?1", params![id, notes])?;
+    Ok(())
+}
+
 pub fn set_speaker_names(conn: &Connection, id: &str, names_json: &str) -> DbResult<()> {
     conn.execute(
         "UPDATE meetings SET speaker_names=?2 WHERE id=?1",

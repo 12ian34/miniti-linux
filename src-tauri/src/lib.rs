@@ -25,7 +25,7 @@ use state::{
     accept_terms, coaching_overview, coaching_report, complete_onboarding, delete_meeting,
     environment_health, get_device_id, get_levels, get_meeting, get_meeting_detail, get_prefs,
     get_segments, get_usage, launch_gate, list_meetings, mark_as_you, portal_url,
-    recording_status, restore_license, search_meetings, set_meeting_title, set_pinned, set_prefs,
+    recording_status, restore_license, search_meetings, set_meeting_title, set_notes, set_pinned, set_prefs,
     set_speaker_name, start_recording, stop_recording, subscribe_url, AppState, Levels,
     RecordingSession,
 };
@@ -91,6 +91,7 @@ pub fn run() {
             get_segments,
             set_pinned,
             set_meeting_title,
+            set_notes,
             set_speaker_name,
             mark_as_you,
             delete_meeting,
