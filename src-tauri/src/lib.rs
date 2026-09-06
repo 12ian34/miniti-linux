@@ -7,6 +7,7 @@
 //! (recording engine + Tauri commands).
 
 use std::sync::{Arc, Mutex};
+use tauri::Manager;
 
 pub mod api;
 pub mod audio;
@@ -20,6 +21,7 @@ pub mod gates;
 pub mod import;
 pub mod insights;
 pub mod prefs;
+pub mod shell;
 pub mod state;
 pub mod webhook;
 
@@ -71,12 +73,42 @@ fn build_state() -> AppState {
 pub fn run() {
     init_tracing();
     tauri::Builder::default()
+        .manage(shell::TraySlot::new(None))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .manage(build_state())
+        .setup(|app| {
+            let handle = app.handle().clone();
+            let show_tray = handle
+                .state::<AppState>()
+                .prefs
+                .lock()
+                .map(|p| p.show_tray)
+                .unwrap_or(true);
+            shell::setup_tray(&handle, show_tray);
+            shell::setup_deep_links(&handle);
+            state::spawn_shell_ticker(handle);
+            Ok(())
+        })
+        .on_window_event(|window, event| {
+            // Close-to-tray: Miniti stays reachable after the main window closes.
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                if window.label() == shell::MAIN_LABEL {
+                    let keep_alive = window
+                        .app_handle()
+                        .try_state::<shell::TraySlot>()
+                        .and_then(|s| s.lock().ok().map(|g| g.is_some()))
+                        .unwrap_or(false);
+                    if keep_alive {
+                        let _ = window.hide();
+                        api.prevent_close();
+                    }
+                }
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             environment_health,
             get_prefs,
@@ -119,6 +151,8 @@ pub fn run() {
             import_granola_csv,
             delete_segment,
             trim_transcript,
+            state::notify,
+            state::show_main_window,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

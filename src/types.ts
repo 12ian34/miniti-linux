@@ -32,6 +32,39 @@ export interface Prefs {
   sales_insights_default: boolean;
   codebase_root: string | null;
   personal_dictionary: string[];
+  notifications_enabled: boolean;
+  live_guidance_enabled: boolean;
+  auto_stop_minutes: number;
+  calendar_auto_start: boolean;
+  calendar_auto_stop: boolean;
+}
+
+/** Smart-meeting decision shown on the floating surface / tray / in-app. */
+export interface SmartPrompt {
+  id: string;
+  /** start | quiet | ending | calendar | clear */
+  kind: "start" | "quiet" | "ending" | "calendar" | "clear";
+  message: string;
+  primary: string;
+  secondary: string;
+  tertiary?: string | null;
+  meeting_id?: string | null;
+  /** Seconds remaining for a countdown (ending grace / handoff). */
+  countdown?: number | null;
+}
+
+export interface RecordingNudge {
+  id: string;
+  kind: "question" | "monologue" | "filler";
+  title: string;
+  message: string;
+}
+
+export interface DeepLinkEvent {
+  scheme: string;
+  host: string;
+  query: Record<string, string>;
+  url: string;
 }
 
 export interface Meeting {

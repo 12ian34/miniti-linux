@@ -3,6 +3,9 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type {
   CatchUp,
   CoachingOverview,
+  DeepLinkEvent,
+  RecordingNudge,
+  SmartPrompt,
   InsightsStatusEvent,
   Investigation,
   InvestigationScope,
@@ -97,6 +100,24 @@ export const deleteSegment = (meetingId: string, segmentId: string) =>
   invoke<void>("delete_segment", { meetingId, segmentId });
 export const trimTranscript = (meetingId: string, beforeS: number | null, afterS: number | null) =>
   invoke<number>("trim_transcript", { meetingId, beforeS, afterS });
+
+export const notify = (title: string, body: string) => invoke<void>("notify", { title, body });
+export const showMainWindow = () => invoke<void>("show_main_window");
+export const smartDecision = (promptId: string, choice: "primary" | "secondary" | "tertiary") =>
+  invoke<void>("smart_decision", { promptId, choice });
+
+export function onSmartPrompt(handler: (p: SmartPrompt) => void): Promise<UnlistenFn> {
+  return listen<SmartPrompt>("smart_prompt", (e) => handler(e.payload));
+}
+export function onRecordingNudge(handler: (n: RecordingNudge) => void): Promise<UnlistenFn> {
+  return listen<RecordingNudge>("recording_nudge", (e) => handler(e.payload));
+}
+export function onDeepLink(handler: (ev: DeepLinkEvent) => void): Promise<UnlistenFn> {
+  return listen<DeepLinkEvent>("deep_link", (e) => handler(e.payload));
+}
+export function onNavigateMeeting(handler: (id: string) => void): Promise<UnlistenFn> {
+  return listen<string>("navigate_meeting", (e) => handler(e.payload));
+}
 
 export function onInsightsUpdated(handler: (meetingId: string) => void): Promise<UnlistenFn> {
   return listen<string>("insights_updated", (e) => handler(e.payload));

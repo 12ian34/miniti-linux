@@ -44,6 +44,15 @@ pub struct Prefs {
     pub codebase_root: Option<String>,
     /// Personal dictionary terms sent as Deepgram keyterms.
     pub personal_dictionary: Vec<String>,
+    /// Desktop notifications for Smart-meeting decisions and live guidance.
+    pub notifications_enabled: bool,
+    /// Opt-in live guidance (question / monologue / filler nudges).
+    pub live_guidance_enabled: bool,
+    /// Silence auto-stop in minutes (0 = off; macOS offers 3/5/10/15).
+    pub auto_stop_minutes: i64,
+    /// Calendar automation: auto-start upcoming events / auto-stop at the end.
+    pub calendar_auto_start: bool,
+    pub calendar_auto_stop: bool,
 }
 
 impl Default for Prefs {
@@ -67,6 +76,11 @@ impl Default for Prefs {
             sales_insights_default: false,
             codebase_root: None,
             personal_dictionary: Vec::new(),
+            notifications_enabled: true,
+            live_guidance_enabled: false,
+            auto_stop_minutes: 0,
+            calendar_auto_start: false,
+            calendar_auto_stop: false,
         }
     }
 }

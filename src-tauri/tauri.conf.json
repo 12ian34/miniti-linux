@@ -18,7 +18,8 @@
         "height": 680,
         "minWidth": 640,
         "minHeight": 480,
-        "backgroundColor": "#0A0A0B"
+        "backgroundColor": "#0A0A0B",
+        "label": "main"
       }
     ],
     "security": {
@@ -38,5 +39,16 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ]
+  },
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": [
+          "miniti-google",
+          "miniti-attio",
+          "miniti-twenty"
+        ]
+      }
+    }
   }
 }

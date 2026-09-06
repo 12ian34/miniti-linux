@@ -308,17 +308,45 @@ export function Settings() {
         checked={prefs.capture_system_audio}
         onChange={(v) => update("capture_system_audio", v)}
       />
-      <Toggle
-        label="Smart meetings (not wired yet)"
-        checked={prefs.smart_meetings_enabled}
-        onChange={(v) => update("smart_meetings_enabled", v)}
-      />
-      <Toggle label="Show tray icon (not wired yet)" checked={prefs.show_tray} onChange={(v) => update("show_tray", v)} />
-      <Toggle
-        label="Floating presence (not wired yet)"
-        checked={prefs.show_floating_indicator}
-        onChange={(v) => update("show_floating_indicator", v)}
-      />
+      <section className="card">
+        <h2 className="card-title">Notifications & presence</h2>
+        <Toggle label="Show tray icon with recording timer (takes effect after restart)" checked={prefs.show_tray} onChange={(v) => update("show_tray", v)} />
+        <Toggle
+          label="Floating recording surface while recording (always on top; Wayland may ignore placement)"
+          checked={prefs.show_floating_indicator}
+          onChange={(v) => update("show_floating_indicator", v)}
+        />
+        <Toggle
+          label="Desktop notifications when Miniti is not in front (Smart-meeting decisions, guidance)"
+          checked={prefs.notifications_enabled}
+          onChange={(v) => update("notifications_enabled", v)}
+        />
+        <Toggle
+          label="Live guidance nudges (high-priority questions, long monologues, filler bursts)"
+          checked={prefs.live_guidance_enabled}
+          onChange={(v) => update("live_guidance_enabled", v)}
+        />
+      </section>
+
+      <section className="card">
+        <h2 className="card-title">Calendar & meetings</h2>
+        <Toggle
+          label="Smart meetings — notice when a meeting may have ended or another is approaching"
+          checked={prefs.smart_meetings_enabled}
+          onChange={(v) => update("smart_meetings_enabled", v)}
+        />
+        <Field label="Silence auto-stop">
+          <select className="input" value={prefs.auto_stop_minutes} onChange={(e) => update("auto_stop_minutes", Number(e.currentTarget.value))}>
+            <option value={0}>Off</option>
+            <option value={3}>After 3 minutes</option>
+            <option value={5}>After 5 minutes</option>
+            <option value={10}>After 10 minutes</option>
+            <option value={15}>After 15 minutes</option>
+          </select>
+        </Field>
+        <Toggle label="Auto-start recording for upcoming calendar events" checked={prefs.calendar_auto_start} onChange={(v) => update("calendar_auto_start", v)} />
+        <Toggle label="Auto-stop when a calendar event ends" checked={prefs.calendar_auto_stop} onChange={(v) => update("calendar_auto_stop", v)} />
+      </section>
 
       <div className="save-row">
         <button className="btn primary" onClick={save}>

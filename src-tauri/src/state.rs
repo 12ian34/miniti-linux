@@ -14,7 +14,7 @@ use std::time::{Duration, Instant};
 
 use rusqlite::Connection;
 use serde::Serialize;
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::api::{self, ApiClient, ApiError, HeaderContext, Usage, VersionInfo};
 use crate::audio;
@@ -914,6 +914,71 @@ pub async fn stop_recording(
         }
     }
     Ok(Some(meeting.id))
+}
+
+// ---- Desktop shell glue -----------------------------------------------------
+
+/// Tray "Start / Stop meeting": reuse the command paths with the managed state.
+pub async fn toggle_recording_from_shell(app: AppHandle) {
+    let state = app.state::<AppState>();
+    let running = state.session.lock().map(|s| s.running).unwrap_or(false);
+    let result = if running {
+        stop_recording(app.clone(), state.clone()).await.map(|_| ())
+    } else {
+        start_recording(app.clone(), state.clone(), None).await.map(|id| {
+            let _ = app.emit("navigate_meeting", &id);
+        })
+    };
+    if let Err(e) = result {
+        crate::shell::notify(&app, "Miniti", &e);
+    }
+}
+
+/// One-second ticker: tray timer + floating surface visibility follow the
+/// recording state (owned here so the shell never touches the session lock
+/// from a UI callback).
+pub fn spawn_shell_ticker(app: AppHandle) {
+    tauri::async_runtime::spawn(async move {
+        let mut was_recording = false;
+        let mut tick = tokio::time::interval(Duration::from_secs(1));
+        loop {
+            tick.tick().await;
+            let state = app.state::<AppState>();
+            let (recording, elapsed) = state
+                .session
+                .lock()
+                .map(|s| (s.running, s.started_at.map(|t| t.elapsed().as_secs_f64()).unwrap_or(0.0)))
+                .unwrap_or((false, 0.0));
+            let stream = state.last_status.lock().ok().and_then(|s| s.clone());
+            let stream_state = stream.as_ref().map(|s| match s {
+                StreamStatus::Connecting => "connecting",
+                StreamStatus::Connected { .. } => "connected",
+                StreamStatus::Reconnecting { .. } => "reconnecting",
+                StreamStatus::Ended => "ended",
+                StreamStatus::Failed { .. } => "failed",
+            });
+            crate::shell::update_tray(&app, recording, elapsed, stream_state);
+            if recording != was_recording {
+                let surface = state.prefs.lock().map(|p| p.show_floating_indicator).unwrap_or(true);
+                if recording && surface {
+                    crate::shell::show_presence(&app);
+                } else {
+                    crate::shell::hide_presence(&app);
+                }
+                was_recording = recording;
+            }
+        }
+    });
+}
+
+#[tauri::command]
+pub fn notify(app: AppHandle, title: String, body: String) {
+    crate::shell::notify(&app, &title, &body);
+}
+
+#[tauri::command]
+pub fn show_main_window(app: AppHandle) {
+    crate::shell::show_main(&app);
 }
 
 // ---- Insights commands -----------------------------------------------------

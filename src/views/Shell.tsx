@@ -1,4 +1,6 @@
 import { useEffect } from "react";
+import { onNavigateMeeting } from "../api";
+import { useTauriEvent } from "../useEvent";
 import { useStore } from "../store";
 import type { LaunchGate } from "../types";
 import { Sidebar } from "./Sidebar";
@@ -15,6 +17,11 @@ import { Settings } from "./Settings";
 export function Shell({ gate }: { gate: LaunchGate | null }) {
   const store = useStore();
   const { route, navigate, sidebarOpen, setSidebarOpen, insightsOpen, setInsightsOpen } = store;
+  useTauriEvent(onNavigateMeeting, (id) => {
+    setSidebarOpen(false);
+    void store.refreshMeetings();
+    navigate({ kind: "meeting", id });
+  });
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {

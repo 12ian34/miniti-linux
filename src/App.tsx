@@ -5,8 +5,16 @@ import type { LaunchGate } from "./types";
 import { StoreProvider } from "./store";
 import { Shell } from "./views/Shell";
 import { ForceUpdate, Onboarding, Terms } from "./views/Gates";
+import { Presence } from "./views/Presence";
+
+const IS_PRESENCE = typeof window !== "undefined" && window.location.hash === "#presence";
 
 function App() {
+  if (IS_PRESENCE) return <Presence />;
+  return <MainApp />;
+}
+
+function MainApp() {
   const [gate, setGate] = useState<LaunchGate | null>(null);
   const [gateChecked, setGateChecked] = useState(!hasBridge);
 

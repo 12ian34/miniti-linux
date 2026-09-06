@@ -338,3 +338,14 @@ code { font-family: var(--mono); background: var(--surface-card); padding: 1px 5
 .turn-tools { margin-left: var(--s-4); opacity: 0; transition: opacity 120ms; }
 .turn:hover .turn-tools { opacity: 1; }
 .ghost.on { color: var(--text); background: var(--surface-card); }
+
+/* ---- Step 5: floating presence ---------------------------------------------- */
+.presence { height: 100vh; background: var(--bg); border: 1px solid var(--border-light); border-radius: var(--r-lg); padding: var(--s-4) var(--s-5); display: flex; flex-direction: column; gap: var(--s-3); user-select: none; overflow: hidden; }
+.presence-row { display: flex; align-items: center; gap: var(--s-4); }
+.presence-spacer { flex: 1; }
+.btn.small { padding: var(--s-1) var(--s-4); font-size: 12px; }
+.presence-decision, .presence-nudge { border-top: 1px solid var(--border); padding-top: var(--s-3); }
+.presence-actions { display: flex; gap: var(--s-3); margin-top: var(--s-3); flex-wrap: wrap; }
+.presence-nudge.question { border-top-color: var(--coach-questions); }
+.presence-nudge.monologue { border-top-color: var(--coach-monologue); }
+.presence-nudge.filler { border-top-color: var(--coach-fillers); }
