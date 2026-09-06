@@ -1067,7 +1067,7 @@ async fn resolve_credential(state: &AppState, prefs: &Prefs) -> Result<Credentia
             let session = client
                 .create_session(&prefs.language)
                 .await
-                .map_err(|e| format!("Could not start a managed session: {e}"))?;
+                .map_err(start_error)?;
             let token = session
                 .token()
                 .ok_or_else(|| "Backend session response had no access token.".to_string())?
@@ -2476,6 +2476,91 @@ pub async fn auth_delete_account(state: State<'_, AppState>) -> Result<(), Strin
         Ok(())
     })
     .await
+}
+
+/// Machine-readable prefix for the errors the Home screen renders as views
+/// (macOS `LimitReachedView`), followed by the human message.
+fn start_error(e: ApiError) -> String {
+    match &e {
+        ApiError::LimitReached { resets_at } => {
+            format!(
+                "limit_reached:{}:{e}",
+                resets_at.clone().unwrap_or_default()
+            )
+        }
+        ApiError::DeviceDisabled => format!("device_disabled::{e}"),
+        ApiError::NotEnrolled | ApiError::Revoked => format!("not_enrolled::{e}"),
+        _ => format!("Could not start a managed session: {e}"),
+    }
+}
+
+// ---- Debug log (macOS DebugLogView) ---------------------------------------------
+
+fn newest_log_file() -> Option<std::path::PathBuf> {
+    let mut files: Vec<_> = std::fs::read_dir(crate::log_dir())
+        .ok()?
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .filter(|p| {
+            p.file_name()
+                .and_then(|n| n.to_str())
+                .map(|n| n.starts_with("miniti.log"))
+                .unwrap_or(false)
+        })
+        .collect();
+    files.sort();
+    files.pop()
+}
+
+/// Last `max_lines` lines of the current log file, oldest first.
+pub fn log_tail(max_lines: usize) -> String {
+    let Some(path) = newest_log_file() else {
+        return String::new();
+    };
+    let Ok(text) = std::fs::read_to_string(path) else {
+        return String::new();
+    };
+    let lines: Vec<&str> = text.lines().collect();
+    let start = lines.len().saturating_sub(max_lines);
+    lines[start..].join("\n")
+}
+
+#[tauri::command]
+pub fn debug_log_path() -> String {
+    newest_log_file()
+        .unwrap_or_else(|| crate::log_dir().join("miniti.log"))
+        .to_string_lossy()
+        .to_string()
+}
+
+#[tauri::command]
+pub fn debug_log_tail(max_lines: Option<usize>) -> String {
+    log_tail(max_lines.unwrap_or(400).clamp(50, 5000))
+}
+
+/// Show the logs folder in the file manager.
+#[tauri::command]
+pub fn debug_log_reveal(app: AppHandle) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+    let path = newest_log_file().unwrap_or_else(crate::log_dir);
+    app.opener()
+        .reveal_item_in_dir(path)
+        .map_err(|e| e.to_string())
+}
+
+/// Write the current log to a user-chosen path (Settings → save log).
+#[tauri::command]
+pub fn debug_log_export(dest: String) -> Result<(), String> {
+    let text = log_tail(20_000);
+    std::fs::write(&dest, text).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn debug_log_clear() -> Result<(), String> {
+    if let Some(path) = newest_log_file() {
+        std::fs::write(path, "").map_err(|e| e.to_string())?;
+    }
+    tracing::info!("log cleared by the user");
+    Ok(())
 }
 
 /// Device label for the account's device list (hostname, best effort).

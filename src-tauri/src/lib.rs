@@ -33,21 +33,60 @@ pub mod webhook;
 use state::{
     accept_terms, auth_create_account, auth_delete_account, auth_devices, auth_recovery_key,
     auth_remove_device, auth_restore_account, auth_rotate_recovery_key, auth_sign_out, auth_status,
-    catch_up, coaching_overview, coaching_report, complete_onboarding, delete_meeting,
-    delete_segment, environment_health, export_markdown, get_device_id, get_levels, get_meeting,
-    get_meeting_detail, get_prefs, get_segments, get_usage, import_granola_csv, insights_finishing,
-    investigate, launch_gate, list_meetings, lookup_doc_topic, mark_as_you, meeting_markdown,
-    pick_folder, portal_url, probe_docs_mcp, recording_status, regenerate_insights,
-    restore_license, search_meetings, set_meeting_title, set_notes, set_pinned, set_prefs,
-    set_sales_enabled, set_speaker_name, start_recording, stop_recording, subscribe_url,
-    trim_transcript, AppState, Levels, RecordingSession,
-    recording_presence, disable_nudge_kind,
+    catch_up, coaching_overview, coaching_report, complete_onboarding, debug_log_clear,
+    debug_log_export, debug_log_path, debug_log_reveal, debug_log_tail, delete_meeting,
+    delete_segment, disable_nudge_kind, environment_health, export_markdown, get_device_id,
+    get_levels, get_meeting, get_meeting_detail, get_prefs, get_segments, get_usage,
+    import_granola_csv, insights_finishing, investigate, launch_gate, list_meetings,
+    lookup_doc_topic, mark_as_you, meeting_markdown, pick_folder, portal_url, probe_docs_mcp,
+    recording_presence, recording_status, regenerate_insights, restore_license, search_meetings,
+    set_meeting_title, set_notes, set_pinned, set_prefs, set_sales_enabled, set_speaker_name,
+    start_recording, stop_recording, subscribe_url, trim_transcript, AppState, Levels,
+    RecordingSession,
 };
 
+/// Keeps the non-blocking log writer alive for the life of the process.
+static LOG_GUARD: std::sync::OnceLock<tracing_appender::non_blocking::WorkerGuard> =
+    std::sync::OnceLock::new();
+
+/// Directory holding the daily rolling log files (`miniti.log.YYYY-MM-DD`).
+pub fn log_dir() -> std::path::PathBuf {
+    device_id::data_dir().join("logs")
+}
+
 fn init_tracing() {
+    use tracing_subscriber::prelude::*;
     let filter = tracing_subscriber::EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
-    let _ = tracing_subscriber::fmt().with_env_filter(filter).try_init();
+    let stderr = tracing_subscriber::fmt::layer();
+    // Daily rolling file so a user can send the log from Settings → Privacy & Support.
+    let dir = log_dir();
+    let _ = std::fs::create_dir_all(&dir);
+    let file_layer = match tracing_appender::rolling::Builder::new()
+        .rotation(tracing_appender::rolling::Rotation::DAILY)
+        .filename_prefix("miniti.log")
+        .max_log_files(7)
+        .build(&dir)
+    {
+        Ok(appender) => {
+            let (writer, guard) = tracing_appender::non_blocking(appender);
+            let _ = LOG_GUARD.set(guard);
+            Some(
+                tracing_subscriber::fmt::layer()
+                    .with_ansi(false)
+                    .with_writer(writer),
+            )
+        }
+        Err(e) => {
+            eprintln!("log file unavailable ({e}); logging to stderr only");
+            None
+        }
+    };
+    let _ = tracing_subscriber::registry()
+        .with(filter)
+        .with(stderr)
+        .with(file_layer)
+        .try_init();
     // A panic inside a command must show up in the log a user can send us, not vanish.
     let default_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
@@ -143,6 +182,11 @@ pub fn run() {
             environment_health,
             recording_presence,
             disable_nudge_kind,
+            debug_log_path,
+            debug_log_tail,
+            debug_log_reveal,
+            debug_log_export,
+            debug_log_clear,
             auth_status,
             auth_create_account,
             auth_restore_account,

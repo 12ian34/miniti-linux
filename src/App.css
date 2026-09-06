@@ -337,6 +337,20 @@ code { font-family: var(--mono); background: var(--surface-card); padding: 1px 5
 .device-row .grow { flex: 1; min-width: 0; }
 .device-row .sub { color: var(--text-dim); font-size: 11px; }
 
+/* ---- Usage banner / limit reached (UsageBanner, LimitReachedView) ---------------- */
+.usage-banner { display: flex; flex-direction: column; gap: var(--s-3); min-width: 260px; max-width: 360px; padding: var(--s-4) var(--s-5); border: 1px solid var(--border-light); border-radius: var(--r-lg); background: var(--surface-card); }
+.usage-row { display: flex; align-items: center; gap: var(--s-4); font-size: 11px; color: var(--text-muted); }
+.usage-text { flex: 1; } .usage-text strong { color: var(--text); font-weight: 600; }
+.usage-banner .upgrade { color: var(--blue-gh); }
+.usage-bar { height: 4px; border-radius: 2px; background: var(--bg-tertiary); overflow: hidden; }
+.usage-fill { height: 100%; background: var(--green-gh); opacity: 0.8; transition: width 300ms ease; }
+.usage-banner.low .usage-fill { background: var(--amber, #d29922); } .usage-banner.critical .usage-fill { background: var(--red-gh); }
+.usage-banner.low .usage-text strong { color: var(--amber, #d29922); } .usage-banner.critical .usage-text strong { color: var(--red-gh); }
+.limit-reached { display: flex; flex-direction: column; align-items: center; gap: var(--s-3); text-align: center; max-width: 360px; }
+.limit-reached .hex { color: var(--green-gh); font-size: 22px; }
+.limit-reached .btn { margin-top: var(--s-2); }
+.log-view { font-family: var(--mono); font-size: 10.5px; line-height: 1.45; white-space: pre-wrap; word-break: break-all; max-height: 50vh; overflow: auto; background: var(--bg-tertiary); border: 1px solid var(--border-light); border-radius: var(--r-md); padding: var(--s-4); color: var(--text-muted); }
+
 /* ---- Floating presence (RecordingIndicatorView) --------------------------------- */
 .presence { background: rgba(9,9,11,0.96); border: 1px solid var(--border); border-radius: 10px; padding: 10px; display: flex; flex-direction: column; gap: 0; user-select: none; overflow: hidden; box-sizing: border-box; }
 .presence-row { display: flex; align-items: center; gap: var(--s-4); min-height: 24px; background: transparent; border: none; padding: 0; cursor: default; width: 100%; text-align: left; color: var(--text); }

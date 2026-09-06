@@ -33,6 +33,7 @@ thiserror = "1"
 url = "2"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-appender = "0.2"
 keyring = { version = "3", features = ["apple-native", "async-secret-service", "tokio", "crypto-rust"] }
 tauri-plugin-dialog = "2"
 tauri-plugin-notification = "2"

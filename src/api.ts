@@ -99,6 +99,11 @@ export const getLevels = () => invoke<Levels>("get_levels");
 export const recordingStatus = () => invoke<RecordingStatus>("recording_status");
 export const recordingPresence = () => invoke<RecordingPresence>("recording_presence");
 export const disableNudgeKind = (kind: string) => invoke<Prefs>("disable_nudge_kind", { kind });
+export const debugLogPath = () => invoke<string>("debug_log_path");
+export const debugLogTail = (maxLines = 400) => invoke<string>("debug_log_tail", { maxLines });
+export const debugLogReveal = () => invoke<void>("debug_log_reveal");
+export const debugLogExport = (dest: string) => invoke<void>("debug_log_export", { dest });
+export const debugLogClear = () => invoke<void>("debug_log_clear");
 
 export const listMeetings = (limit = 100) => invoke<Meeting[]>("list_meetings", { limit });
 export const searchMeetings = (query: string) =>

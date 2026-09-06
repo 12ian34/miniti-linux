@@ -10,9 +10,13 @@ import {
   onDeepLink,
   setPrepNotes,
   startMeetingFromEvent,
+  subscribeUrl,
+  setPrefs,
 } from "../api";
 import { useStore } from "../store";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { useTauriEvent } from "../useEvent";
+import { LimitReached, UsageBanner, parseStartError } from "./Limits";
 import { Sheet } from "./MeetingTools";
 import type { CalendarEvent, CalendarView, EnvHealth, LaunchGate, Prefs, Usage } from "../types";
 
@@ -60,8 +64,9 @@ export function Home({ gate }: { gate: LaunchGate | null }) {
     }
   }
 
-  const limitReached = usage?.minutes_limit != null && usage.minutes_used >= usage.minutes_limit;
-  const deviceDisabled = usageError?.toLowerCase().includes("disabled") ?? false;
+  const startError = parseStartError(lastError);
+  const limitReached = startError?.kind === "limit_reached" || (usage?.minutes_limit != null && usage.minutes_used >= usage.minutes_limit);
+  const deviceDisabled = startError?.kind === "device_disabled" || (usageError?.toLowerCase().includes("disabled") ?? false);
   const byokMissingKey = prefs?.app_mode === "byok" && !prefs.byok_deepgram_key;
   const showNudge = calendar?.available && !calendar.connected && !nudgeDismissed;
 
@@ -79,9 +84,13 @@ export function Home({ gate }: { gate: LaunchGate | null }) {
           <span className="tagline">multi-dimensional<span className="cursor">_</span> meetings</span>
         </div>
 
-        <StatusPills prefs={prefs} usage={usage} backendKey={health?.enrolled ?? null} />
+        {prefs?.app_mode === "managed" && health?.enrolled ? (
+          <UsageBanner prefs={prefs} usage={usage} onUpgrade={() => subscribeUrl().then(openUrl).catch(() => navigate({ kind: "settings" }))} />
+        ) : (
+          <StatusPills prefs={prefs} usage={usage} backendKey={health?.enrolled ?? null} />
+        )}
 
-        {lastError && <div className="banner error narrow">{lastError}<button className="ghost" onClick={clearError}>×</button></div>}
+        {lastError && !startError && <div className="banner error narrow">{lastError}<button className="ghost" onClick={clearError}>×</button></div>}
         {gate && !gate.backend_reachable && prefs?.app_mode === "managed" && (
           <div className="banner warn narrow">backend not reachable: {gate.backend_error ?? "unknown error"}</div>
         )}
@@ -92,10 +101,11 @@ export function Home({ gate }: { gate: LaunchGate | null }) {
             <div className="muted small">contact support for help</div>
           </div>
         ) : limitReached ? (
-          <div className="stack-center">
-            <div className="strong">limit reached</div>
-            <button className="control" onClick={() => navigate({ kind: "settings" })}>⚿ switch to BYOK</button>
-          </div>
+          <LimitReached
+            usage={usage}
+            resetsAt={startError?.resetsAt ?? null}
+            onSwitchToByok={async () => { if (prefs) { await setPrefs({ ...prefs, app_mode: "byok" }); clearError(); } navigate({ kind: "settings" }); }}
+          />
         ) : byokMissingKey ? (
           <div className="stack-center">
             <div className="strong">add your Deepgram key</div>

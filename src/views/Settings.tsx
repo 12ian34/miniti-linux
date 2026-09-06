@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { confirm } from "@tauri-apps/plugin-dialog";
+import { confirm, save } from "@tauri-apps/plugin-dialog";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import {
   authDeleteAccount,
@@ -11,6 +11,11 @@ import {
   authSignOut,
   authStatus,
   crmConnect,
+  debugLogClear,
+  debugLogExport,
+  debugLogPath,
+  debugLogReveal,
+  debugLogTail,
   crmStatus,
   environmentHealth,
   errorMessage,
@@ -31,6 +36,7 @@ import {
 } from "../api";
 import type { AppMode, AuthDevices, AuthStatus, CrmProvider, EnvHealth, Prefs, Usage } from "../types";
 import { Enroll } from "./Enroll";
+import { Sheet } from "./MeetingTools";
 import { useStore } from "../store";
 import { useTauriEvent } from "../useEvent";
 
@@ -216,7 +222,8 @@ export function Settings() {
     { id: "mcp", dest: "docs", label: "Docs MCP URL", keywords: "docs mcp playbook documentation" },
     { id: "granola", dest: "data", label: "Granola import", keywords: "granola import csv" },
     { id: "export", dest: "data", label: "Markdown export folder", keywords: "export markdown folder" },
-    { id: "about", dest: "privacy", label: "Version & diagnostics", keywords: "version about diagnostics logs privacy terms support" },
+    { id: "about", dest: "privacy", label: "Version & diagnostics", keywords: "version about diagnostics privacy terms support" },
+    { id: "log", dest: "privacy", label: "Debug log", keywords: "debug log logs diagnostics report issue save copy" },
   ], []);
 
   const q = query.trim().toLowerCase();
@@ -530,6 +537,7 @@ export function Settings() {
         )}
 
         {dest === "privacy" && (
+          <>
           <C id="about">
             <section className="card">
               <h2 className="card-title">About</h2>
@@ -545,9 +553,13 @@ export function Settings() {
                 <button className="ghost" onClick={() => openUrl("https://miniti.app/terms")}>terms & privacy</button>
                 <button className="ghost" onClick={() => openUrl("https://github.com/12ian34/miniti-linux/issues")}>report an issue</button>
               </div>
-              <p className="muted small">Diagnostics: run with <code>RUST_LOG=debug miniti</code> and share the terminal output. Transcripts and audio never leave the device except to Deepgram and, in managed mode, the miniti backend.</p>
+              <p className="muted small">Transcripts and audio never leave the device except to Deepgram and, in managed mode, the miniti backend.</p>
             </section>
           </C>
+          <C id="log">
+            <DebugLogCard onError={setError} onNotice={setNotice} />
+          </C>
+          </>
         )}
 
         <div className="save-row sticky-save">
@@ -556,6 +568,50 @@ export function Settings() {
         </div>
       </div>
     </div>
+  );
+}
+
+/** Daily rolling log the user can read, copy, save, or clear (macOS DebugLogView). */
+function DebugLogCard({ onError, onNotice }: { onError: (m: string | null) => void; onNotice: (m: string | null) => void }) {
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState("");
+  const [path, setPath] = useState("");
+  const load = () => Promise.all([debugLogTail(600), debugLogPath()]).then(([t, p]) => { setText(t); setPath(p); }).catch((e) => onError(errorMessage(e)));
+  useEffect(() => { if (open) void load(); }, [open]);
+  async function copyLog() {
+    try { await writeText(text); onNotice("Log copied."); } catch { onError("Could not copy to the clipboard."); }
+  }
+  async function saveLog() {
+    try {
+      const dest = await save({ defaultPath: `miniti-log-${new Date().toISOString().slice(0, 10)}.txt`, filters: [{ name: "Text", extensions: ["txt"] }] });
+      if (dest) { await debugLogExport(dest); onNotice(`Log saved to ${dest}`); }
+    } catch (e) { onError(errorMessage(e)); }
+  }
+  async function clearLog() {
+    if (!(await confirm("Clear the current log file?", { title: "Clear log", kind: "warning" }))) return;
+    try { await debugLogClear(); await load(); } catch (e) { onError(errorMessage(e)); }
+  }
+  return (
+    <section className="card">
+      <h2 className="card-title">Debug log</h2>
+      <p className="muted small">miniti keeps seven days of logs in <code>~/.local/share/miniti/logs</code>. No transcript text, keys or tokens are written. Attach the log when you report an issue.</p>
+      <div className="save-row">
+        <button className="btn small" onClick={() => setOpen(true)}>view log</button>
+        <button className="btn small" onClick={() => debugLogReveal().catch((e) => onError(errorMessage(e)))}>show in files</button>
+      </div>
+      {open && (
+        <Sheet title="debug log" onClose={() => setOpen(false)}>
+          <p className="muted tiny">{path}</p>
+          <pre className="log-view">{text || "(empty)"}</pre>
+          <div className="save-row">
+            <button className="btn small" onClick={load}>refresh</button>
+            <button className="btn small" onClick={copyLog}>copy</button>
+            <button className="btn small" onClick={saveLog}>save…</button>
+            <button className="btn small" onClick={clearLog}>clear</button>
+          </div>
+        </Sheet>
+      )}
+    </section>
   );
 }
 
