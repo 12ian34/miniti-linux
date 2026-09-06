@@ -1,7 +1,7 @@
 # Maintainer: Ian Ahuja <hello@miniti.app>
 # Prebuilt miniti Linux from the GitHub Release tarball (built on Ubuntu 22.04 / glibc 2.35).
 pkgname=miniti-bin
-pkgver=0.3.0
+pkgver=0.4.0
 pkgrel=1
 pkgdesc="miniti — AI meeting assistant with live transcription, insights and coaching (prebuilt)"
 arch=('x86_64')

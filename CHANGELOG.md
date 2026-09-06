@@ -4,7 +4,7 @@ public changelog for miniti for Linux. the changelog for every platform lives at
 
 ## releases
 
-### unreleased - v0.4.0
+### 2026-09-06 - v0.4.0
 
 the parity release: everything the Mac app does that Linux can do, it now does.
 
