@@ -23,7 +23,6 @@ jobs:
             libjavascriptcoregtk-4.1-dev libayatana-appindicator3-dev libssl-dev \
             libasound2-dev libsecret-1-dev build-essential curl wget file patchelf
       - uses: pnpm/action-setup@v4
-        with: { version: 10 }
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: pnpm }
       - uses: dtolnay/rust-toolchain@stable
