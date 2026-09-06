@@ -43,22 +43,35 @@ fn keyring_entry() -> Option<keyring::Entry> {
     keyring::Entry::new(KEYRING_SERVICE, KEYRING_USER).ok()
 }
 
+/// Secret-service calls run on their own thread with a deadline: the keyring
+/// backend blocks on a private tokio runtime (panics inside an async Tauri
+/// command) and a locked keyring may raise a prompt that never appears.
+fn keyring_op<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> Option<T> {
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::Builder::new()
+        .name("miniti-keyring".into())
+        .spawn(move || {
+            let _ = tx.send(f());
+        })
+        .ok()?;
+    rx.recv_timeout(std::time::Duration::from_secs(5)).ok()
+}
+
 fn read_keyring() -> Option<String> {
-    keyring_entry()?
-        .get_password()
-        .ok()
+    keyring_op(|| keyring_entry()?.get_password().ok())?
         .map(|s| s.trim().to_string())
         .filter(|s| is_uuid(s))
 }
 
 fn write_keyring(id: &str) -> bool {
-    match keyring_entry().map(|e| e.set_password(id)) {
-        Some(Ok(())) => true,
-        Some(Err(e)) => {
+    let id = id.to_string();
+    match keyring_op(move || keyring_entry().map(|e| e.set_password(&id))) {
+        Some(Some(Ok(()))) => true,
+        Some(Some(Err(e))) => {
             tracing::info!("secret service unavailable for device id ({e}); using file fallback");
             false
         }
-        None => false,
+        _ => false,
     }
 }
 

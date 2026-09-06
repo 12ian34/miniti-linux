@@ -28,6 +28,8 @@ const KEYRING_SERVICE: &str = "com.miniti.linux";
 const KEYRING_USER: &str = "device-auth";
 /// Refresh the access token when within this many seconds of expiry.
 const ACCESS_REFRESH_MARGIN_SECS: i64 = 60;
+/// How long a secret-service call may block before we fall back to the file store.
+const KEYRING_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Credentials {
@@ -90,12 +92,39 @@ pub fn auth_file_path() -> PathBuf {
     data_dir().join("auth.json")
 }
 
+/// Run a secret-service call on its own thread with a deadline.
+///
+/// The `keyring` secret-service backend blocks on a private tokio runtime,
+/// which panics when invoked from a tokio worker (every async Tauri command
+/// runs on one). A locked keyring can also raise a GUI unlock prompt that never
+/// appears under a bare window manager, so a call that does not answer within
+/// the deadline is treated as "no secret service" and the file store is used.
+fn keyring_op<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> Option<T> {
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::Builder::new()
+        .name("miniti-keyring".into())
+        .spawn(move || {
+            let _ = tx.send(f());
+        })
+        .ok()?;
+    match rx.recv_timeout(KEYRING_TIMEOUT) {
+        Ok(v) => Some(v),
+        Err(_) => {
+            tracing::info!(
+                "secret service did not answer within {}s; using file fallback",
+                KEYRING_TIMEOUT.as_secs()
+            );
+            None
+        }
+    }
+}
+
 fn keyring_entry() -> Option<keyring::Entry> {
     keyring::Entry::new(KEYRING_SERVICE, KEYRING_USER).ok()
 }
 
 fn read_keyring() -> Option<Credentials> {
-    let raw = keyring_entry()?.get_password().ok()?;
+    let raw = keyring_op(|| keyring_entry()?.get_password().ok())??;
     serde_json::from_str(&raw).ok()
 }
 
@@ -103,20 +132,18 @@ fn write_keyring(creds: &Credentials) -> bool {
     let Ok(json) = serde_json::to_string(creds) else {
         return false;
     };
-    match keyring_entry().map(|e| e.set_password(&json)) {
-        Some(Ok(())) => true,
-        Some(Err(e)) => {
+    match keyring_op(move || keyring_entry().map(|e| e.set_password(&json))) {
+        Some(Some(Ok(()))) => true,
+        Some(Some(Err(e))) => {
             tracing::info!("secret service unavailable for device auth ({e}); using file fallback");
             false
         }
-        None => false,
+        _ => false,
     }
 }
 
 fn delete_keyring() {
-    if let Some(entry) = keyring_entry() {
-        let _ = entry.delete_credential();
-    }
+    let _ = keyring_op(|| keyring_entry().map(|e| e.delete_credential()));
 }
 
 pub fn read_file(path: &Path) -> Option<Credentials> {
