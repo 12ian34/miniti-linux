@@ -1,7 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type {
+  CatchUp,
   CoachingOverview,
+  InsightsStatusEvent,
+  Investigation,
+  InvestigationScope,
   EnvHealth,
   LaunchGate,
   Levels,
@@ -71,6 +75,35 @@ export const coachingOverview = (meetingId: string) =>
   invoke<TrainingMetrics>("coaching_overview", { meetingId });
 export const coachingReport = (limit = 30) =>
   invoke<CoachingOverview>("coaching_report", { limit });
+
+export const insightsFinishing = () => invoke<string[]>("insights_finishing");
+export const setSalesEnabled = (meetingId: string, enabled: boolean) =>
+  invoke<void>("set_sales_enabled", { meetingId, enabled });
+export const regenerateInsights = (meetingId: string) =>
+  invoke<void>("regenerate_insights", { meetingId });
+export const catchUp = (meetingId: string) => invoke<CatchUp>("catch_up", { meetingId });
+export const investigate = (meetingId: string, scope: InvestigationScope, focus: string) =>
+  invoke<Investigation>("investigate", { meetingId, scope, focus });
+export const lookupDocTopic = (meetingId: string, label: string) =>
+  invoke<void>("lookup_doc_topic", { meetingId, label });
+export const probeDocsMcp = (url: string) =>
+  invoke<{ search_tool: string; tools: string[] }>("probe_docs_mcp", { url });
+export const pickFolder = () => invoke<string | null>("pick_folder");
+
+export function onInsightsUpdated(handler: (meetingId: string) => void): Promise<UnlistenFn> {
+  return listen<string>("insights_updated", (e) => handler(e.payload));
+}
+export function onInsightsStatus(handler: (ev: InsightsStatusEvent) => void): Promise<UnlistenFn> {
+  return listen<InsightsStatusEvent>("insights_status", (e) => handler(e.payload));
+}
+export function onInvestigationSuggested(
+  handler: (ev: { meeting_id: string; focus: string }) => void,
+): Promise<UnlistenFn> {
+  return listen<{ meeting_id: string; focus: string }>("investigation_suggested", (e) => handler(e.payload));
+}
+export function onSalesSuggested(handler: (meetingId: string) => void): Promise<UnlistenFn> {
+  return listen<string>("sales_suggested", (e) => handler(e.payload));
+}
 
 export function onTranscript(
   handler: (ev: TranscriptEventPayload) => void,

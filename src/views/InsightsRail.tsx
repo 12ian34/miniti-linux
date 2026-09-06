@@ -1,7 +1,19 @@
 import { useEffect, useState } from "react";
-import { coachingOverview, hasBridge } from "../api";
+import { openUrl } from "@tauri-apps/plugin-opener";
+import {
+  coachingOverview,
+  errorMessage,
+  hasBridge,
+  lookupDocTopic,
+  onInsightsStatus,
+  onInsightsUpdated,
+  onSalesSuggested,
+  regenerateInsights,
+  setSalesEnabled,
+} from "../api";
 import { fmt1, parseJsonArray, parseJsonObject } from "../format";
-import type { Meeting, TrainingMetrics } from "../types";
+import { useTauriEvent } from "../useEvent";
+import type { DocTopic, InsightsStatusEvent, Investigation, Meeting, TrainingMetrics } from "../types";
 
 type Tab = "summary" | "questions" | "coaching" | "sales" | "playbook";
 
@@ -9,6 +21,7 @@ interface Props {
   meetingId: string;
   meeting: Meeting;
   live: boolean;
+  finishing: boolean;
   onMeetingChanged: () => Promise<void>;
 }
 
@@ -34,10 +47,24 @@ const MEDDPICC: [string, string, string][] = [
  * The right-hand insights pane shared by live recording and saved detail:
  * lowercase summary / questions / coaching tabs, Sales and Playbook under More.
  */
-export function InsightsRail({ meetingId, meeting, live }: Props) {
+export function InsightsRail({ meetingId, meeting, live, finishing, onMeetingChanged }: Props) {
   const [tab, setTab] = useState<Tab>("summary");
   const [more, setMore] = useState(false);
   const [metrics, setMetrics] = useState<TrainingMetrics | null>(null);
+  const [status, setStatus] = useState<Record<string, InsightsStatusEvent>>({});
+  const [salesSuggested, setSalesSuggested] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useTauriEvent(onInsightsUpdated, (id) => {
+    if (id === meetingId) void onMeetingChanged();
+  });
+  useTauriEvent(onInsightsStatus, (ev) => {
+    if (ev.meeting_id !== meetingId) return;
+    setStatus((prev) => ({ ...prev, [ev.mode]: ev }));
+  });
+  useTauriEvent(onSalesSuggested, (id) => {
+    if (id === meetingId && !meeting.sales_enabled) setSalesSuggested(true);
+  });
 
   useEffect(() => {
     if (!hasBridge || tab !== "coaching") return;
@@ -57,8 +84,35 @@ export function InsightsRail({ meetingId, meeting, live }: Props) {
   const flow = parseJsonArray<string>(meeting.discussion_flow);
   const questions = parseJsonArray<Question>(meeting.suggested_questions);
   const meddpicc = parseJsonObject<Record<string, string | null>>(meeting.meddpicc) ?? {};
-  const docs = parseJsonArray<{ topic: string; answer: string; citations?: { title: string; url?: string }[] }>(meeting.docs);
+  const docs = parseJsonArray<{ topic: string; answer: string; citations?: { title: string; url?: string | null }[]; priority?: string }>(meeting.docs);
+  const docTopics = parseJsonArray<DocTopic>(meeting.doc_topics);
+  const investigations = parseJsonArray<Investigation>(meeting.investigations);
   const hasSales = Object.values(meddpicc).some((v) => v && v.trim());
+
+  const standardErr = status.standard?.state === "error" ? status.standard.message : null;
+  const running = Object.values(status).some((s) => s.state === "running");
+
+  async function toggleSales(enabled: boolean) {
+    setError(null);
+    try {
+      await setSalesEnabled(meetingId, enabled);
+      setSalesSuggested(false);
+      await onMeetingChanged();
+      if (enabled) setTab("sales");
+      if (enabled && !live) await regenerateInsights(meetingId).catch(() => {});
+    } catch (e) {
+      setError(errorMessage(e));
+    }
+  }
+
+  async function lookup(label: string) {
+    setError(null);
+    try {
+      await lookupDocTopic(meetingId, label);
+    } catch (e) {
+      setError(errorMessage(e));
+    }
+  }
 
   return (
     <aside className="insights">
@@ -74,48 +128,87 @@ export function InsightsRail({ meetingId, meeting, live }: Props) {
           </button>
           {more && (
             <div className="menu" onMouseLeave={() => setMore(false)}>
-              <button onClick={() => (setTab("sales"), setMore(false))}>sales (MEDDPICC){hasSales ? " •" : ""}</button>
+              <button onClick={() => (setTab("sales"), setMore(false))}>
+                sales (MEDDPICC){meeting.sales_enabled ? " ✓" : hasSales ? " •" : ""}
+              </button>
               <button onClick={() => (setTab("playbook"), setMore(false))}>playbook (docs)</button>
+              {!live && (
+                <button onClick={() => (setMore(false), regenerateInsights(meetingId).catch((e) => setError(errorMessage(e))))}>
+                  regenerate insights
+                </button>
+              )}
             </div>
           )}
         </div>
       </div>
 
+      <div className="insights-status">
+        {finishing || running ? (
+          <span className="muted small"><span className="dot dot-off pulse" /> {finishing ? "finishing insights…" : "updating…"}</span>
+        ) : standardErr ? (
+          <span className="small err">{standardErr}</span>
+        ) : null}
+      </div>
+      {error && <div className="banner error">{error}</div>}
+      {salesSuggested && !meeting.sales_enabled && (
+        <div className="banner warn">
+          This sounds like a sales conversation. Enable Sales analysis?
+          <button className="ghost" onClick={() => toggleSales(true)}>enable</button>
+          <button className="ghost" onClick={() => setSalesSuggested(false)}>dismiss</button>
+        </div>
+      )}
+
       <div className="insights-body">
         {tab === "summary" && (
-          <>
-            {!meeting.summary && actionItems.length === 0 ? (
-              <p className="muted">
-                {live ? "Insights appear after a few sentences." : "No insights for this meeting yet."}
-              </p>
-            ) : (
-              <>
-                <Section title="summary" tone="summary">
-                  <p>{meeting.summary}</p>
+          !meeting.summary && actionItems.length === 0 ? (
+            <p className="muted">
+              {live ? "Insights appear after a few sentences." : "No insights for this meeting yet."}
+            </p>
+          ) : (
+            <>
+              <Section title="summary" tone="summary">
+                <p>{meeting.summary}</p>
+              </Section>
+              {flow.length > 0 && (
+                <Section title="discussion" tone="discussion">
+                  <ol>{flow.map((x, i) => <li key={i}>{x}</li>)}</ol>
                 </Section>
-                {flow.length > 0 && (
-                  <Section title="discussion" tone="discussion">
-                    <ol>{flow.map((x, i) => <li key={i}>{x}</li>)}</ol>
-                  </Section>
-                )}
-                {actionItems.length > 0 && (
-                  <Section title="actions" tone="actions">
-                    <ul className="checks">{actionItems.map((x, i) => <li key={i}>{x}</li>)}</ul>
-                  </Section>
-                )}
-                {decisions.length > 0 && (
-                  <Section title="decisions" tone="actions">
-                    <ul>{decisions.map((x, i) => <li key={i}>{x}</li>)}</ul>
-                  </Section>
-                )}
-                {topics.length > 0 && (
-                  <Section title="topics" tone="topics">
-                    <div className="pills">{topics.map((t, i) => <span className="pill" key={i}>{t}</span>)}</div>
-                  </Section>
-                )}
-              </>
-            )}
-          </>
+              )}
+              {actionItems.length > 0 && (
+                <Section title="actions" tone="actions">
+                  <ul className="checks">{actionItems.map((x, i) => <li key={i}>{x}</li>)}</ul>
+                </Section>
+              )}
+              {decisions.length > 0 && (
+                <Section title="decisions" tone="actions">
+                  <ul>{decisions.map((x, i) => <li key={i}>{x}</li>)}</ul>
+                </Section>
+              )}
+              {topics.length > 0 && (
+                <Section title="topics" tone="topics">
+                  <div className="pills">{topics.map((t, i) => <span className="pill" key={i}>{t}</span>)}</div>
+                </Section>
+              )}
+              {investigations.length > 0 && (
+                <Section title="investigations" tone="topics">
+                  {investigations.map((inv, i) => (
+                    <div className="doc-card" key={i}>
+                      <div className="doc-topic">{inv.focus}</div>
+                      <p className="small">{inv.answer}</p>
+                      {inv.sources?.map((s, j) => (
+                        <a key={j} href="#" className="citation" onClick={(e) => (e.preventDefault(), openUrl(s.url))}>
+                          {s.title}
+                        </a>
+                      ))}
+                      {inv.referenced_files?.length > 0 && (
+                        <p className="muted tiny">files: {inv.referenced_files.join(", ")}</p>
+                      )}
+                    </div>
+                  ))}
+                </Section>
+              )}
+            </>
+          )
         )}
 
         {tab === "questions" && (
@@ -143,47 +236,83 @@ export function InsightsRail({ meetingId, meeting, live }: Props) {
         )}
 
         {tab === "sales" && (
-          !hasSales ? (
-            <p className="muted">
-              Sales analysis (MEDDPICC) is opt-in. {live ? "It will start on the next insights pass once enabled in Settings." : "Nothing was extracted for this meeting."}
-            </p>
-          ) : (
-            <div className="meddpicc">
-              {MEDDPICC.map(([key, name, color]) => {
-                const v = meddpicc[key];
-                if (!v || !v.trim()) return null;
-                return (
-                  <div className="meddpicc-field" key={key}>
-                    <div className="meddpicc-label" style={{ color }}>
-                      <span className="letter" style={{ background: color }}>{name[0]}</span>
-                      {name}
+          <>
+            <label className="toggle">
+              <input type="checkbox" checked={meeting.sales_enabled} onChange={(e) => toggleSales(e.currentTarget.checked)} />
+              <span>Sales analysis (MEDDPICC) for this meeting</span>
+            </label>
+            {!hasSales ? (
+              <p className="muted">
+                {meeting.sales_enabled
+                  ? live ? "MEDDPICC appears after a few minutes of conversation." : "Nothing was extracted yet. Regenerate insights to run it on this transcript."
+                  : "Opt in above and the next insights pass extracts qualification evidence."}
+              </p>
+            ) : (
+              <div className="meddpicc">
+                {MEDDPICC.map(([key, name, color]) => {
+                  const v = meddpicc[key];
+                  if (!v || !v.trim()) return null;
+                  return (
+                    <div className="meddpicc-field" key={key}>
+                      <div className="meddpicc-label" style={{ color }}>
+                        <span className="letter" style={{ background: color }}>{name[0]}</span>
+                        {name}
+                      </div>
+                      <ul>{v.split("\n").filter(Boolean).map((line, i) => <li key={i}>{line}</li>)}</ul>
                     </div>
-                    <ul>{v.split("\n").filter(Boolean).map((line, i) => <li key={i}>{line}</li>)}</ul>
-                  </div>
-                );
-              })}
-            </div>
-          )
+                  );
+                })}
+              </div>
+            )}
+          </>
         )}
 
         {tab === "playbook" && (
-          docs.length === 0 ? (
-            <p className="muted">Configure a Docs MCP URL in Settings to get grounded playbook cards here.</p>
-          ) : (
-            <div className="docs">
-              {docs.map((d, i) => (
-                <div className="doc-card" key={i}>
-                  <div className="doc-topic">{d.topic}</div>
-                  <p>{d.answer}</p>
-                  {d.citations?.map((c, j) => (
-                    <a key={j} href={c.url ?? "#"} target="_blank" rel="noreferrer" className="citation">
-                      {c.title}
-                    </a>
+          <>
+            {docTopics.length === 0 && docs.length === 0 ? (
+              <p className="muted">Set a Docs MCP URL in Settings. Topics the conversation raises appear here and can be looked up in your docs.</p>
+            ) : (
+              <>
+                {docTopics.length > 0 && (
+                  <div className="topics">
+                    {docTopics.map((t) => (
+                      <div className={`topic ${t.state}`} key={t.id}>
+                        <span>{t.label}</span>
+                        {t.state === "looking_up" ? (
+                          <span className="muted tiny">looking up…</span>
+                        ) : t.state === "answered" ? (
+                          <span className="tiny ok">answered</span>
+                        ) : t.state === "no_match" ? (
+                          <span className="muted tiny">no match</span>
+                        ) : (
+                          <button className="ghost tiny" onClick={() => lookup(t.label)} title={t.error ?? ""}>
+                            {t.state === "failed" ? "retry" : "look up"}
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div className="docs">
+                  {docs.map((d, i) => (
+                    <div className={`doc-card ${d.priority === "high" ? "high" : ""}`} key={i}>
+                      <div className="doc-topic">{d.topic}</div>
+                      <p>{d.answer}</p>
+                      {d.citations?.map((c, j) =>
+                        c.url ? (
+                          <a key={j} href="#" className="citation" onClick={(e) => (e.preventDefault(), openUrl(c.url!))}>
+                            {c.title}
+                          </a>
+                        ) : (
+                          <span key={j} className="citation muted">{c.title}</span>
+                        ),
+                      )}
+                    </div>
                   ))}
                 </div>
-              ))}
-            </div>
-          )
+              </>
+            )}
+          </>
         )}
       </div>
     </aside>

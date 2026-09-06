@@ -36,6 +36,14 @@ pub struct Prefs {
     /// Terms version the user accepted (None = never).
     pub accepted_terms_version: Option<String>,
     pub onboarding_complete: bool,
+    /// Live insights during recording (Summary / Questions / …).
+    pub live_insights_enabled: bool,
+    /// New meetings start with Sales (MEDDPICC) analysis enabled.
+    pub sales_insights_default: bool,
+    /// Folder used for codebase investigations.
+    pub codebase_root: Option<String>,
+    /// Personal dictionary terms sent as Deepgram keyterms.
+    pub personal_dictionary: Vec<String>,
 }
 
 impl Default for Prefs {
@@ -55,6 +63,10 @@ impl Default for Prefs {
             capture_system_audio: true,
             accepted_terms_version: None,
             onboarding_complete: false,
+            live_insights_enabled: true,
+            sales_insights_default: false,
+            codebase_root: None,
+            personal_dictionary: Vec::new(),
         }
     }
 }

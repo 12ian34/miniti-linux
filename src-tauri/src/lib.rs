@@ -22,12 +22,13 @@ pub mod state;
 pub mod webhook;
 
 use state::{
-    accept_terms, coaching_overview, coaching_report, complete_onboarding, delete_meeting,
-    environment_health, get_device_id, get_levels, get_meeting, get_meeting_detail, get_prefs,
-    get_segments, get_usage, launch_gate, list_meetings, mark_as_you, portal_url,
-    recording_status, restore_license, search_meetings, set_meeting_title, set_notes, set_pinned, set_prefs,
-    set_speaker_name, start_recording, stop_recording, subscribe_url, AppState, Levels,
-    RecordingSession,
+    accept_terms, catch_up, coaching_overview, coaching_report, complete_onboarding,
+    delete_meeting, environment_health, get_device_id, get_levels, get_meeting,
+    get_meeting_detail, get_prefs, get_segments, get_usage, insights_finishing, investigate,
+    launch_gate, list_meetings, lookup_doc_topic, mark_as_you, pick_folder, portal_url,
+    probe_docs_mcp, recording_status, regenerate_insights, restore_license, search_meetings,
+    set_meeting_title, set_notes, set_pinned, set_prefs, set_sales_enabled, set_speaker_name,
+    start_recording, stop_recording, subscribe_url, AppState, Levels, RecordingSession,
 };
 
 fn init_tracing() {
@@ -59,6 +60,7 @@ fn build_state() -> AppState {
         levels: Arc::new(Levels::default()),
         session: Mutex::new(RecordingSession::default()),
         last_status: Arc::new(Mutex::new(None)),
+        finishing: Arc::new(Mutex::new(std::collections::HashSet::new())),
     }
 }
 
@@ -67,6 +69,9 @@ pub fn run() {
     init_tracing();
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_deep_link::init())
         .manage(build_state())
         .invoke_handler(tauri::generate_handler![
             environment_health,
@@ -97,6 +102,14 @@ pub fn run() {
             delete_meeting,
             coaching_overview,
             coaching_report,
+            insights_finishing,
+            set_sales_enabled,
+            regenerate_insights,
+            catch_up,
+            investigate,
+            lookup_doc_topic,
+            probe_docs_mcp,
+            pick_folder,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

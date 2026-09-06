@@ -23,6 +23,9 @@ use crate::db::{self, Meeting, TranscriptSegment};
 use crate::deepgram::live::{AuthProvider, StreamStatus};
 use crate::deepgram::{self, Auth, DeepgramConfig, Processor, SegmentSource, TranscriptEvent};
 use crate::gates::{self, Gate, GateInputs};
+use crate::insights::engine::{self as insights_engine, EngineConfig, Finishing, LiveEngine};
+use crate::insights::provider::Provider;
+use crate::insights::InvestigationScope;
 use crate::prefs::{AppMode, Prefs, CURRENT_TERMS_VERSION};
 
 pub const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -126,6 +129,8 @@ pub struct RecordingSession {
     dg_task: Option<tauri::async_runtime::JoinHandle<()>>,
     consumer_tasks: Vec<tauri::async_runtime::JoinHandle<()>>,
     credential: Option<Credential>,
+    engine: Option<(Arc<std::sync::atomic::AtomicBool>, tauri::async_runtime::JoinHandle<()>)>,
+    engine_cfg: Option<EngineConfig>,
 }
 
 /// Everything `stop` needs after releasing the session lock.
@@ -135,6 +140,8 @@ struct StopParts {
     dg_task: Option<tauri::async_runtime::JoinHandle<()>>,
     consumer_tasks: Vec<tauri::async_runtime::JoinHandle<()>>,
     credential: Option<Credential>,
+    engine: Option<(Arc<std::sync::atomic::AtomicBool>, tauri::async_runtime::JoinHandle<()>)>,
+    engine_cfg: Option<EngineConfig>,
 }
 
 impl RecordingSession {
@@ -148,6 +155,7 @@ impl RecordingSession {
         prefs: &Prefs,
         title: String,
         credential: Credential,
+        engine_cfg: Option<EngineConfig>,
     ) -> Result<String, String> {
         // Microphone first: without it there is nothing to transcribe.
         let (mic_tx, mic_rx) = audio::frame_channel();
@@ -155,6 +163,7 @@ impl RecordingSession {
             .map_err(|e| format!("microphone unavailable: {e}"))?;
 
         let mut meeting = Meeting::new(title, prefs.language.clone());
+        meeting.sales_enabled = prefs.sales_insights_default;
         if let Credential::Managed { session_id, .. } = &credential {
             meeting.managed_session_id = session_id.clone();
         }
@@ -172,7 +181,7 @@ impl RecordingSession {
         let cfg = DeepgramConfig {
             language: prefs.language.clone(),
             multichannel: false,
-            keyterms: Vec::new(),
+            keyterms: deepgram_keyterms(prefs),
         };
         let processor = Processor::new(false, SegmentSource::Microphone);
         let (pcm_tx, pcm_rx) = tokio::sync::mpsc::channel::<Vec<u8>>(256);
@@ -189,10 +198,31 @@ impl RecordingSession {
         let persist_db = db.clone();
         let persist_app = app.clone();
         let meeting_id = meeting.id.clone();
+        let sales_default = prefs.sales_insights_default;
         self.consumer_tasks.push(tauri::async_runtime::spawn(async move {
+            let mut finals = 0usize;
+            let mut sales_suggested = sales_default;
             while let Some(ev) = ev_rx.recv().await {
                 let mut segment_id = None;
                 if ev.is_final {
+                    finals += 1;
+                    // Local conversation-moment detection: suggest, never run.
+                    if let Some(focus) = insights_engine::detect_investigation_moment(&ev.text) {
+                        let _ = persist_app.emit("investigation_suggested", serde_json::json!({
+                            "meeting_id": meeting_id, "focus": focus
+                        }));
+                    }
+                    if !sales_suggested && finals % 10 == 0 && finals <= 60 {
+                        if let Ok(conn) = persist_db.lock() {
+                            if let Ok(segs) = db::list_segments(&conn, &meeting_id) {
+                                let text: String = segs.iter().map(|s| s.text.as_str()).collect::<Vec<_>>().join(" ");
+                                if insights_engine::sounds_commercial(&text) {
+                                    sales_suggested = true;
+                                    let _ = persist_app.emit("sales_suggested", &meeting_id);
+                                }
+                            }
+                        }
+                    }
                     let seg = TranscriptSegment::new(
                         &meeting_id,
                         ev.speaker_id,
@@ -258,6 +288,12 @@ impl RecordingSession {
             }
         }
 
+        // ---- Live insights engine (cadence + apply live in the DB)
+        if let Some(cfg) = engine_cfg.clone() {
+            self.engine = Some(LiveEngine::spawn(app.clone(), db.clone(), cfg));
+        }
+        self.engine_cfg = engine_cfg;
+
         let id = meeting.id.clone();
         self.meeting = Some(meeting);
         self.started_at = Some(started_at);
@@ -282,12 +318,17 @@ impl RecordingSession {
             let _ = join.join();
         }
         self.running = false;
+        if let Some((stop, _)) = &self.engine {
+            stop.store(true, Ordering::SeqCst);
+        }
         Some(StopParts {
             meeting: self.meeting.take()?,
             started_at: self.started_at.take(),
             dg_task: self.dg_task.take(),
             consumer_tasks: std::mem::take(&mut self.consumer_tasks),
             credential: self.credential.take(),
+            engine: self.engine.take(),
+            engine_cfg: self.engine_cfg.take(),
         })
     }
 }
@@ -301,9 +342,105 @@ pub struct AppState {
     pub levels: Arc<Levels>,
     pub session: Mutex<RecordingSession>,
     pub last_status: Arc<Mutex<Option<StreamStatus>>>,
+    /// Meetings whose final insights are still being generated.
+    pub finishing: Finishing,
+}
+
+/// Personal dictionary + system terms as Deepgram keyterms (capped in the URL builder).
+fn deepgram_keyterms(prefs: &Prefs) -> Vec<String> {
+    let mut terms: Vec<String> = vec!["Miniti".into()];
+    for t in &prefs.personal_dictionary {
+        let t = t.trim();
+        if !t.is_empty() && !terms.iter().any(|x| x.eq_ignore_ascii_case(t)) {
+            terms.push(t.to_string());
+        }
+    }
+    terms
 }
 
 impl AppState {
+    /// Insights provider for the current mode, or a user-facing reason why not.
+    fn insights_provider(&self, prefs: &Prefs) -> Result<Provider, String> {
+        match prefs.app_mode {
+            AppMode::Managed => self.api_client(prefs).map(Provider::Managed).map_err(|e| e.to_string()),
+            AppMode::Byok => prefs
+                .byok_openai_key
+                .as_deref()
+                .map(str::trim)
+                .filter(|k| !k.is_empty())
+                .map(|k| Provider::byok(k.to_string()))
+                .ok_or_else(|| "Add your OpenAI API key in Settings (BYOK) for live insights.".to_string()),
+        }
+    }
+
+    /// Engine config for a meeting; `None` when insights are unavailable in
+    /// this mode (the reason is emitted once so the UI can say why).
+    async fn engine_config(&self, app: &AppHandle, prefs: &Prefs, meeting_id: &str, live: bool) -> Option<EngineConfig> {
+        let provider = match self.insights_provider(prefs) {
+            Ok(p) => p,
+            Err(reason) => {
+                let _ = app.emit("insights_status", insights_engine::InsightsEvent {
+                    meeting_id: meeting_id.to_string(),
+                    mode: "standard".into(),
+                    state: "error",
+                    message: Some(reason),
+                });
+                return None;
+            }
+        };
+        // Automatic Playbook lookups for BYOK and Pro; managed-free is metered → manual.
+        let auto_docs_lookup = match &provider {
+            Provider::Byok { .. } => true,
+            Provider::Managed(client) => match client.get_usage().await {
+                Ok(u) => u.tier.as_deref() == Some("pro"),
+                Err(_) => false,
+            },
+        };
+        Some(EngineConfig {
+            meeting_id: meeting_id.to_string(),
+            language: prefs.language.clone(),
+            provider,
+            docs_mcp_url: prefs.docs_mcp_url.as_deref().map(str::trim).filter(|u| !u.is_empty()).map(String::from),
+            auto_docs_lookup,
+            live_enabled: live && prefs.live_insights_enabled,
+        })
+    }
+
+    fn engine_config_blocking(&self, prefs: &Prefs, meeting_id: &str) -> Result<EngineConfig, String> {
+        let provider = self.insights_provider(prefs)?;
+        let auto_docs_lookup = matches!(provider, Provider::Byok { .. });
+        Ok(EngineConfig {
+            meeting_id: meeting_id.to_string(),
+            language: prefs.language.clone(),
+            provider,
+            docs_mcp_url: prefs.docs_mcp_url.as_deref().map(str::trim).filter(|u| !u.is_empty()).map(String::from),
+            auto_docs_lookup,
+            live_enabled: false,
+        })
+    }
+
+    /// Background final pass + `meeting.updated` webhook afterwards.
+    fn spawn_finalize(&self, app: AppHandle, prefs: &Prefs, cfg: EngineConfig) {
+        let db = self.db.clone();
+        let finishing = self.finishing.clone();
+        let webhook_url = prefs.webhook_url.as_deref().map(str::trim).filter(|u| !u.is_empty()).map(String::from);
+        let fillers = self.fillers(prefs);
+        tauri::async_runtime::spawn(async move {
+            let meeting_id = cfg.meeting_id.clone();
+            insights_engine::finalize_meeting(app.clone(), db.clone(), cfg, finishing).await;
+            let _ = app.emit("meeting_saved", &meeting_id);
+            if let Some(url) = webhook_url {
+                let payload = {
+                    let Ok(conn) = db.lock() else { return };
+                    let Ok(Some(meeting)) = db::get_meeting(&conn, &meeting_id) else { return };
+                    let segments = db::list_segments(&conn, &meeting_id).unwrap_or_default();
+                    crate::webhook::payload_from_meeting("meeting.updated", &meeting, &segments, &fillers)
+                };
+                crate::webhook::send(&url, &payload).await;
+            }
+        });
+    }
+
     fn api_client(&self, prefs: &Prefs) -> Result<ApiClient, ApiError> {
         let api_key = self.api_key.clone().ok_or(ApiError::NoApiKey)?;
         Ok(ApiClient::new(
@@ -617,6 +754,9 @@ pub async fn start_recording(
         .map(|t| t.trim().to_string())
         .filter(|t| !t.is_empty())
         .unwrap_or_else(|| "New meeting".to_string());
+    // The meeting id is created inside start(); the engine config is keyed by it,
+    // so build the config with a placeholder and patch the id after start.
+    let engine_cfg = state.engine_config(&app, &prefs, "pending", true).await;
     let db = state.db.clone();
     let levels = state.levels.clone();
     let last_status = state.last_status.clone();
@@ -624,7 +764,14 @@ pub async fn start_recording(
     if session.running {
         return Err("already recording".into());
     }
-    session.start(app, db, levels, last_status, &prefs, title, credential)
+    // Start capture first (may fail), then bind the engine to the real id.
+    let id = session.start(app.clone(), db.clone(), levels, last_status, &prefs, title, credential, None)?;
+    if let Some(mut cfg) = engine_cfg {
+        cfg.meeting_id = id.clone();
+        session.engine = Some(LiveEngine::spawn(app, db, cfg.clone()));
+        session.engine_cfg = Some(cfg);
+    }
+    Ok(id)
 }
 
 #[tauri::command]
@@ -649,6 +796,9 @@ pub async fn stop_recording(
     }
     for task in parts.consumer_tasks {
         let _ = tokio::time::timeout(Duration::from_secs(2), task).await;
+    }
+    if let Some((_, task)) = parts.engine {
+        let _ = tokio::time::timeout(Duration::from_secs(6), task).await;
     }
     if let Ok(mut s) = state.last_status.lock() {
         *s = None;
@@ -706,7 +856,127 @@ pub async fn stop_recording(
     }
 
     let _ = app.emit("meeting_saved", &meeting.id);
+
+    // Final insights as meeting-scoped background work (macOS "Stopped session").
+    if !segments.is_empty() {
+        if let Some(mut cfg) = parts.engine_cfg {
+            cfg.live_enabled = false;
+            state.spawn_finalize(app.clone(), &prefs, cfg);
+        }
+    }
     Ok(Some(meeting.id))
+}
+
+// ---- Insights commands -----------------------------------------------------
+
+#[tauri::command]
+pub fn insights_finishing(state: State<AppState>) -> Vec<String> {
+    state.finishing.lock().map(|f| f.iter().cloned().collect()).unwrap_or_default()
+}
+
+#[tauri::command]
+pub fn set_sales_enabled(state: State<AppState>, meeting_id: String, enabled: bool) -> Result<(), String> {
+    let conn = state.db.lock().map_err(|_| "db poisoned")?;
+    db::set_sales_enabled(&conn, &meeting_id, enabled).map_err(|e| e.to_string())
+}
+
+/// Re-run the final pass for a saved meeting (after trim, or on demand).
+#[tauri::command]
+pub fn regenerate_insights(app: AppHandle, state: State<AppState>, meeting_id: String) -> Result<(), String> {
+    let prefs = state.prefs_snapshot()?;
+    let cfg = state.engine_config_blocking(&prefs, &meeting_id)?;
+    if state.finishing.lock().map(|f| f.contains(&meeting_id)).unwrap_or(false) {
+        return Err("Insights are already being generated for this meeting.".into());
+    }
+    state.spawn_finalize(app, &prefs, cfg);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn catch_up(state: State<'_, AppState>, meeting_id: String) -> Result<serde_json::Value, String> {
+    let prefs = state.prefs_snapshot()?;
+    let cfg = state.engine_config_blocking(&prefs, &meeting_id)?;
+    let (meeting, segments) = {
+        let conn = state.db.lock().map_err(|_| "db poisoned")?;
+        let meeting = db::get_meeting(&conn, &meeting_id).map_err(|e| e.to_string())?.ok_or("meeting not found")?;
+        let segments = db::list_segments(&conn, &meeting_id).map_err(|e| e.to_string())?;
+        (meeting, segments)
+    };
+    insights_engine::catch_up(&cfg, &meeting, &segments).await
+}
+
+#[tauri::command]
+pub async fn investigate(
+    state: State<'_, AppState>,
+    meeting_id: String,
+    scope: InvestigationScope,
+    focus: String,
+) -> Result<serde_json::Value, String> {
+    let prefs = state.prefs_snapshot()?;
+    let cfg = state.engine_config_blocking(&prefs, &meeting_id)?;
+    let (meeting, segments) = {
+        let conn = state.db.lock().map_err(|_| "db poisoned")?;
+        let meeting = db::get_meeting(&conn, &meeting_id).map_err(|e| e.to_string())?.ok_or("meeting not found")?;
+        let segments = db::list_segments(&conn, &meeting_id).map_err(|e| e.to_string())?;
+        (meeting, segments)
+    };
+    let codebase = if scope == InvestigationScope::Codebase {
+        let root = prefs.codebase_root.clone().ok_or("Choose a codebase folder in Settings first.")?;
+        let focus_c = focus.clone();
+        let (ctx, files) = tokio::task::spawn_blocking(move || insights_engine::build_codebase_snapshot(std::path::Path::new(&root), &focus_c))
+            .await
+            .map_err(|e| e.to_string())?;
+        if ctx.is_empty() {
+            return Err("No files in the codebase folder matched this question.".into());
+        }
+        Some((ctx, files))
+    } else {
+        None
+    };
+    let result = insights_engine::investigate(&cfg, &meeting, &segments, scope, &focus, codebase).await?;
+    // Persist for the saved-meeting view.
+    let conn = state.db.lock().map_err(|_| "db poisoned")?;
+    let mut list: Vec<serde_json::Value> = serde_json::from_str(&meeting.investigations).unwrap_or_default();
+    list.push(serde_json::json!({
+        "focus": focus,
+        "scope": scope,
+        "answer": result.get("answer").cloned().unwrap_or(serde_json::Value::String(String::new())),
+        "sources": result.get("sources").cloned().unwrap_or(serde_json::Value::Array(vec![])),
+        "referenced_files": result.get("referenced_files").cloned().unwrap_or(serde_json::Value::Array(vec![])),
+        "at": chrono::Utc::now().timestamp(),
+    }));
+    let _ = db::set_investigations(&conn, &meeting_id, &serde_json::to_string(&list).unwrap_or_default());
+    Ok(result)
+}
+
+/// Manual Playbook topic lookup (managed-free is metered by the backend).
+#[tauri::command]
+pub async fn lookup_doc_topic(app: AppHandle, state: State<'_, AppState>, meeting_id: String, label: String) -> Result<(), String> {
+    let prefs = state.prefs_snapshot()?;
+    let cfg = state.engine_config_blocking(&prefs, &meeting_id)?;
+    if cfg.docs_mcp_url.is_none() {
+        return Err("Set a Docs MCP URL in Settings first.".into());
+    }
+    let db = state.db.clone();
+    insights_engine::lookup_topic(app, db, cfg, label).await;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn probe_docs_mcp(url: String) -> Result<serde_json::Value, String> {
+    let (search_tool, tools) = crate::insights::mcp::probe(&url).await?;
+    Ok(serde_json::json!({ "search_tool": search_tool, "tools": tools }))
+}
+
+/// Folder picker for codebase investigations (native dialog).
+#[tauri::command]
+pub async fn pick_folder(app: AppHandle) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    app.dialog().file().pick_folder(move |p| {
+        let _ = tx.send(p.map(|p| p.to_string()));
+    });
+    rx.await.map_err(|_| "dialog closed".to_string())
 }
 
 #[tauri::command]
@@ -819,6 +1089,11 @@ pub fn set_speaker_name(
     }
     let json = serde_json::to_string(&names).map_err(|e| e.to_string())?;
     db::set_speaker_names(&conn, &meeting_id, &json).map_err(|e| e.to_string())?;
+    let mut manual: Vec<i64> = serde_json::from_str(&meeting.manual_speaker_ids).unwrap_or_default();
+    if !manual.contains(&speaker_id) {
+        manual.push(speaker_id);
+        let _ = db::set_manual_speaker_ids(&conn, &meeting_id, &serde_json::to_string(&manual).unwrap_or_default());
+    }
     Ok(names)
 }
 

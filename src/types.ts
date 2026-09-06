@@ -28,6 +28,10 @@ export interface Prefs {
   capture_system_audio: boolean;
   accepted_terms_version: string | null;
   onboarding_complete: boolean;
+  live_insights_enabled: boolean;
+  sales_insights_default: boolean;
+  codebase_root: string | null;
+  personal_dictionary: string[];
 }
 
 export interface Meeting {
@@ -53,7 +57,44 @@ export interface Meeting {
   import_source: string | null;
   pinned: boolean;
   insights_updated_at: number | null;
+  sales_enabled: boolean;
+  title_auto: boolean;
+  doc_topics: string;
+  manual_speaker_ids: string;
+  investigations: string;
   created_at: number;
+}
+
+export interface InsightsStatusEvent {
+  meeting_id: string;
+  mode: string;
+  state: "running" | "applied" | "degraded" | "error" | "finished";
+  message: string | null;
+}
+
+export interface CatchUp {
+  current_topic: string;
+  questions_for_you: string[];
+  recent_discussion: string[];
+  key_decisions: string[];
+}
+
+export type InvestigationScope = "web" | "codebase";
+
+export interface Investigation {
+  focus: string;
+  scope: InvestigationScope;
+  answer: string;
+  sources: { title: string; url: string }[];
+  referenced_files: string[];
+  at?: number;
+}
+
+export interface DocTopic {
+  id: string;
+  label: string;
+  state: "pending" | "looking_up" | "answered" | "no_match" | "busy" | "failed";
+  error?: string | null;
 }
 
 export interface TranscriptSegment {

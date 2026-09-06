@@ -28,6 +28,8 @@ import { useStore } from "../store";
 import { useTauriEvent } from "../useEvent";
 import type { Levels, MeetingDetail, StreamStatus, TranscriptEventPayload } from "../types";
 import { InsightsRail } from "./InsightsRail";
+import { CatchUpButton, InvestigateButton } from "./MeetingTools";
+import { insightsFinishing, onInsightsUpdated, onInvestigationSuggested } from "../api";
 
 interface Line {
   key: string;
@@ -52,8 +54,10 @@ function applyEvent(lines: Line[], ev: TranscriptEventPayload): Line[] {
 
 export function MeetingView({ id }: { id: string }) {
   const store = useStore();
-  const { recording, stop, stopping, navigate, refreshMeetings, insightsOpen, setInsightsOpen } = store;
+  const { recording, stop, stopping, navigate, refreshMeetings, insightsOpen, setInsightsOpen, prefs } = store;
   const live = recording.recording && recording.meeting_id === id;
+  const [finishing, setFinishing] = useState(false);
+  const [suggestedFocus, setSuggestedFocus] = useState<string | null>(null);
 
   const [detail, setDetail] = useState<MeetingDetail | null>(null);
   const [lines, setLines] = useState<Line[]>([]);
@@ -105,6 +109,19 @@ export function MeetingView({ id }: { id: string }) {
   useTauriEvent(onTranscriptionStatus, (st) => {
     if (live) setStatus(st);
   });
+  useTauriEvent(onInsightsUpdated, (mid) => {
+    if (mid === id) {
+      void load();
+      insightsFinishing().then((f) => setFinishing(f.includes(id))).catch(() => {});
+    }
+  });
+  useTauriEvent(onInvestigationSuggested, (ev) => {
+    if (ev.meeting_id === id && live) setSuggestedFocus(ev.focus);
+  });
+  useEffect(() => {
+    if (!hasBridge) return;
+    insightsFinishing().then((f) => setFinishing(f.includes(id))).catch(() => {});
+  }, [id, live]);
 
   useEffect(() => {
     if (!live || !hasBridge) return;
@@ -225,6 +242,17 @@ export function MeetingView({ id }: { id: string }) {
             )}
           </div>
           <div className="th-right">
+            {detail && (lines.some((l) => l.final)) && (
+              <>
+                <CatchUpButton meetingId={id} />
+                <InvestigateButton
+                  meetingId={id}
+                  suggestedFocus={suggestedFocus}
+                  onDismissSuggestion={() => setSuggestedFocus(null)}
+                  hasCodebaseRoot={!!prefs?.codebase_root}
+                />
+              </>
+            )}
             {live ? (
               <button className="btn recording" onClick={onStop} disabled={stopping}>
                 {stopping ? "finishing…" : "■ Stop"}
@@ -254,7 +282,7 @@ export function MeetingView({ id }: { id: string }) {
         {error && <div className="banner error">{error}</div>}
         {justStopped && !live && (
           <div className="banner ok">
-            Saved. Insights will fill in as they finish.
+            Saved.{finishing ? " Final insights are being generated in the background." : ""}
             <button className="ghost" onClick={() => navigate({ kind: "home" })}>back to meetings</button>
           </div>
         )}
@@ -307,7 +335,7 @@ export function MeetingView({ id }: { id: string }) {
       </div>
 
       {insightsOpen && detail && (
-        <InsightsRail meetingId={id} meeting={detail.meeting} live={live} onMeetingChanged={load} />
+        <InsightsRail meetingId={id} meeting={detail.meeting} live={live} finishing={finishing} onMeetingChanged={load} />
       )}
     </div>
   );

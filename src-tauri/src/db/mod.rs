@@ -32,6 +32,11 @@ CREATE TABLE IF NOT EXISTS meetings (
     import_source       TEXT,
     pinned              INTEGER NOT NULL DEFAULT 0,
     insights_updated_at INTEGER,
+    sales_enabled       INTEGER NOT NULL DEFAULT 0,
+    title_auto          INTEGER NOT NULL DEFAULT 1,
+    doc_topics          TEXT NOT NULL DEFAULT '[]',
+    manual_speaker_ids  TEXT NOT NULL DEFAULT '[]',
+    investigations      TEXT NOT NULL DEFAULT '[]',
     created_at          INTEGER NOT NULL
 );
 
@@ -55,6 +60,11 @@ const MIGRATIONS: &[(&str, &str)] = &[
     ("meetings", "discussion_flow TEXT NOT NULL DEFAULT '[]'"),
     ("meetings", "docs TEXT NOT NULL DEFAULT '[]'"),
     ("meetings", "self_speaker_ids TEXT NOT NULL DEFAULT '[]'"),
+    ("meetings", "sales_enabled INTEGER NOT NULL DEFAULT 0"),
+    ("meetings", "title_auto INTEGER NOT NULL DEFAULT 1"),
+    ("meetings", "doc_topics TEXT NOT NULL DEFAULT '[]'"),
+    ("meetings", "manual_speaker_ids TEXT NOT NULL DEFAULT '[]'"),
+    ("meetings", "investigations TEXT NOT NULL DEFAULT '[]'"),
 ];
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -84,6 +94,16 @@ pub struct Meeting {
     pub import_source: Option<String>,
     pub pinned: bool,
     pub insights_updated_at: Option<i64>,
+    /// Opt-in MEDDPICC analysis for this meeting.
+    pub sales_enabled: bool,
+    /// True while the title is generated (a manual rename clears it).
+    pub title_auto: bool,
+    /// Playbook topics with lookup state (JSON array).
+    pub doc_topics: String,
+    /// Speaker ids the user renamed by hand; inference never overwrites them.
+    pub manual_speaker_ids: String,
+    /// Investigation results (JSON array of {focus, scope, answer, sources, referenced_files, at}).
+    pub investigations: String,
     pub created_at: i64,
 }
 
@@ -113,6 +133,11 @@ impl Meeting {
             import_source: None,
             pinned: false,
             insights_updated_at: None,
+            sales_enabled: false,
+            title_auto: true,
+            doc_topics: "[]".into(),
+            manual_speaker_ids: "[]".into(),
+            investigations: "[]".into(),
             created_at: now,
         }
     }
@@ -239,26 +264,28 @@ fn migrate(conn: &Connection) -> DbResult<()> {
 const MEETING_COLS: &str = "id,title,started_at,ended_at,language,notes,summary,action_items,\
     key_decisions,topics,discussion_flow,suggested_questions,docs,speaker_names,self_speaker_ids,\
     meddpicc,attendees,managed_session_id,calendar_event_id,import_source,pinned,\
-    insights_updated_at,created_at";
+    insights_updated_at,sales_enabled,title_auto,doc_topics,manual_speaker_ids,investigations,created_at";
 
 pub fn upsert_meeting(conn: &Connection, m: &Meeting) -> DbResult<()> {
     conn.execute(
         &format!(
             r#"INSERT INTO meetings ({MEETING_COLS}) VALUES
-            (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?23)
+            (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?23,?24,?25,?26,?27,?28)
            ON CONFLICT(id) DO UPDATE SET
              title=?2,started_at=?3,ended_at=?4,language=?5,notes=?6,summary=?7,action_items=?8,
              key_decisions=?9,topics=?10,discussion_flow=?11,suggested_questions=?12,docs=?13,
              speaker_names=?14,self_speaker_ids=?15,meddpicc=?16,attendees=?17,
              managed_session_id=?18,calendar_event_id=?19,import_source=?20,pinned=?21,
-             insights_updated_at=?22"#
+             insights_updated_at=?22,sales_enabled=?23,title_auto=?24,doc_topics=?25,
+             manual_speaker_ids=?26,investigations=?27"#
         ),
         params![
             m.id, m.title, m.started_at, m.ended_at, m.language, m.notes, m.summary,
             m.action_items, m.key_decisions, m.topics, m.discussion_flow, m.suggested_questions,
             m.docs, m.speaker_names, m.self_speaker_ids, m.meddpicc, m.attendees,
             m.managed_session_id, m.calendar_event_id, m.import_source, m.pinned as i64,
-            m.insights_updated_at, m.created_at,
+            m.insights_updated_at, m.sales_enabled as i64, m.title_auto as i64, m.doc_topics,
+            m.manual_speaker_ids, m.investigations, m.created_at,
         ],
     )?;
     Ok(())
@@ -288,7 +315,12 @@ fn row_to_meeting(row: &rusqlite::Row) -> DbResult<Meeting> {
         import_source: row.get(19)?,
         pinned: row.get::<_, i64>(20)? != 0,
         insights_updated_at: row.get(21)?,
-        created_at: row.get(22)?,
+        sales_enabled: row.get::<_, i64>(22)? != 0,
+        title_auto: row.get::<_, i64>(23)? != 0,
+        doc_topics: row.get(24)?,
+        manual_speaker_ids: row.get(25)?,
+        investigations: row.get(26)?,
+        created_at: row.get(27)?,
     })
 }
 
@@ -335,9 +367,104 @@ pub fn set_pinned(conn: &Connection, id: &str, pinned: bool) -> DbResult<()> {
     Ok(())
 }
 
+/// Manual rename: also stops automatic title suggestions for this meeting.
 pub fn set_title(conn: &Connection, id: &str, title: &str) -> DbResult<()> {
-    conn.execute("UPDATE meetings SET title=?2 WHERE id=?1", params![id, title])?;
+    conn.execute("UPDATE meetings SET title=?2, title_auto=0 WHERE id=?1", params![id, title])?;
     Ok(())
+}
+
+/// Generated title: only applied while the title is still automatic.
+pub fn set_auto_title(conn: &Connection, id: &str, title: &str) -> DbResult<bool> {
+    let n = conn.execute(
+        "UPDATE meetings SET title=?2 WHERE id=?1 AND title_auto=1",
+        params![id, title],
+    )?;
+    Ok(n > 0)
+}
+
+pub fn set_sales_enabled(conn: &Connection, id: &str, enabled: bool) -> DbResult<()> {
+    conn.execute("UPDATE meetings SET sales_enabled=?2 WHERE id=?1", params![id, enabled as i64])?;
+    Ok(())
+}
+
+/// Standard insights block.
+pub fn set_standard_insights(
+    conn: &Connection,
+    id: &str,
+    summary: &str,
+    action_items_json: &str,
+    topics_json: &str,
+    discussion_flow_json: &str,
+    key_decisions_json: Option<&str>,
+) -> DbResult<()> {
+    let now = Utc::now().timestamp();
+    conn.execute(
+        "UPDATE meetings SET summary=?2, action_items=?3, topics=?4, discussion_flow=?5, \
+         key_decisions=COALESCE(?6, key_decisions), insights_updated_at=?7 WHERE id=?1",
+        params![id, summary, action_items_json, topics_json, discussion_flow_json, key_decisions_json, now],
+    )?;
+    Ok(())
+}
+
+pub fn set_meddpicc(conn: &Connection, id: &str, meddpicc_json: &str) -> DbResult<()> {
+    let now = Utc::now().timestamp();
+    conn.execute(
+        "UPDATE meetings SET meddpicc=?2, insights_updated_at=?3 WHERE id=?1",
+        params![id, meddpicc_json, now],
+    )?;
+    Ok(())
+}
+
+pub fn set_questions(conn: &Connection, id: &str, questions_json: &str) -> DbResult<()> {
+    let now = Utc::now().timestamp();
+    conn.execute(
+        "UPDATE meetings SET suggested_questions=?2, insights_updated_at=?3 WHERE id=?1",
+        params![id, questions_json, now],
+    )?;
+    Ok(())
+}
+
+pub fn set_docs(conn: &Connection, id: &str, docs_json: &str, doc_topics_json: &str) -> DbResult<()> {
+    conn.execute(
+        "UPDATE meetings SET docs=?2, doc_topics=?3 WHERE id=?1",
+        params![id, docs_json, doc_topics_json],
+    )?;
+    Ok(())
+}
+
+pub fn set_investigations(conn: &Connection, id: &str, json: &str) -> DbResult<()> {
+    conn.execute("UPDATE meetings SET investigations=?2 WHERE id=?1", params![id, json])?;
+    Ok(())
+}
+
+pub fn set_manual_speaker_ids(conn: &Connection, id: &str, json: &str) -> DbResult<()> {
+    conn.execute("UPDATE meetings SET manual_speaker_ids=?2 WHERE id=?1", params![id, json])?;
+    Ok(())
+}
+
+pub fn set_attendees(conn: &Connection, id: &str, json: &str) -> DbResult<()> {
+    conn.execute("UPDATE meetings SET attendees=?2 WHERE id=?1", params![id, json])?;
+    Ok(())
+}
+
+pub fn set_calendar_event_id(conn: &Connection, id: &str, event_id: Option<&str>) -> DbResult<()> {
+    conn.execute("UPDATE meetings SET calendar_event_id=?2 WHERE id=?1", params![id, event_id])?;
+    Ok(())
+}
+
+/// Replace a meeting's transcript wholesale (import / trim + regenerate).
+pub fn replace_segments(conn: &Connection, meeting_id: &str, segments: &[TranscriptSegment]) -> DbResult<()> {
+    conn.execute("DELETE FROM transcript_segments WHERE meeting_id=?1", params![meeting_id])?;
+    for seg in segments {
+        add_segment(conn, seg)?;
+    }
+    Ok(())
+}
+
+pub fn find_by_import_source(conn: &Connection, source: &str) -> DbResult<Vec<String>> {
+    let mut stmt = conn.prepare("SELECT import_source FROM meetings WHERE import_source LIKE ?1")?;
+    let rows = stmt.query_map(params![format!("{source}:%")], |r| r.get::<_, String>(0))?;
+    rows.collect()
 }
 
 pub fn set_ended_at(conn: &Connection, id: &str, ended_at: i64) -> DbResult<()> {
@@ -457,7 +584,20 @@ mod tests {
         migrate(&conn).unwrap();
         assert!(has_column(&conn, "meetings", "discussion_flow").unwrap());
         assert!(has_column(&conn, "meetings", "self_speaker_ids").unwrap());
+        assert!(has_column(&conn, "meetings", "doc_topics").unwrap());
         migrate(&conn).unwrap(); // idempotent
+    }
+
+    #[test]
+    fn auto_title_stops_after_manual_rename() {
+        let conn = open_in_memory().unwrap();
+        let m = Meeting::new("New meeting", "en");
+        upsert_meeting(&conn, &m).unwrap();
+        assert!(set_auto_title(&conn, &m.id, "Q4 planning").unwrap());
+        assert_eq!(get_meeting(&conn, &m.id).unwrap().unwrap().title, "Q4 planning");
+        set_title(&conn, &m.id, "My name").unwrap();
+        assert!(!set_auto_title(&conn, &m.id, "Generated").unwrap(), "manual title wins");
+        assert_eq!(get_meeting(&conn, &m.id).unwrap().unwrap().title, "My name");
     }
 
     #[test]

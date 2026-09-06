@@ -3,12 +3,22 @@
 //! only and never hits the API. Managed mode: the server owns prompts and
 //! ignores `model`; BYOK (direct OpenAI) uses the pinned models below.
 //!
-//! Status: request/response contract only — the live insights loop (staggered
-//! incremental calls, apply-safety, UI) is Phase 2 and not wired yet.
+//! `engine` runs the live cadence + final pass; `provider` talks to the backend
+//! (managed) or OpenAI (BYOK); `mcp` is the Docs MCP client for Playbook.
 
 use serde::{Deserialize, Serialize};
 
 use crate::prefs::AppMode;
+
+pub mod engine;
+pub mod mcp;
+pub mod provider;
+
+/// Port of `buildDocsSearchQuery`: last ~600 chars of transcript as the query.
+pub fn build_docs_search_query(transcript: &str) -> String {
+    let n = transcript.chars().count();
+    transcript.chars().skip(n.saturating_sub(600)).collect::<String>().trim().to_string()
+}
 
 /// Every `mode` value the backend accepts. Coaching is intentionally absent.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -167,6 +177,9 @@ pub struct InsightRequest {
     pub codebase_context: Option<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub referenced_files: Vec<String>,
+    /// `catchup` only: whole transcript as background; `transcript` is the recent window.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub full_transcript: Option<String>,
 }
 
 pub const FOCUS_MAX_CHARS: usize = 1_000;

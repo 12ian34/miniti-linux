@@ -1,5 +1,6 @@
-import { useMemo, useState } from "react";
-import { setPinned } from "../api";
+import { useEffect, useMemo, useState } from "react";
+import { hasBridge, insightsFinishing, onInsightsStatus, setPinned } from "../api";
+import { useTauriEvent } from "../useEvent";
 import { displayTitle, duration, groupMeetings, timeOnly } from "../format";
 import { useStore } from "../store";
 import type { Meeting } from "../types";
@@ -8,6 +9,14 @@ export function Sidebar() {
   const store = useStore();
   const { route, navigate, meetings, sidebarOpen, setSidebarOpen, recording, refreshMeetings } = store;
   const [query, setQuery] = useState("");
+  const [finishing, setFinishing] = useState<string[]>([]);
+  useEffect(() => {
+    if (!hasBridge) return;
+    insightsFinishing().then(setFinishing).catch(() => {});
+  }, [meetings]);
+  useTauriEvent(onInsightsStatus, () => {
+    insightsFinishing().then(setFinishing).catch(() => {});
+  });
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -106,8 +115,14 @@ export function Sidebar() {
                     <span className="ellipsis">{displayTitle(m)}</span>
                   </div>
                   <div className="side-row-meta">
-                    <span>{timeOnly(m.started_at)}</span>
-                    {duration(m) && <span>{duration(m)}</span>}
+                    {finishing.includes(m.id) ? (
+                      <span className="finishing">finishing insights…</span>
+                    ) : (
+                      <>
+                        <span>{timeOnly(m.started_at)}</span>
+                        {duration(m) && <span>{duration(m)}</span>}
+                      </>
+                    )}
                     {m.import_source && <span className="pill">{m.import_source}</span>}
                     <button className="ghost pin" title={m.pinned ? "Unpin" : "Pin"} onClick={(e) => togglePin(e, m)}>
                       {m.pinned ? "★" : "☆"}

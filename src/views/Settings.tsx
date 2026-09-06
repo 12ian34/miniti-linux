@@ -6,7 +6,9 @@ import {
   getPrefs,
   getUsage,
   hasBridge,
+  pickFolder,
   portalUrl,
+  probeDocsMcp,
   restoreLicense,
   setPrefs,
   subscribeUrl,
@@ -193,7 +195,7 @@ export function Settings() {
               placeholder="Deepgram key"
             />
           </Field>
-          <Field label="OpenAI API key (insights, not wired yet)">
+          <Field label="OpenAI API key (live insights, questions, catch-up, investigation)">
             <input
               className="input"
               type="password"
@@ -205,7 +207,77 @@ export function Settings() {
         </>
       )}
 
-      <Field label="Webhook URL (POST meeting.saved after each recording)">
+      <section className="card">
+        <h2 className="card-title">AI & insights</h2>
+        <Toggle
+          label="Live insights while recording (summary, questions, speaker names)"
+          checked={prefs.live_insights_enabled}
+          onChange={(v) => update("live_insights_enabled", v)}
+        />
+        <Toggle
+          label="Start new meetings with Sales analysis (MEDDPICC) enabled"
+          checked={prefs.sales_insights_default}
+          onChange={(v) => update("sales_insights_default", v)}
+        />
+        <Field label="Docs MCP URL (Playbook) — HTTPS Streamable HTTP server, e.g. https://docs.example.com/mcp">
+          <div className="rec-controls">
+            <input
+              className="input"
+              value={prefs.docs_mcp_url ?? ""}
+              onChange={(e) => update("docs_mcp_url", e.currentTarget.value || null)}
+              placeholder="https://…/mcp"
+            />
+            <button
+              className="btn"
+              disabled={!prefs.docs_mcp_url}
+              onClick={async () => {
+                setError(null);
+                setNotice(null);
+                try {
+                  const r = await probeDocsMcp(prefs.docs_mcp_url ?? "");
+                  setNotice(`Docs MCP OK — search tool “${r.search_tool}” (${r.tools.length} tools)`);
+                } catch (e) {
+                  setError(errorMessage(e));
+                }
+              }}
+            >
+              Test
+            </button>
+          </div>
+        </Field>
+        <Field label="Codebase folder for investigations">
+          <div className="rec-controls">
+            <input className="input" value={prefs.codebase_root ?? ""} readOnly placeholder="not set" />
+            <button
+              className="btn"
+              onClick={async () => {
+                const p = await pickFolder().catch(() => null);
+                if (p) update("codebase_root", p);
+              }}
+            >
+              Choose…
+            </button>
+            {prefs.codebase_root && (
+              <button className="ghost" onClick={() => update("codebase_root", null)}>clear</button>
+            )}
+          </div>
+        </Field>
+        <Field label="Personal dictionary (comma-separated terms sent to Deepgram as keyterms)">
+          <input
+            className="input"
+            value={prefs.personal_dictionary.join(", ")}
+            onChange={(e) =>
+              update(
+                "personal_dictionary",
+                e.currentTarget.value.split(",").map((s) => s.trim()).filter((s) => s.length > 0),
+              )
+            }
+            placeholder="Lightdash, Ahuja, MEDDPICC"
+          />
+        </Field>
+      </section>
+
+      <Field label="Webhook URL (POST meeting.saved after each recording, meeting.updated after insights)">
         <input
           className="input"
           value={prefs.webhook_url ?? ""}

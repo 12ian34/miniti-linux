@@ -313,3 +313,23 @@ code { font-family: var(--mono); background: var(--surface-card); padding: 1px 5
   .insights { width: 280px; }
   .notes { display: none; }
 }
+
+/* ---- Step 2: insights tools ---------------------------------------------- */
+.insights-status { min-height: 18px; padding: var(--s-2) var(--s-6) 0; }
+.err { color: var(--error); }
+.ok { color: var(--success); }
+.finishing { color: var(--info); }
+.suggestion { position: absolute; right: var(--s-6); top: 44px; z-index: 4; max-width: 420px; margin: 0; }
+.terminal-header { position: relative; }
+.sheet-backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.55); display: flex; align-items: center; justify-content: center; z-index: 20; }
+.sheet { width: min(640px, 92vw); max-height: 80vh; overflow: auto; background: var(--surface-card); border: 1px solid var(--border-light); border-radius: var(--r-xxl); padding: var(--s-8); display: flex; flex-direction: column; gap: var(--s-5); }
+.sheet-head { display: flex; justify-content: space-between; align-items: center; }
+.sheet-body { display: flex; flex-direction: column; gap: var(--s-4); font-size: 14px; line-height: 1.55; }
+.sheet-body ul { margin: 0; padding-left: 1.2em; }
+.notes-area.short { min-height: 72px; flex: none; }
+.tab-strip.inline { border: 1px solid var(--border-light); border-radius: var(--r-md); border-bottom-width: 1px; }
+.topics { display: flex; flex-direction: column; gap: var(--s-2); margin-bottom: var(--s-6); }
+.topic { display: flex; justify-content: space-between; align-items: center; gap: var(--s-4); border: 1px solid var(--border); border-radius: var(--r-md); padding: var(--s-3) var(--s-4); font-size: 12px; }
+.topic.answered { border-color: var(--border-light); }
+.doc-card.high { border-color: var(--amber); }
+.investigation p { white-space: pre-wrap; }
