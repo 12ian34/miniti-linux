@@ -82,8 +82,8 @@ export function Onboarding({ onDone }: GateProps) {
           BYOK (your own Deepgram key).
         </li>
         <li>
-          <strong>Check audio</strong> on Home: your microphone must be detected. System audio is
-          metered today and joins the transcript once the multichannel engine lands.
+          <strong>Check audio</strong> on Home: your microphone must be detected. System audio
+          (remote callers) needs PipeWire with the pulse shim so Miniti can read the monitor.
         </li>
         <li>
           <strong>Record</strong>, then review the transcript in History and your speaking habits in

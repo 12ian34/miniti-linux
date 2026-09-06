@@ -12,6 +12,7 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
+pub mod echo;
 pub mod live;
 
 pub const DEEPGRAM_WS_BASE: &str = "wss://api.deepgram.com/v1/listen";

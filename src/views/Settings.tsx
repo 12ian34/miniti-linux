@@ -304,7 +304,7 @@ export function Settings() {
       </Field>
 
       <Toggle
-        label="Capture system audio (metering only until the multichannel engine lands)"
+        label="Capture system audio (remote speakers via PipeWire monitor; doubles Deepgram minutes)"
         checked={prefs.capture_system_audio}
         onChange={(v) => update("capture_system_audio", v)}
       />

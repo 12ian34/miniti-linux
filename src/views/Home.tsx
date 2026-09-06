@@ -107,7 +107,7 @@ export function Home({ gate }: HomeProps) {
               health
                 ? health.system_audio_available
                   ? prefs?.capture_system_audio
-                    ? "metered · not transcribed yet"
+                    ? "ready · remote speakers on channel 2"
                     : "off"
                   : "not detected (needs pipewire-pulse)"
                 : "…"

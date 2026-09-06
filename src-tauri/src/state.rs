@@ -162,6 +162,22 @@ impl RecordingSession {
         let mic = audio::start_microphone(mic_tx)
             .map_err(|e| format!("microphone unavailable: {e}"))?;
 
+        // System audio decides the Deepgram channel layout, so start it before
+        // the socket. Failure degrades to mono mic with a log line.
+        let mut system_capture = None;
+        let mut system_rx = None;
+        if prefs.capture_system_audio {
+            let (sys_tx, sys_rx) = audio::frame_channel();
+            match audio::start_system(sys_tx) {
+                Ok(handle) => {
+                    system_capture = Some(handle);
+                    system_rx = Some(sys_rx);
+                }
+                Err(e) => tracing::info!("system audio unavailable, recording mic only: {e}"),
+            }
+        }
+        let dual = system_capture.is_some();
+
         let mut meeting = Meeting::new(title, prefs.language.clone());
         meeting.sales_enabled = prefs.sales_insights_default;
         if let Credential::Managed { session_id, .. } = &credential {
@@ -177,16 +193,17 @@ impl RecordingSession {
         }
         let started_at = Instant::now();
 
-        // ---- Deepgram stream (mono mic today; multichannel once system PCM is interleaved)
+        // ---- Deepgram stream: stereo interleave (ch0 mic, ch1 system) when both run.
         let cfg = DeepgramConfig {
             language: prefs.language.clone(),
-            multichannel: false,
+            multichannel: dual,
             keyterms: deepgram_keyterms(prefs),
         };
-        let processor = Processor::new(false, SegmentSource::Microphone);
+        let processor = Processor::new(dual, SegmentSource::Microphone);
         let (pcm_tx, pcm_rx) = tokio::sync::mpsc::channel::<Vec<u8>>(256);
         let (ev_tx, mut ev_rx) = tokio::sync::mpsc::channel::<TranscriptEvent>(512);
         let (st_tx, mut st_rx) = tokio::sync::mpsc::channel::<StreamStatus>(32);
+        let mixer: Arc<Mutex<audio::dual::DualMixer>> = Arc::new(Mutex::new(audio::dual::DualMixer::new()));
 
         let auth_provider = credential.clone().into_auth_provider();
         self.dg_task = Some(tauri::async_runtime::spawn(async move {
@@ -194,54 +211,78 @@ impl RecordingSession {
                 .await;
         }));
 
-        // ---- Persist finals + emit every event to the UI
+        // ---- Persist finals + emit every event to the UI (dual: via the echo
+        // reconciler + 350 ms ordering buffer; mono: straight through).
         let persist_db = db.clone();
         let persist_app = app.clone();
         let meeting_id = meeting.id.clone();
         let sales_default = prefs.sales_insights_default;
+        let mixer_for_consumer = mixer.clone();
         self.consumer_tasks.push(tauri::async_runtime::spawn(async move {
             let mut finals = 0usize;
             let mut sales_suggested = sales_default;
-            while let Some(ev) = ev_rx.recv().await {
-                let mut segment_id = None;
-                if ev.is_final {
-                    finals += 1;
-                    // Local conversation-moment detection: suggest, never run.
-                    if let Some(focus) = insights_engine::detect_investigation_moment(&ev.text) {
-                        let _ = persist_app.emit("investigation_suggested", serde_json::json!({
-                            "meeting_id": meeting_id, "focus": focus
-                        }));
+            let mut reconciler = deepgram::echo::DualChannelReconciler::new();
+            let dominant = move |start: f64, end: f64| -> audio::dual::Source {
+                mixer_for_consumer.lock().map(|m| m.log.dominant_source(start, end)).unwrap_or(audio::dual::Source::Unknown)
+            };
+            let mut persist_final = |ev: &TranscriptEvent| -> Option<String> {
+                finals += 1;
+                if let Some(focus) = insights_engine::detect_investigation_moment(&ev.text) {
+                    let _ = persist_app.emit("investigation_suggested", serde_json::json!({
+                        "meeting_id": meeting_id, "focus": focus
+                    }));
+                }
+                let seg = TranscriptSegment::new(&meeting_id, ev.speaker_id, ev.text.clone(), ev.start, ev.end, ev.source.as_str());
+                if let Ok(conn) = persist_db.lock() {
+                    if let Err(e) = db::add_segment(&conn, &seg) {
+                        tracing::warn!("failed to persist segment: {e}");
                     }
                     if !sales_suggested && finals % 10 == 0 && finals <= 60 {
-                        if let Ok(conn) = persist_db.lock() {
-                            if let Ok(segs) = db::list_segments(&conn, &meeting_id) {
-                                let text: String = segs.iter().map(|s| s.text.as_str()).collect::<Vec<_>>().join(" ");
-                                if insights_engine::sounds_commercial(&text) {
-                                    sales_suggested = true;
-                                    let _ = persist_app.emit("sales_suggested", &meeting_id);
-                                }
+                        if let Ok(segs) = db::list_segments(&conn, &meeting_id) {
+                            let text: String = segs.iter().map(|s| s.text.as_str()).collect::<Vec<_>>().join(" ");
+                            if insights_engine::sounds_commercial(&text) {
+                                sales_suggested = true;
+                                let _ = persist_app.emit("sales_suggested", &meeting_id);
                             }
                         }
                     }
-                    let seg = TranscriptSegment::new(
-                        &meeting_id,
-                        ev.speaker_id,
-                        ev.text.clone(),
-                        ev.start,
-                        ev.end,
-                        ev.source.as_str(),
-                    );
-                    if let Ok(conn) = persist_db.lock() {
-                        if let Err(e) = db::add_segment(&conn, &seg) {
-                            tracing::warn!("failed to persist segment: {e}");
+                }
+                let _ = persist_app.emit("transcript", TranscriptPayload::new(&meeting_id, Some(seg.id.clone()), ev));
+                Some(seg.id)
+            };
+            let emit_interim = |ev: &TranscriptEvent| {
+                let _ = persist_app.emit("transcript", TranscriptPayload::new(&meeting_id, None, ev));
+            };
+            if !dual {
+                while let Some(ev) = ev_rx.recv().await {
+                    if ev.is_final { persist_final(&ev); } else { emit_interim(&ev); }
+                }
+                return;
+            }
+            let mut flush_tick = tokio::time::interval(Duration::from_millis(100));
+            flush_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+            loop {
+                tokio::select! {
+                    maybe = ev_rx.recv() => {
+                        match maybe {
+                            Some(ev) => {
+                                let (interims, committed) = reconciler.ingest(vec![ev], Instant::now(), &dominant);
+                                for i in &interims { emit_interim(i); }
+                                for f in &committed { persist_final(f); }
+                            }
+                            None => {
+                                for f in &reconciler.flush_all(&dominant) { persist_final(f); }
+                                if reconciler.suppressed > 0 {
+                                    tracing::info!("echo reconciliation suppressed {} mic segments", reconciler.suppressed);
+                                }
+                                return;
+                            }
                         }
                     }
-                    segment_id = Some(seg.id);
+                    _ = flush_tick.tick() => {
+                        for f in &reconciler.flush_due(Instant::now(), &dominant) { persist_final(f); }
+                    }
                 }
-                let _ = persist_app.emit(
-                    "transcript",
-                    TranscriptPayload::new(&meeting_id, segment_id, &ev),
-                );
             }
         }));
 
@@ -257,35 +298,43 @@ impl RecordingSession {
             }
         }));
 
-        // ---- Mic reader: meter + forward PCM. Owns the only pcm sender, so
-        // when capture stops the channel closes and Deepgram drains gracefully.
+        // ---- Mic reader: meter + forward PCM (interleaved with system when dual).
+        // Owns the only pcm sender, so when capture stops the channel closes and
+        // Deepgram drains gracefully.
         self.mic = Some(mic);
         let levels_mic = levels.clone();
+        let mixer_for_mic = mixer.clone();
         self.readers.push(std::thread::spawn(move || {
             while let Ok(frame) = mic_rx.recv() {
                 Levels::set(&levels_mic.mic, frame.level);
-                let bytes = audio::pcm::pcm16_to_le_bytes(&frame.samples);
+                let bytes = if dual {
+                    let interleaved = match mixer_for_mic.lock() {
+                        Ok(mut m) => m.interleave_mic(&frame.samples),
+                        Err(_) => audio::pcm::interleave_stereo_pcm16(&frame.samples, &[]),
+                    };
+                    audio::pcm::pcm16_to_le_bytes(&interleaved)
+                } else {
+                    audio::pcm::pcm16_to_le_bytes(&frame.samples)
+                };
                 if pcm_tx.blocking_send(bytes).is_err() {
                     break;
                 }
             }
         }));
 
-        // ---- System audio: metering only for now (interleave engine is TODO).
-        if prefs.capture_system_audio {
-            let (sys_tx, sys_rx) = audio::frame_channel();
-            match audio::start_system(sys_tx) {
-                Ok(handle) => {
-                    self.system = Some(handle);
-                    let levels_sys = levels.clone();
-                    self.readers.push(std::thread::spawn(move || {
-                        while let Ok(frame) = sys_rx.recv() {
-                            Levels::set(&levels_sys.system, frame.level);
-                        }
-                    }));
+        // ---- System reader: meter + ring buffer for the mic thread to drain.
+        if let (Some(handle), Some(sys_rx)) = (system_capture, system_rx) {
+            self.system = Some(handle);
+            let levels_sys = levels.clone();
+            let mixer_for_sys = mixer.clone();
+            self.readers.push(std::thread::spawn(move || {
+                while let Ok(frame) = sys_rx.recv() {
+                    Levels::set(&levels_sys.system, frame.level);
+                    if let Ok(mut m) = mixer_for_sys.lock() {
+                        m.push_system(&frame.samples);
+                    }
                 }
-                Err(e) => tracing::info!("system audio unavailable: {e}"),
-            }
+            }));
         }
 
         // ---- Live insights engine (cadence + apply live in the DB)
@@ -606,7 +655,7 @@ pub fn environment_health(state: State<AppState>) -> EnvHealth {
         app_name: "Miniti Linux".to_string(),
         app_version: APP_VERSION.to_string(),
         platform: api::PLATFORM.to_string(),
-        pcm_contract: "16 kHz PCM16 LE • mono mic (mic+system interleave pending)".to_string(),
+        pcm_contract: "16 kHz PCM16 LE • mono mic, or stereo mic+system (multichannel)".to_string(),
         os: std::env::consts::OS.to_string(),
         tauri_bridge: true,
         microphone_available: audio::microphone_available(),

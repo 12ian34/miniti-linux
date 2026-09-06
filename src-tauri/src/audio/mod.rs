@@ -1,6 +1,7 @@
 //! Audio subsystem: PCM conversion helpers and live capture sources.
 
 pub mod capture;
+pub mod dual;
 pub mod pcm;
 
 pub use capture::{
