@@ -13,6 +13,7 @@ import {
   setSpeakerName,
 } from "../api";
 import { displayTitle, duration, fallbackSpeakerLabel, when } from "../format";
+import { useTauriEvent } from "../useEvent";
 import type { Meeting, MeetingDetail } from "../types";
 
 export function History() {
@@ -35,12 +36,7 @@ export function History() {
     void refresh();
   }, [refresh]);
 
-  useEffect(() => {
-    if (!hasBridge) return;
-    let unlisten: (() => void) | undefined;
-    onMeetingSaved(() => void refresh()).then((fn) => (unlisten = fn));
-    return () => unlisten?.();
-  }, [refresh]);
+  useTauriEvent(onMeetingSaved, () => void refresh());
 
   async function open(id: string) {
     try {

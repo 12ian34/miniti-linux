@@ -11,6 +11,7 @@ import {
   stopRecording,
 } from "../api";
 import { elapsed, streamStatusText } from "../format";
+import { useTauriEvent } from "../useEvent";
 import type { Levels, StreamStatus, TranscriptEventPayload } from "../types";
 
 interface Line {
@@ -68,20 +69,11 @@ export function Recording() {
     return () => window.clearInterval(id);
   }, []);
 
-  useEffect(() => {
-    if (!hasBridge) return;
-    let unlistenT: (() => void) | undefined;
-    let unlistenS: (() => void) | undefined;
-    onTranscript((ev) => {
-      seq.current += 1;
-      setLines((prev) => applyEvent(prev, ev, seq.current));
-    }).then((fn) => (unlistenT = fn));
-    onTranscriptionStatus(setStatus).then((fn) => (unlistenS = fn));
-    return () => {
-      unlistenT?.();
-      unlistenS?.();
-    };
-  }, []);
+  useTauriEvent(onTranscript, (ev) => {
+    seq.current += 1;
+    setLines((prev) => applyEvent(prev, ev, seq.current));
+  });
+  useTauriEvent(onTranscriptionStatus, setStatus);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
