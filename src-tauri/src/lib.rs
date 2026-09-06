@@ -41,6 +41,7 @@ use state::{
     restore_license, search_meetings, set_meeting_title, set_notes, set_pinned, set_prefs,
     set_sales_enabled, set_speaker_name, start_recording, stop_recording, subscribe_url,
     trim_transcript, AppState, Levels, RecordingSession,
+    recording_presence, disable_nudge_kind,
 };
 
 fn init_tracing() {
@@ -88,6 +89,7 @@ fn build_state() -> AppState {
         last_status: Arc::new(Mutex::new(None)),
         finishing: Arc::new(Mutex::new(std::collections::HashSet::new())),
         activity: Arc::new(state::ActivityTrack::default()),
+        audio_health: Arc::new(Mutex::new(state::AudioHealth::default())),
     }
 }
 
@@ -139,6 +141,8 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             environment_health,
+            recording_presence,
+            disable_nudge_kind,
             auth_status,
             auth_create_account,
             auth_restore_account,

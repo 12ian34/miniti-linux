@@ -35,6 +35,7 @@ export interface Prefs {
   personal_dictionary: string[];
   notifications_enabled: boolean;
   live_guidance_enabled: boolean;
+  disabled_nudge_kinds: string[];
   auto_stop_minutes: number;
   calendar_auto_start: boolean;
   calendar_auto_stop: boolean;
@@ -54,11 +55,33 @@ export interface SmartPrompt {
   countdown?: number | null;
 }
 
+export type NudgeKind = "question" | "monologue" | "filler" | "sales";
+
 export interface RecordingNudge {
   id: string;
-  kind: "question" | "monologue" | "filler";
+  kind: NudgeKind;
   title: string;
   message: string;
+  meeting_id?: string | null;
+}
+
+export type AudioHealth = "healthy" | "recovering" | "degraded";
+
+/** Shared presentation model for the tray and floating surface (macOS RecordingPresence). */
+export interface RecordingPresence {
+  is_recording: boolean;
+  elapsed_seconds: number;
+  elapsed_text: string;
+  meeting_id: string | null;
+  meeting_title: string;
+  lifecycle_status: string | null;
+  transcription_status: string;
+  audio_status: string;
+  audio_health: AudioHealth;
+  stream_state: string | null;
+  grace_remaining_seconds: number | null;
+  grace_app_name: string | null;
+  call_app_name: string | null;
 }
 
 export interface DeepLinkEvent {

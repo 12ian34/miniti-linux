@@ -442,9 +442,49 @@ impl SmartPrompt {
 #[derive(Debug, Clone, Serialize)]
 pub struct RecordingNudge {
     pub id: String,
+    /// question | monologue | filler | sales
     pub kind: &'static str,
     pub title: String,
     pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub meeting_id: Option<String>,
+}
+
+/// Deliver a nudge: the floating surface / in-app UI while miniti is frontmost,
+/// a desktop notification otherwise (macOS `shouldUseFloatingNudge`).
+pub fn deliver_nudge(app: &AppHandle, nudge: &RecordingNudge, prefs: &crate::prefs::Prefs) {
+    if prefs.disabled_nudge_kinds.iter().any(|k| k == nudge.kind) {
+        return;
+    }
+    let _ = app.emit("recording_nudge", nudge);
+    crate::shell::deliver_guidance(
+        app,
+        &nudge.title,
+        &nudge.message,
+        prefs.show_floating_indicator && prefs.notifications_enabled,
+    );
+}
+
+/// The one-per-meeting suggestion to turn on Sales analysis.
+pub fn sales_nudge(meeting_id: &str) -> RecordingNudge {
+    RecordingNudge {
+        id: format!("sales-{meeting_id}"),
+        kind: "sales",
+        title: "Sounds like a sales call".into(),
+        message: "Enable Sales (MEDDPICC) analysis for this meeting?".into(),
+        meeting_id: Some(meeting_id.to_string()),
+    }
+}
+
+/// What the floating surface and tray show about the call (macOS
+/// `RecordingPresence.lifecycleStatus` / grace fields).
+#[derive(Debug, Clone, Serialize, Default, PartialEq)]
+pub struct SmartPresence {
+    /// "Zoom call active", "Zoom call not detected", "No supported call detected".
+    pub lifecycle_status: Option<String>,
+    pub grace_remaining_seconds: Option<u64>,
+    pub grace_app_name: Option<String>,
+    pub call_app_name: Option<String>,
 }
 
 /// Which prompt is pending and what its buttons do.
@@ -1113,14 +1153,10 @@ impl MonitorState {
         if !prefs.live_guidance_enabled {
             return;
         }
-        let deliver = |n: RecordingNudge| {
-            let _ = app.emit("recording_nudge", &n);
-            crate::shell::deliver_guidance(
-                app,
-                &n.title,
-                &n.message,
-                prefs.show_floating_indicator && prefs.notifications_enabled,
-            );
+        let meeting_id = self.current_meeting.clone();
+        let deliver = |mut n: RecordingNudge| {
+            n.meeting_id = meeting_id.clone();
+            deliver_nudge(app, &n, prefs);
         };
         if let Some(q) = high_questions
             .iter()
@@ -1138,6 +1174,7 @@ impl MonitorState {
                     kind: "question",
                     title: "Worth asking".into(),
                     message: q.clone(),
+                    meeting_id: None,
                 });
             }
         }
@@ -1161,6 +1198,7 @@ impl MonitorState {
                     message: format!(
                         "You've been speaking for {secs}s. Hand the conversation back?"
                     ),
+                    meeting_id: None,
                 });
             }
         } else {
@@ -1180,6 +1218,7 @@ impl MonitorState {
                     message: format!(
                         "{rate:.0} fillers a minute in the last minute. Try a silent beat."
                     ),
+                    meeting_id: None,
                 });
             }
         }
@@ -1233,6 +1272,45 @@ impl MonitorState {
         }
         self.clear_prompt(app);
         actions
+    }
+
+    /// Call-lifecycle status for the floating surface and tray.
+    pub fn presence(&self, recording: bool, now: Instant) -> SmartPresence {
+        let associated = self.engine.associated_app.clone();
+        let grace = match &self.pending {
+            Some(Pending::EndingGrace { deadline }) => {
+                Some(deadline.saturating_duration_since(now).as_secs())
+            }
+            _ => None,
+        };
+        let app_name = associated.as_ref().map(|a| a.name.clone());
+        let lifecycle = if grace.is_some() {
+            app_name.as_ref().map(|n| format!("{n} call ended"))
+        } else if recording {
+            Some(match &associated {
+                Some(a) => {
+                    let still_active = self
+                        .last_snapshot
+                        .as_ref()
+                        .map(|snap| snap.active.iter().any(|c| c.id == a.id))
+                        .unwrap_or(false);
+                    if still_active {
+                        format!("{} call active", a.name)
+                    } else {
+                        format!("{} call not detected", a.name)
+                    }
+                }
+                None => "No supported call detected".to_string(),
+            })
+        } else {
+            None
+        };
+        SmartPresence {
+            lifecycle_status: lifecycle,
+            grace_remaining_seconds: grace,
+            grace_app_name: grace.and(app_name.clone()),
+            call_app_name: app_name,
+        }
     }
 
     pub fn prompt_kind(&self) -> Option<&'static str> {

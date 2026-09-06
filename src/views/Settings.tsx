@@ -423,7 +423,22 @@ export function Settings() {
           <>
             <p className="muted small">Decisions and guidance show on the floating surface while miniti is in front, and as desktop notifications otherwise. The tray menu always carries the same decisions.</p>
             <C id="notify"><Toggle label="Desktop notifications when miniti is not in front (Smart-meeting decisions, guidance)" checked={prefs.notifications_enabled} onChange={(v) => update("notifications_enabled", v)} /></C>
-            <C id="guidance"><Toggle label="Live guidance nudges (high-priority questions, long monologues, filler bursts)" checked={prefs.live_guidance_enabled} onChange={(v) => update("live_guidance_enabled", v)} /></C>
+            <C id="guidance">
+              <Toggle label="Live guidance nudges (high-priority questions, long monologues, filler bursts)" checked={prefs.live_guidance_enabled} onChange={(v) => update("live_guidance_enabled", v)} />
+              {prefs.live_guidance_enabled && (
+                <div className="rows">
+                  {([["question", "Worth asking — a high-priority question surfaces"], ["monologue", "Long stretch — you have been speaking for a while"], ["filler", "Filler burst — many fillers in the last minute"], ["sales", "Sounds like a sales call — offer Sales analysis"]] as const).map(([kind, label]) => (
+                    <Toggle
+                      key={kind}
+                      label={label}
+                      checked={!(prefs.disabled_nudge_kinds ?? []).includes(kind)}
+                      onChange={(on) => update("disabled_nudge_kinds", on ? (prefs.disabled_nudge_kinds ?? []).filter((k) => k !== kind) : [...(prefs.disabled_nudge_kinds ?? []), kind])}
+                    />
+                  ))}
+                  <p className="muted small">"Don't remind me" on the floating surface switches a kind off here.</p>
+                </div>
+              )}
+            </C>
           </>
         )}
 

@@ -182,12 +182,19 @@ pub fn set_tray_decision(app: &AppHandle, decision: Option<(&str, &str, &str)>) 
 }
 
 /// Create (once) and show the floating recording surface: always on top,
-/// undecorated, not in the taskbar, never steals focus. Default position is
-/// the top-right corner with a 16 px inset (macOS `positionInDefaultCorner`);
-/// the webview restores a user-moved position from its own storage. Wayland
-/// compositors may ignore positioning; that is the documented Linux limit.
+/// undecorated, not in the taskbar, never takes keyboard focus (so clicking
+/// "end meeting" does not pull focus from the call). Default position is the
+/// top-right corner with a 16 px inset (macOS `positionInDefaultCorner`); the
+/// webview restores a user-moved position from its own storage and sizes the
+/// window to its content. On Wayland the surface becomes a layer-shell overlay
+/// when the compositor supports it (Hyprland, Sway, KDE); GNOME falls back to a
+/// normal window whose placement the compositor decides.
 pub const PRESENCE_W: f64 = 236.0;
 pub const PRESENCE_H: f64 = 52.0;
+pub const PRESENCE_MAX_W: f64 = 360.0;
+pub const PRESENCE_MAX_H: f64 = 320.0;
+const PRESENCE_MARGIN: f64 = 16.0;
+const SCREEN_MARGIN: f64 = 8.0;
 
 pub fn show_presence(app: &AppHandle) {
     if let Some(w) = app.get_webview_window(PRESENCE_LABEL) {
@@ -204,6 +211,7 @@ pub fn show_presence(app: &AppHandle) {
         .always_on_top(true)
         .skip_taskbar(true)
         .resizable(false)
+        .focusable(false)
         .focused(false)
         .visible(false);
     // Top-right of the primary monitor, computed before the window exists so
@@ -212,12 +220,14 @@ pub fn show_presence(app: &AppHandle) {
         let scale = mon.scale_factor();
         let size = mon.size();
         let pos = mon.position();
-        let x = pos.x as f64 / scale + size.width as f64 / scale - PRESENCE_W - 16.0;
-        let y = pos.y as f64 / scale + 16.0;
+        let x = pos.x as f64 / scale + size.width as f64 / scale - PRESENCE_W - PRESENCE_MARGIN;
+        let y = pos.y as f64 / scale + PRESENCE_MARGIN;
         builder = builder.position(x.max(0.0), y.max(0.0));
     }
     match builder.build() {
         Ok(w) => {
+            #[cfg(target_os = "linux")]
+            linux_surface::apply(&w);
             let _ = w.show();
         }
         Err(e) => tracing::warn!("floating surface unavailable: {e}"),
@@ -230,29 +240,177 @@ pub fn hide_presence(app: &AppHandle) {
     }
 }
 
-/// Expand + raise the surface for a decision (never activates the app).
+/// Raise the surface for a decision and ask the UI to expand (never activates
+/// the app). macOS `RecordingIndicatorWindowPolicy.shouldOrderFront`.
 pub fn raise_presence(app: &AppHandle) {
     if let Some(w) = app.get_webview_window(PRESENCE_LABEL) {
-        let _ = w.set_size(tauri::LogicalSize::new(360.0, 150.0));
         let _ = w.show();
         let _ = w.set_always_on_top(true);
     }
+    let _ = app.emit("presence_attention", ());
 }
 
+/// A decision cleared: let the UI collapse if it auto-expanded.
 pub fn shrink_presence(app: &AppHandle) {
-    if let Some(w) = app.get_webview_window(PRESENCE_LABEL) {
-        let _ = w.set_size(tauri::LogicalSize::new(PRESENCE_W, PRESENCE_H));
+    let _ = app.emit("presence_settle", ());
+}
+
+/// Whether the surface is a layer-shell overlay (position fixed by the
+/// compositor, so drag and clamping are skipped).
+pub fn presence_is_layer_surface() -> bool {
+    #[cfg(target_os = "linux")]
+    {
+        linux_surface::is_layer_surface()
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        false
     }
 }
 
-/// Webview-driven resize (expand for decisions/nudges, collapse back).
+/// Webview-driven resize to fit content (the SwiftUI panel sizes to its ideal
+/// size), then keep the whole window on its monitor with an 8 px margin.
 #[tauri::command]
 pub fn resize_presence(app: AppHandle, width: f64, height: f64) {
-    if let Some(w) = app.get_webview_window(PRESENCE_LABEL) {
-        let _ = w.set_size(tauri::LogicalSize::new(
-            width.clamp(200.0, 360.0),
-            height.clamp(44.0, 260.0),
-        ));
+    let Some(w) = app.get_webview_window(PRESENCE_LABEL) else {
+        return;
+    };
+    let size = tauri::LogicalSize::new(
+        width.clamp(200.0, PRESENCE_MAX_W),
+        height.clamp(44.0, PRESENCE_MAX_H),
+    );
+    let _ = w.set_size(size);
+    if !presence_is_layer_surface() {
+        clamp_to_monitor(&w, size);
+    }
+}
+
+/// macOS `RecordingIndicatorGeometry.constrainedFrame`: never let the expanded
+/// controls hang off the visible screen.
+fn clamp_to_monitor(w: &tauri::WebviewWindow, size: tauri::LogicalSize<f64>) {
+    let Ok(Some(mon)) = w.current_monitor() else {
+        return;
+    };
+    let scale = mon.scale_factor();
+    let Ok(pos) = w.outer_position() else { return };
+    let (x, y) = (pos.x as f64 / scale, pos.y as f64 / scale);
+    let (mx, my) = (
+        mon.position().x as f64 / scale,
+        mon.position().y as f64 / scale,
+    );
+    let (mw, mh) = (
+        mon.size().width as f64 / scale,
+        mon.size().height as f64 / scale,
+    );
+    let (min_x, min_y) = (mx + SCREEN_MARGIN, my + SCREEN_MARGIN);
+    let max_x = (mx + mw - SCREEN_MARGIN - size.width).max(min_x);
+    let max_y = (my + mh - SCREEN_MARGIN - size.height).max(min_y);
+    let nx = x.clamp(min_x, max_x);
+    let ny = y.clamp(min_y, max_y);
+    if (nx - x).abs() > 0.5 || (ny - y).abs() > 0.5 {
+        let _ = w.set_position(tauri::LogicalPosition::new(nx, ny));
+    }
+}
+
+/// GTK-level behaviour for the floating surface on Linux.
+#[cfg(target_os = "linux")]
+mod linux_surface {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    use gtk::prelude::*;
+
+    static LAYER_SURFACE: AtomicBool = AtomicBool::new(false);
+
+    pub fn is_layer_surface() -> bool {
+        LAYER_SURFACE.load(Ordering::Relaxed)
+    }
+
+    /// Must run after `build()` (window exists, not yet realized because it
+    /// was created hidden) and before `show()`.
+    pub fn apply(w: &tauri::WebviewWindow) {
+        let Ok(window) = w.gtk_window() else { return };
+        // Utility windows are not focus targets for the WM and never appear in
+        // alt-tab; keep-above + stick mirror the NSPanel floating level.
+        window.set_type_hint(gtk::gdk::WindowTypeHint::Utility);
+        window.set_accept_focus(false);
+        window.set_focus_on_map(false);
+        window.set_keep_above(true);
+        window.stick();
+        if std::env::var_os("WAYLAND_DISPLAY").is_some()
+            && std::env::var("MINITI_NO_LAYER_SHELL").is_err()
+        {
+            match layer_shell::init(&window) {
+                Ok(()) => {
+                    LAYER_SURFACE.store(true, Ordering::Relaxed);
+                    tracing::info!("floating surface: wlr-layer-shell overlay");
+                }
+                Err(e) => tracing::info!(
+                    "floating surface: layer-shell unavailable ({e}); compositor decides placement"
+                ),
+            }
+        }
+    }
+
+    /// Minimal dlopen binding to gtk-layer-shell so it stays an optional
+    /// runtime dependency (`libgtk-layer-shell.so.0`). Enum values follow
+    /// gtk-layer-shell.h: layers background=0 bottom=1 top=2 overlay=3; edges
+    /// left=0 right=1 top=2 bottom=3; keyboard mode none=0.
+    mod layer_shell {
+        use gtk::glib::translate::ToGlibPtr;
+        use libloading::{Library, Symbol};
+
+        type GtkWindowPtr = *mut gtk::ffi::GtkWindow;
+        const LAYER_TOP: i32 = 2;
+        const EDGE_RIGHT: i32 = 1;
+        const EDGE_TOP: i32 = 2;
+        const KEYBOARD_NONE: i32 = 0;
+
+        pub fn init(window: &gtk::ApplicationWindow) -> Result<(), String> {
+            // SAFETY: loading a well-known system library by soname; every
+            // symbol is used with the C signature from gtk-layer-shell.h.
+            unsafe {
+                let lib = Library::new("libgtk-layer-shell.so.0").map_err(|e| e.to_string())?;
+                let is_supported: Symbol<unsafe extern "C" fn() -> i32> = lib
+                    .get(b"gtk_layer_is_supported\0")
+                    .map_err(|e| e.to_string())?;
+                if is_supported() == 0 {
+                    return Err("compositor does not support wlr-layer-shell".into());
+                }
+                let init_for_window: Symbol<unsafe extern "C" fn(GtkWindowPtr)> = lib
+                    .get(b"gtk_layer_init_for_window\0")
+                    .map_err(|e| e.to_string())?;
+                let set_layer: Symbol<unsafe extern "C" fn(GtkWindowPtr, i32)> = lib
+                    .get(b"gtk_layer_set_layer\0")
+                    .map_err(|e| e.to_string())?;
+                let set_anchor: Symbol<unsafe extern "C" fn(GtkWindowPtr, i32, i32)> = lib
+                    .get(b"gtk_layer_set_anchor\0")
+                    .map_err(|e| e.to_string())?;
+                let set_margin: Symbol<unsafe extern "C" fn(GtkWindowPtr, i32, i32)> = lib
+                    .get(b"gtk_layer_set_margin\0")
+                    .map_err(|e| e.to_string())?;
+                let set_keyboard: Symbol<unsafe extern "C" fn(GtkWindowPtr, i32)> = lib
+                    .get(b"gtk_layer_set_keyboard_mode\0")
+                    .map_err(|e| e.to_string())?;
+                let set_namespace: Result<
+                    Symbol<unsafe extern "C" fn(GtkWindowPtr, *const std::os::raw::c_char)>,
+                    _,
+                > = lib.get(b"gtk_layer_set_namespace\0");
+                let ptr: GtkWindowPtr = window.upcast_ref::<gtk::Window>().to_glib_none().0;
+                init_for_window(ptr);
+                if let Ok(set_namespace) = set_namespace {
+                    set_namespace(ptr, c"miniti-presence".as_ptr());
+                }
+                set_layer(ptr, LAYER_TOP);
+                set_anchor(ptr, EDGE_TOP, 1);
+                set_anchor(ptr, EDGE_RIGHT, 1);
+                set_margin(ptr, EDGE_TOP, super::super::PRESENCE_MARGIN as i32);
+                set_margin(ptr, EDGE_RIGHT, super::super::PRESENCE_MARGIN as i32);
+                set_keyboard(ptr, KEYBOARD_NONE);
+                // Keep the library loaded for the life of the process.
+                std::mem::forget(lib);
+            }
+            Ok(())
+        }
     }
 }
 

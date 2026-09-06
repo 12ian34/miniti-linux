@@ -338,15 +338,23 @@ code { font-family: var(--mono); background: var(--surface-card); padding: 1px 5
 .device-row .sub { color: var(--text-dim); font-size: 11px; }
 
 /* ---- Floating presence (RecordingIndicatorView) --------------------------------- */
-.presence { height: 100vh; background: rgba(9,9,11,0.96); border: 1px solid var(--border); border-radius: 10px; padding: var(--s-5); display: flex; flex-direction: column; gap: var(--s-4); user-select: none; overflow: hidden; }
-.presence-row { display: flex; align-items: center; gap: var(--s-4); min-height: 24px; background: transparent; border: none; padding: 0; cursor: default; width: 100%; text-align: left; }
-.presence .glyph { font-size: 11px; } .presence .glyph.rec { color: var(--recording); } .presence .glyph.warn { color: var(--warning); }
+.presence { background: rgba(9,9,11,0.96); border: 1px solid var(--border); border-radius: 10px; padding: 10px; display: flex; flex-direction: column; gap: 0; user-select: none; overflow: hidden; box-sizing: border-box; }
+.presence-row { display: flex; align-items: center; gap: var(--s-4); min-height: 24px; background: transparent; border: none; padding: 0; cursor: default; width: 100%; text-align: left; color: var(--text); }
+.presence .glyph { font-size: 11px; width: 12px; text-align: center; } .presence .glyph.rec { color: var(--recording); } .presence .glyph.warn { color: var(--warning); }
 .presence-title { font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
-.presence-spacer { flex: 1; }
-.chev-box { width: 20px; height: 20px; display: inline-flex; align-items: center; justify-content: center; font-size: 9px; border-radius: 5px; background: var(--bg-tertiary); border: 1px solid var(--border); }
-.presence-body { border-top: 1px solid var(--border); padding-top: var(--s-4); display: flex; flex-direction: column; gap: var(--s-3); }
-.presence-actions { display: flex; gap: var(--s-3); flex-wrap: wrap; align-items: center; }
-.nudge { font-size: 12px; border-left: 3px solid var(--border-hover); padding-left: var(--s-4); }
-.nudge.question { border-left-color: var(--coach-questions); } .nudge.monologue { border-left-color: var(--coach-monologue); } .nudge.filler { border-left-color: var(--coach-fillers); }
+.presence-app { font-size: 11px; color: var(--text-muted); max-width: 90px; }
+.presence-spacer { flex: 1; min-width: 12px; }
+.chev-box { width: 20px; height: 20px; display: inline-flex; align-items: center; justify-content: center; font-size: 9px; border-radius: 5px; background: var(--bg-tertiary); border: 1px solid var(--border); flex: none; }
+.presence-body { border-top: 1px solid var(--border); margin-top: var(--s-4); padding-top: var(--s-4); display: flex; flex-direction: column; gap: var(--s-3); }
+.presence-meeting { font-size: 12px; font-weight: 600; }
+.presence-status { font-size: 11px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.presence-status.warn { color: var(--warning); }
+.presence-message { font-size: 11px; line-height: 1.4; }
+.presence-message.muted { color: var(--text-muted); }
+.brand-inline { font-family: var(--mono); font-weight: 600; } .brand-inline .hex { color: var(--green-gh); font-weight: 700; }
+.presence-actions { display: flex; gap: var(--s-3); flex-wrap: wrap; align-items: center; border-top: 1px solid var(--border); padding-top: var(--s-3); margin-top: var(--s-1); }
+.presence .control { height: 28px; padding: 0 9px; }
+.nudge { font-size: 11px; line-height: 1.4; border-left: 3px solid var(--border-hover); padding-left: var(--s-4); }
+.nudge.question { border-left-color: var(--coach-questions); } .nudge.monologue { border-left-color: var(--coach-monologue); } .nudge.filler { border-left-color: var(--coach-fillers); } .nudge.sales { border-left-color: var(--insight-sales, var(--amber)); }
 
 @media (max-width: 900px) { .insights { width: 280px; } }

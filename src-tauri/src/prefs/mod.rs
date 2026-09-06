@@ -48,6 +48,8 @@ pub struct Prefs {
     pub notifications_enabled: bool,
     /// Opt-in live guidance (question / monologue / filler nudges).
     pub live_guidance_enabled: bool,
+    /// Nudge kinds the user asked not to see again ("don't remind me").
+    pub disabled_nudge_kinds: Vec<String>,
     /// Silence auto-stop in minutes (0 = off; macOS offers 3/5/10/15).
     pub auto_stop_minutes: i64,
     /// Calendar automation: auto-start upcoming events / auto-stop at the end.
@@ -78,6 +80,7 @@ impl Default for Prefs {
             personal_dictionary: Vec::new(),
             notifications_enabled: true,
             live_guidance_enabled: false,
+            disabled_nudge_kinds: Vec::new(),
             auto_stop_minutes: 0,
             calendar_auto_start: false,
             calendar_auto_stop: false,

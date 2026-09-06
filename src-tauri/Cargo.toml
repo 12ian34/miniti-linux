@@ -45,6 +45,13 @@ rand_core = { version = "0.6", features = ["getrandom"] }
 sha2 = "0.10"
 base64 = "0.22"
 
+# Linux-only: GTK hints for the floating surface (never take focus, stay
+# above) and an optional wlr-layer-shell binding loaded at runtime with dlopen,
+# so libgtk-layer-shell is not a hard dependency.
+[target.'cfg(target_os = "linux")'.dependencies]
+gtk = "0.18"
+libloading = "0.8"
+
 [dev-dependencies]
 tempfile = "3"
 

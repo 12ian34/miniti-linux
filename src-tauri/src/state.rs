@@ -343,6 +343,9 @@ impl RecordingSession {
                             if insights_engine::sounds_commercial(&text) {
                                 sales_suggested = true;
                                 let _ = persist_app.emit("sales_suggested", &meeting_id);
+                                if let Ok(prefs) = persist_app.state::<AppState>().prefs.lock() {
+                                    crate::smart::deliver_nudge(&persist_app, &crate::smart::sales_nudge(&meeting_id), &prefs);
+                                }
                             }
                         }
                     }
@@ -498,6 +501,132 @@ pub struct AppState {
     pub finishing: Finishing,
     /// Transcript activity for Smart meetings.
     pub activity: Arc<ActivityTrack>,
+    /// Capture health surfaced on the floating surface (macOS `AudioRecoveryState`).
+    pub audio_health: Arc<Mutex<AudioHealth>>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum AudioHealth {
+    #[default]
+    Healthy,
+    Recovering,
+    Degraded,
+}
+
+impl AudioHealth {
+    pub fn presence_label(self) -> &'static str {
+        match self {
+            AudioHealth::Healthy => "Audio: healthy",
+            AudioHealth::Recovering => "Audio: recovering…",
+            AudioHealth::Degraded => "Audio: degraded",
+        }
+    }
+}
+
+/// One presentation model shared by the tray and the floating surface so their
+/// wording cannot diverge (macOS `AppState.RecordingPresence`).
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct RecordingPresence {
+    pub is_recording: bool,
+    pub elapsed_seconds: f64,
+    pub elapsed_text: String,
+    pub meeting_id: Option<String>,
+    pub meeting_title: String,
+    pub lifecycle_status: Option<String>,
+    pub transcription_status: String,
+    pub audio_status: String,
+    pub audio_health: AudioHealth,
+    pub stream_state: Option<String>,
+    pub grace_remaining_seconds: Option<u64>,
+    pub grace_app_name: Option<String>,
+    pub call_app_name: Option<String>,
+}
+
+pub fn presence_duration(seconds: f64) -> String {
+    let total = seconds.max(0.0) as u64;
+    let (h, m, s) = (total / 3600, (total % 3600) / 60, total % 60);
+    if h > 0 {
+        format!("{h}:{m:02}:{s:02}")
+    } else {
+        format!("{m:02}:{s:02}")
+    }
+}
+
+fn stream_labels(stream: Option<&StreamStatus>) -> (Option<&'static str>, &'static str) {
+    match stream {
+        Some(StreamStatus::Connecting) => (Some("connecting"), "Transcription: connecting"),
+        Some(StreamStatus::Connected { .. }) => (Some("connected"), "Transcription: live"),
+        Some(StreamStatus::Reconnecting { .. }) => {
+            (Some("reconnecting"), "Transcription: reconnecting")
+        }
+        Some(StreamStatus::Ended) => (Some("ended"), "Transcription: off"),
+        Some(StreamStatus::Failed { .. }) => (Some("failed"), "Transcription: degraded"),
+        None => (None, "Transcription: off"),
+    }
+}
+
+/// Derive the presence model from live state. Cheap: no transcript work.
+pub fn build_presence(app: &AppHandle) -> RecordingPresence {
+    let state = app.state::<AppState>();
+    let (recording, meeting_id, title, elapsed) = state
+        .session
+        .lock()
+        .map(|s| {
+            (
+                s.running,
+                s.meeting.as_ref().map(|m| m.id.clone()),
+                s.meeting
+                    .as_ref()
+                    .map(|m| m.display_title())
+                    .unwrap_or_default(),
+                s.started_at
+                    .map(|t| t.elapsed().as_secs_f64())
+                    .unwrap_or(0.0),
+            )
+        })
+        .unwrap_or((false, None, String::new(), 0.0));
+    let stream = state.last_status.lock().ok().and_then(|s| s.clone());
+    let (stream_state, transcription) = stream_labels(stream.as_ref());
+    let health = state.audio_health.lock().map(|h| *h).unwrap_or_default();
+    let smart = crate::smart::slot(app)
+        .and_then(|slot| {
+            slot.lock()
+                .ok()
+                .map(|m| m.presence(recording, Instant::now()))
+        })
+        .unwrap_or_default();
+    RecordingPresence {
+        is_recording: recording,
+        elapsed_seconds: elapsed,
+        elapsed_text: presence_duration(elapsed),
+        meeting_id,
+        meeting_title: title,
+        lifecycle_status: smart.lifecycle_status,
+        transcription_status: transcription.to_string(),
+        audio_status: health.presence_label().to_string(),
+        audio_health: health,
+        stream_state: stream_state.map(str::to_string),
+        grace_remaining_seconds: smart.grace_remaining_seconds,
+        grace_app_name: smart.grace_app_name,
+        call_app_name: smart.call_app_name,
+    }
+}
+
+#[tauri::command]
+pub fn recording_presence(app: AppHandle) -> RecordingPresence {
+    build_presence(&app)
+}
+
+/// "Don't remind me": stop showing one kind of live-guidance nudge.
+#[tauri::command]
+pub fn disable_nudge_kind(state: State<AppState>, kind: String) -> Result<Prefs, String> {
+    let mut prefs = state.prefs.lock().map_err(|_| "prefs poisoned")?;
+    if !prefs.disabled_nudge_kinds.contains(&kind) {
+        prefs.disabled_nudge_kinds.push(kind);
+    }
+    prefs.save().map_err(|e| e.to_string())?;
+    Ok(prefs.clone())
 }
 
 /// Personal dictionary + system terms as Deepgram keyterms (capped in the URL builder).
@@ -1156,15 +1285,9 @@ pub fn spawn_shell_ticker(app: AppHandle) {
                     )
                 })
                 .unwrap_or((false, 0.0));
-            let stream = state.last_status.lock().ok().and_then(|s| s.clone());
-            let stream_state = stream.as_ref().map(|s| match s {
-                StreamStatus::Connecting => "connecting",
-                StreamStatus::Connected { .. } => "connected",
-                StreamStatus::Reconnecting { .. } => "reconnecting",
-                StreamStatus::Ended => "ended",
-                StreamStatus::Failed { .. } => "failed",
-            });
-            crate::shell::update_tray(&app, recording, elapsed, stream_state);
+            let presence = build_presence(&app);
+            let _ = app.emit("presence", &presence);
+            crate::shell::update_tray(&app, recording, elapsed, presence.stream_state.as_deref());
             if recording != was_recording {
                 let surface = state
                     .prefs

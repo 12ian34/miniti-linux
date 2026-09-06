@@ -78,7 +78,10 @@ Runtime libraries (Arch names; the tarball's own README lists the Debian names):
 `webkit2gtk-4.1 gtk3 libsoup3 librsvg libappindicator-gtk3 openssl pipewire
 pipewire-pulse libpulse libsecret libnotify`. A secret service such as
 `gnome-keyring` is optional: without one, credentials are kept in
-`~/.local/share/miniti/auth.json` with mode 0600.
+`~/.local/share/miniti/auth.json` with mode 0600. On Wayland, installing
+`gtk-layer-shell` lets the floating recording surface pin itself to the corner
+on compositors that support it (Hyprland, Sway, KDE); without it, or on GNOME,
+the compositor decides where the surface appears.
 
 ### first launch
 

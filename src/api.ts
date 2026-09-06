@@ -9,6 +9,7 @@ import type {
   CrmTask,
   DeepLinkEvent,
   RecordingNudge,
+  RecordingPresence,
   SmartPrompt,
   InsightsStatusEvent,
   Investigation,
@@ -96,6 +97,8 @@ export const startRecording = (title: string) =>
 export const stopRecording = () => invoke<string | null>("stop_recording");
 export const getLevels = () => invoke<Levels>("get_levels");
 export const recordingStatus = () => invoke<RecordingStatus>("recording_status");
+export const recordingPresence = () => invoke<RecordingPresence>("recording_presence");
+export const disableNudgeKind = (kind: string) => invoke<Prefs>("disable_nudge_kind", { kind });
 
 export const listMeetings = (limit = 100) => invoke<Meeting[]>("list_meetings", { limit });
 export const searchMeetings = (query: string) =>
@@ -168,6 +171,15 @@ export function onCalendarUpdated(handler: (payload: unknown) => void): Promise<
 
 export function onSmartPrompt(handler: (p: SmartPrompt) => void): Promise<UnlistenFn> {
   return listen<SmartPrompt>("smart_prompt", (e) => handler(e.payload));
+}
+export function onPresence(handler: (p: RecordingPresence) => void): Promise<UnlistenFn> {
+  return listen<RecordingPresence>("presence", (e) => handler(e.payload));
+}
+export function onPresenceAttention(handler: (payload: unknown) => void): Promise<UnlistenFn> {
+  return listen<null>("presence_attention", (e) => handler(e.payload));
+}
+export function onPresenceSettle(handler: (payload: unknown) => void): Promise<UnlistenFn> {
+  return listen<null>("presence_settle", (e) => handler(e.payload));
 }
 export function onRecordingNudge(handler: (n: RecordingNudge) => void): Promise<UnlistenFn> {
   return listen<RecordingNudge>("recording_nudge", (e) => handler(e.payload));

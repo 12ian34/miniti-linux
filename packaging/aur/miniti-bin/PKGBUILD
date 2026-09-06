@@ -9,7 +9,8 @@ url="https://github.com/12ian34/miniti-linux"
 license=('Elastic-2.0')
 depends=('webkit2gtk-4.1' 'gtk3' 'libsoup3' 'librsvg' 'libappindicator-gtk3' 'openssl'
          'pipewire' 'pipewire-pulse' 'libpulse' 'libsecret' 'libnotify' 'hicolor-icon-theme')
-optdepends=('gnome-keyring: keep the account credentials and device id in the secret service'
+optdepends=('gtk-layer-shell: pin the floating recording surface on Wayland compositors (Hyprland, Sway, KDE)'
+            'gnome-keyring: keep the account credentials and device id in the secret service'
             'xdg-utils: open Polar / OAuth pages in the browser')
 provides=('miniti')
 conflicts=('miniti' 'miniti-git')
