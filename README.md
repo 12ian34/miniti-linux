@@ -39,16 +39,20 @@ a Linux desk gets everything a Mac desk gets.
 prebuilt x86_64 releases are built on Ubuntu 22.04 (glibc 2.35), so they run on
 Ubuntu 22.04+, Debian 12+, Fedora, Arch and other rolling distributions.
 
-**Arch Linux.** Build the package from the PKGBUILD in this repo. It downloads
-the release tarball, verifies its checksum and installs through pacman. The
-same package will be published on the AUR as `miniti-bin` once AUR
-registration reopens.
+**Arch Linux.** Use the prebuilt package, `miniti-bin`. Nothing is compiled:
+`makepkg` downloads the release tarball, verifies its checksum, and installs it
+through pacman in a few seconds. The same package will be published on the AUR
+as `miniti-bin` once AUR registration reopens.
 
 ```bash
 git clone https://github.com/12ian34/miniti-linux.git
 cd miniti-linux/packaging/aur/miniti-bin
 makepkg -si
 ```
+
+Only if you want to compile it yourself: `packaging/aur/miniti` builds from
+source with Rust and Node, which takes ten minutes or more and pulls in the
+full toolchain. It produces the same app.
 
 **Omarchy.** It is Arch underneath, so the Arch package above is the one to use
 (and `yay -S miniti-bin` once the AUR listing is live). PipeWire is already
