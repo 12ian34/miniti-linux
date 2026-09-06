@@ -301,7 +301,9 @@ mod tests {
     #[test]
     fn echo_detection_matches_macos_rules() {
         let sys = vec![seg("nobody alive today will remember this", 10.0, 13.0)];
-        assert!(is_likely_mic_echo(&seg("nobody alive today, though", 10.2, 12.0), &sys, false), "near-verbatim");
+        assert!(is_likely_mic_echo(&seg("nobody alive today will remember", 10.2, 12.0), &sys, false), "near-verbatim (≥84% coverage) needs no dominance");
+        assert!(!is_likely_mic_echo(&seg("nobody alive today, though", 10.2, 12.0), &sys, false), "imperfect ASR variant kept without dominance");
+        assert!(is_likely_mic_echo(&seg("nobody alive today, though", 10.2, 12.0), &sys, true), "…but suppressed once the clean system source dominates");
         assert!(!is_likely_mic_echo(&seg("let me check the calendar for tomorrow", 10.2, 12.0), &sys, true), "unrelated overlap kept");
         assert!(!is_likely_mic_echo(&seg("nobody alive today will remember this", 30.0, 33.0), &sys, true), "no time overlap");
         // 1–2 word interjections: exact match + system dominance only.
@@ -363,7 +365,9 @@ mod tests {
         let unknown = |_: f64, _: f64| Source::Unknown;
         r.ingest(vec![ev(SegmentSource::Microphone, "is anyone there", 1.0, 2.0, true)], t0, &unknown);
         assert!(r.flush_due(t0 + Duration::from_secs(3), &unknown).is_empty());
-        let out = r.flush_due(t0 + Duration::from_millis(4_400), &unknown);
+        // Deadline passes → moves into the 350 ms ordering buffer, then commits.
+        assert!(r.flush_due(t0 + Duration::from_millis(4_100), &unknown).is_empty());
+        let out = r.flush_due(t0 + Duration::from_millis(4_500), &unknown);
         assert_eq!(out.len(), 1);
     }
 
