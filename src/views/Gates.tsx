@@ -18,7 +18,7 @@ export function ForceUpdate({ gate }: { gate: LaunchGate }) {
         {gate.latest_version ?? "the latest version"} to keep recording.
       </p>
       <p className="muted">
-        Arch: <code>pacman -Syu miniti-bin</code> (or your AUR helper). Other distros: download the
+        Omarchy and Arch: <code>sudo pacman -Syu miniti-bin</code>. Other distros: download the
         latest release tarball.
       </p>
       {gate.download_url && (

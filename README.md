@@ -39,29 +39,33 @@ a Linux desk gets everything a Mac desk gets.
 prebuilt x86_64 releases are built on Ubuntu 22.04 (glibc 2.35), so they run on
 Ubuntu 22.04+, Debian 12+, Fedora, Arch and other rolling distributions.
 
-**Arch Linux.** Use the prebuilt package, `miniti-bin`. Nothing is compiled:
-`makepkg` downloads the release tarball, verifies its checksum, and installs it
-through pacman in a few seconds. The same package will be published on the AUR
-as `miniti-bin` once AUR registration reopens.
+**Omarchy.** miniti is packaged for the
+[Omarchy package repository](https://github.com/omacom/omarchy-pkgs), which
+every Omarchy machine already has enabled, so once the package is listed it is
+one command and pacman keeps it updated:
 
 ```bash
-git clone https://github.com/12ian34/miniti-linux.git
-cd miniti-linux/packaging/aur/miniti-bin
-makepkg -si
+sudo pacman -S miniti-bin
 ```
 
-Only if you want to compile it yourself: `packaging/aur/miniti` builds from
-source with Rust and Node, which takes ten minutes or more and pulls in the
-full toolchain. It produces the same app.
-
-**Omarchy.** It is Arch underneath, so the Arch package above is the one to use
-(and `yay -S miniti-bin` once the AUR listing is live). PipeWire is already
-there, and the floating recording surface pins itself to the corner through
-layer-shell on Hyprland. A bar widget with a live panel (timer, questions
-worth asking, start/stop) is a separate plugin,
+PipeWire is already there, and the floating recording surface pins itself to
+the corner through layer-shell on Hyprland. A bar widget with a live panel
+(timer, questions worth asking, start/stop) is a separate plugin,
 [miniti-omarchy](https://github.com/12ian34/miniti-omarchy). If you see
 anything Omarchy-specific,
 [open an issue](https://github.com/12ian34/miniti-linux/issues).
+
+**Other Arch systems.** The same package builds anywhere with `makepkg`.
+Nothing is compiled: it downloads the release tarball, verifies its checksum,
+and installs it through pacman in a few seconds.
+
+```bash
+git clone https://github.com/12ian34/miniti-linux.git
+cd miniti-linux/packaging/omarchy-pkgs/miniti-bin
+makepkg -si
+```
+
+miniti is not on the AUR and will not be.
 
 **Debian / Ubuntu.** Download `miniti_<version>_amd64.deb` from the
 [latest release](https://github.com/12ian34/miniti-linux/releases/latest), then:
@@ -198,9 +202,11 @@ build, from source or CI, can use managed mode.
 
 Releases are cut by pushing a `v*` tag. CI builds on Ubuntu 22.04 (the glibc
 2.35 baseline) and publishes the tarball, its checksum and the `.deb` to a
-GitHub Release. Then update `pkgver` and `sha256sums` in `packaging/aur/*`, add
-the entry to [CHANGELOG.md](CHANGELOG.md), and push the AUR package. Details
-in [docs/distribution.md](docs/distribution.md).
+GitHub Release. The Omarchy package repository picks the release up on its
+own (it follows this repository's releases); the copy of the package under
+`packaging/omarchy-pkgs/` is kept in step for people building with `makepkg`.
+Add the entry to [CHANGELOG.md](CHANGELOG.md). Details in
+[docs/distribution.md](docs/distribution.md).
 
 ```bash
 pnpm tauri build                 # local equivalent: binary + .deb

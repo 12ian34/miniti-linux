@@ -1,6 +1,6 @@
 # Linux rewrite feasibility
 
-Investigation snapshot (2026-09-02, decisions locked 2026-09-05). Goal: **macOS feature-complete** desktop rewrite in **Tauri 2 + Rust**, shipped as a **binary tarball + AUR** — not a Swift port, not Flatpak/AppImage.
+Investigation snapshot (2026-09-02, decisions locked 2026-09-05). Goal: **macOS feature-complete** desktop rewrite in **Tauri 2 + Rust**, shipped as a **binary tarball + Omarchy package repository** (originally written as "AUR"; the AUR was dropped on 2026-09-07) — not a Swift port, not Flatpak/AppImage.
 
 ## Verdict
 
@@ -11,7 +11,7 @@ Investigation snapshot (2026-09-02, decisions locked 2026-09-05). Goal: **macOS 
 | Effort | ~9–15 months (1–2 engineers) after green spike |
 | Hardest gaps | PipeWire system audio reliability; call-app mic detection without Core Audio HAL |
 | Stack | Tauri 2 + Rust (Qt only if spike fails) |
-| Ship | GitHub Releases binary + AUR |
+| Ship | GitHub Releases binary + Omarchy package repository |
 
 True 100% parity is blocked by platform physics (distro audio matrix + no Process Tap / HAL twin), not by missing insight screens.
 
@@ -38,13 +38,13 @@ Roughly ~41k LOC of macOS/shared Swift. Strongly platform-bound (~14k+): `AudioC
 | Markdown export + codebase investigate | near | medium | POSIX paths (easier than sandbox bookmarks) |
 | Long selectable live transcript | near | hard | Virtualized editor / dedicated perf work |
 | Managed Free / Pro / BYOK | full | easy | Polar web rail + `X-Platform: linux` |
-| Updates | near | medium | Binary tarball + AUR; `/api/version` force gate |
+| Updates | near | medium | Binary tarball + Omarchy repository; `/api/version` force gate |
 
 ## Hard gaps (document, don’t fake)
 
-1. **System audio** — macOS `AudioHardwareCreateProcessTap` (“System Audio Recording Only”). Linux: PipeWire monitor / per-app capture (OBS-class). Expect a supported-distro matrix; native binary+AUR avoids Flatpak capture friction but not BT clock / Pulse leftover issues.
+1. **System audio** — macOS `AudioHardwareCreateProcessTap` (“System Audio Recording Only”). Linux: PipeWire monitor / per-app capture (OBS-class). Expect a supported-distro matrix; a native binary avoids Flatpak capture friction but not BT clock / Pulse leftover issues.
 2. **Call detection** — no `kAudioProcessPropertyIsRunningInput`. Approximate; quiet + calendar cover the rest.
-3. **Prebuilt glibc** — build release binaries on Ubuntu 22.04-class images. Arch source AUR builds ignore this; `-bin` users on older glibc do not.
+3. **Prebuilt glibc** — build release binaries on Ubuntu 22.04-class images. Source builds ignore this; `-bin` users on older glibc do not.
 4. **Transcript perf** — TextKit 2 role must be re-solved for multi-hour meetings in webview or a native pane.
 
 ## Stack choices
@@ -63,7 +63,7 @@ Roughly ~41k LOC of macOS/shared Swift. Strongly platform-bound (~14k+): `AudioC
 2. Insights parity 6–8w  
 3. Desktop shell 6–10w  
 4. Smart meetings 6–10w  
-5. Ship hardening 4–6w — tarball CI, AUR PKGBUILDs, CRM/export/perf  
+5. Ship hardening 4–6w — tarball CI, Omarchy repository package, CRM/export/perf  
 
 ## What “complete” means on Linux
 
@@ -75,5 +75,5 @@ Roughly ~41k LOC of macOS/shared Swift. Strongly platform-bound (~14k+): `AudioC
 
 - `../miniti` AGENTS.md, docs/architecture.md, docs/audio.md, docs/monetization.md, docs/call-lifecycle-and-recording-presence-plan.md  
 - `../miniti/ANDROID_PLAN.md` (API/schema patterns; Linux parity is *wider* than Android v1)  
-- Tauri v2 AUR / Debian distribute docs  
-- Investigation canvas (Cursor) locked Tauri + binary/AUR 2026-09-05  
+- Tauri v2 Debian distribute docs  
+- Investigation canvas (Cursor) locked Tauri + binary tarball 2026-09-05  

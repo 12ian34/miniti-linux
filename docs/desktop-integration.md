@@ -170,10 +170,11 @@ compositors that support it, so layer rules can target it.
 
 ## Omarchy
 
-A bar widget with a live panel (timer, questions worth asking, the pending
-prompt, start/stop) lives in its own repository, `miniti-omarchy`, because the
-Omarchy marketplace indexes one plugin per repository. It reads the state file
-above and drives the app through the CLI.
+The app installs from the Omarchy package repository (`sudo pacman -S
+miniti-bin`). A bar widget with a live panel (timer, questions worth asking,
+the pending prompt, start/stop) lives in its own repository, `miniti-omarchy`,
+because the Omarchy marketplace indexes one plugin per repository. It reads the
+state file above and drives the app through the CLI.
 
 ## desktop files installed by the packages
 

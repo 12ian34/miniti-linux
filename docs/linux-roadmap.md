@@ -55,9 +55,10 @@ Legend: **done** shipped (0.5.0 unless noted) · **open** not started ·
 
 | Item | Status |
 |---|---|
-| Both PKGBUILDs install the same file set; `alsa-lib` added; versioned `provides` | done |
+| The Omarchy repository package installs the same file set as the tarball and the `.deb`; `alsa-lib` added; versioned `provides` | done |
 | No `.install` / postinst (pacman hooks and dpkg triggers refresh caches) | done |
 | `namcap` and `lintian` in CI | open (needs an Arch and a Debian job) |
+| Listed in the Omarchy package repository (`omacom/omarchy-pkgs`) | open: PR from `packaging/omarchy-pkgs/miniti-bin` |
 | Flatpak | decided: not shipping (see AGENTS.md); Flathub also rejects the `.linux` id suffix |
 | Native PipeWire capture (real device names, default-device following) | open, largest remaining item |
 

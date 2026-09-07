@@ -10,7 +10,7 @@ This file is the canonical entry point for agents working here. Long-form delive
 |---|---|
 | Stack | **Tauri 2 + Rust** backend, web UI in system WebKitGTK |
 | Parity target | **macOS feature-complete** (not the thinner iOS/Android mic-only cut) |
-| Distribution | **GitHub Release binary tarball + AUR** (`miniti-bin`, `miniti` / `miniti-git`) |
+| Distribution | **GitHub Release binary tarball + `.deb` + the Omarchy package repository** (`miniti-bin` in [omacom/omarchy-pkgs](https://github.com/omacom/omarchy-pkgs), following our GitHub releases). **Never the AUR** (user decision 2026-09-07) |
 | Not shipping | Flatpak, AppImage, Snap, Swift-on-Linux, Electron |
 | Monetization | Managed Free + **Polar Pro** (same web rail as macOS) + BYOK |
 | Platform header | `X-Platform: linux` |
@@ -37,7 +37,7 @@ Do not modify sibling repos from this workflow unless the user explicitly asks. 
 | Build / ship the product | [PLAN.md](PLAN.md) |
 | Set up / run the app locally | [README.md](README.md) § Develop; Cloud Agent env in `.cursor/environment.json` |
 | Understand feasibility & gaps | [docs/feasibility.md](docs/feasibility.md) |
-| Package binary + AUR | [docs/distribution.md](docs/distribution.md) |
+| Package binary + Omarchy repo | [docs/distribution.md](docs/distribution.md) |
 | CLI, control socket, state file, D-Bus, Waybar, autostart | [docs/desktop-integration.md](docs/desktop-integration.md) |
 | What a gold-standard Linux app still needs (done / open / decided) | [docs/linux-roadmap.md](docs/linux-roadmap.md) |
 | Backend endpoints / Polar | `../miniti-api/AGENTS.md` (and PLAN § API) |
@@ -62,7 +62,7 @@ Honest Linux limits (document in UI/docs, don’t fake parity): Process-Tap-clas
 - **PCM contract**: 16 kHz PCM16 LE to Deepgram; mono (`channels=1`) or stereo interleave mic/system (`channels=2&multichannel=true`) matching macOS.
 - **Hot-path**: never filter unbounded transcript arrays on every finalize; reverse-iterate and break on window expiry (same rule as Apple apps).
 - **Secrets**: never commit API keys; obfuscate shared `X-API-Key` like other clients; device UUID via libsecret with file fallback.
-- **AUR**: disable Tauri updater pubkey for AUR/source builds; pacman owns Arch updates.
+- **Arch / Omarchy**: no Tauri updater; pacman owns updates through the Omarchy package repository. Nothing is ever published to the AUR.
 - **Changelog**: public-audience prose when shipping; no code refs in user-facing notes.
 
 ## Status
@@ -93,7 +93,7 @@ Tauri 2 + Rust + React/TypeScript, `identifier=com.miniti.linux`, binary `miniti
 - System audio needs PipeWire with the pulse shim (`pactl` / `parec`). Route changes recover through the stall watchdog (restart after 4 s of silence from the monitor), not through a device-change event; a switch mid-sentence loses up to 4 s of remote audio.
 - Call detection is PipeWire-client based: native apps are strong signals, browsers weak; no per-process HAL.
 - Floating surface on Wayland: pinned and focus-free only through wlr-layer-shell (Hyprland, Sway, KDE, with `libgtk-layer-shell` installed); on GNOME or without the library the compositor decides placement and the window cannot be dragged into place. Layer surfaces cannot be dragged at all (fixed top-right, 16 px margin). X11 gets the full behaviour (utility window, keep-above, never focused, clamped to the monitor).
-- No in-app silent updater: AUR / pacman or the release tarball; `/api/version` only hard-gates.
+- No in-app silent updater: pacman (Omarchy repository) or the release tarball; `/api/version` only hard-gates.
 - Long transcripts use memoized turns in `content-visibility` blocks rather than a native text view; selection across blocks works, but very long meetings (thousands of turns) still render slower than the Mac's NSTextView.
 - Microphone capture has no restart path yet: a disconnected USB/Bluetooth mic surfaces as a stream error rather than recovering.
 - Coaching charts have no hover tooltips; VoiceOver-style per-chart summaries are exposed through `aria-label` only.
@@ -114,4 +114,4 @@ Every release adds an entry to `CHANGELOG.md`; the rules are in [docs/changelog-
 
 1. Read [PLAN.md](PLAN.md).
 2. Prefer reimplementing contracts over copying Swift.
-3. Ask before adding Flatpak/AppImage or changing the binary+AUR ship model.
+3. Ask before adding Flatpak/AppImage or changing the binary + Omarchy-repository ship model. Do not suggest the AUR.

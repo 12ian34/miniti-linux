@@ -28,7 +28,7 @@ Records mic (and on desktop, system audio), streams to Deepgram for live transcr
 |---|---|
 | Parity | **macOS-complete intent** (~70–85% realistic year-one; document hard gaps) |
 | Stack | Tauri 2 + Rust + web UI (WebKitGTK) |
-| Ship | GitHub Release **binary tarball** + **AUR** (`miniti-bin`, `miniti`/`miniti-git`) |
+| Ship | GitHub Release **binary tarball** + `.deb` + **Omarchy package repository** (`miniti-bin`); never the AUR |
 | Pro | Polar web checkout / portal / license restore |
 | Platform id | `X-Platform: linux` |
 | Qt | Fallback only if spike fails |
@@ -51,7 +51,7 @@ Records mic (and on desktop, system audio), streams to Deepgram for live transcr
 
 - Process-Tap reliability on every distro / every BT headset route  
 - Core Audio–grade “call app is using mic” detection (approximate via PipeWire clients + known binaries)  
-- In-app Sparkle-class silent update for AUR users (pacman updates instead)  
+- In-app Sparkle-class silent update for pacman users (the Omarchy repository updates instead)  
 - TextKit-identical multi-hour selectable transcript without dedicated perf work  
 
 ---
@@ -86,9 +86,9 @@ miniti-linux/
     feasibility.md
     distribution.md
   packaging/
-    aur/
-      miniti-bin/PKGBUILD      # filled when first release exists
-      miniti/PKGBUILD
+    omarchy-pkgs/
+      miniti-bin/PKGBUILD      # mirror of pkgbuilds/miniti-bin in omacom/omarchy-pkgs
+      miniti-bin/.omarchy/package.json
     miniti.desktop
   src-tauri/                   # Rust
     src/
@@ -362,7 +362,7 @@ Call sensor v1 + quiet/calendar; ending grace.
 
 ### Phase 5 — Ship hardening (4–6 weeks)
 
-Release tarball CI, AUR PKGBUILDs, CRM, Granola, markdown export, long-meeting transcript perf, supported-distro matrix doc.
+Release tarball CI, the Omarchy repository package, CRM, Granola, markdown export, long-meeting transcript perf, supported-distro matrix doc.
 
 Rough calendar: **9–15 months** to near-parity with 1–2 engineers after a green spike.
 
@@ -373,10 +373,10 @@ Rough calendar: **9–15 months** to near-parity with 1–2 engineers after a gr
 See [docs/distribution.md](docs/distribution.md).
 
 - Artifact: `miniti-VERSION-x86_64-unknown-linux-gnu.tar.gz` (binary + `.desktop` + icons + LICENSE + README deps)  
-- Optional: `.deb` from Tauri bundler for Debian users / AUR `-bin` convenience  
-- AUR: `miniti-bin` (prebuilt), `miniti` / `miniti-git` (source)  
+- `.deb` from the Tauri bundler for Debian users  
+- Omarchy package repository: `miniti-bin` (prebuilt, follows GitHub releases). Never the AUR  
 - **No** Flatpak / AppImage  
-- **No** Tauri updater plugin for AUR builds  
+- **No** Tauri updater plugin  
 - Force-update: `/api/version` → GitHub Releases URL  
 
 Runtime depends (typical): `webkit2gtk-4.1`, `gtk3`, `libsoup`, cairo/pango stack, `pipewire` / `libpulse`, `libsecret`, tray indicator libs as needed.
@@ -410,7 +410,7 @@ Full write-up: [docs/feasibility.md](docs/feasibility.md).
 | Calendar / CRM / Polar | full | medium |
 | Smart call detection | partial | hard |
 | Tray / floating UI | near | medium |
-| Binary + AUR ship | near | medium |
+| Binary + Omarchy repo ship | near | medium |
 | Long selectable transcript | near | hard |
 
 ---
@@ -432,6 +432,6 @@ Full write-up: [docs/feasibility.md](docs/feasibility.md).
 1. Read `AGENTS.md` + this plan before scaffolding.  
 2. Phase 0 BYOK mic→Deepgram before UI chrome.  
 3. Re-verify Deepgram query params and model pins against `../miniti/docs/audio.md` and `../miniti-api` at implementation time — this plan is a snapshot.  
-4. Do not enable Tauri updater signing in a way that breaks AUR source builds.  
+4. Do not enable Tauri updater signing; pacman owns updates.  
 5. Do not commit secrets.  
 6. Ask before `git init` / remote / publish if the user has not requested it.

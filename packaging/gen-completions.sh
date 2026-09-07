@@ -2,7 +2,7 @@
 # Generate shell completions from the built binary into a directory:
 #   packaging/gen-completions.sh <miniti-binary> <out-dir>
 # Writes miniti.bash, _miniti (zsh) and miniti.fish. Used by the tarball
-# script, the PKGBUILDs and the release workflow (for the .deb).
+# script, the Omarchy PKGBUILD (via the tarball) and the release workflow (for the .deb).
 set -euo pipefail
 bin="$1"
 out="$2"
