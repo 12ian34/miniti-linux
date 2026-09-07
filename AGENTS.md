@@ -15,6 +15,7 @@ This file is the canonical entry point for agents working here. Long-form delive
 | Monetization | Managed Free + **Polar Pro** (same web rail as macOS) + BYOK |
 | Platform header | `X-Platform: linux` |
 | Repo | Separate from `../miniti` — no shared Swift sources |
+| App id | `com.miniti.linux` (D-Bus, AppStream, keyring); desktop file and `app_id` / `WM_CLASS` stay `miniti` (see docs/desktop-integration.md) |
 
 Qt remains a **fallback only** if the PipeWire / long-transcript spike proves Tauri intractable.
 
@@ -25,6 +26,7 @@ Qt remains a **fallback only** if the PipeWire / long-transcript spike proves Ta
 | `../miniti` | macOS + iOS Swift apps (source of truth for product behaviour) |
 | `../miniti-api` | Vercel backend — API contract in that repo’s `AGENTS.md` |
 | `../miniti-android` | Android port (mic-only; useful for API/schema patterns, not desktop audio) |
+| `../miniti-omarchy` | Omarchy (Quickshell/QML) bar widget + panel; reads this app's `state.json` and drives it through the CLI |
 
 Do not modify sibling repos from this workflow unless the user explicitly asks. Backend work needed for Linux (`X-Platform: linux`, `LINUX_MIN_VERSION`, download URL) is listed in [PLAN.md](PLAN.md) § backend.
 
@@ -36,6 +38,7 @@ Do not modify sibling repos from this workflow unless the user explicitly asks. 
 | Set up / run the app locally | [README.md](README.md) § Develop; Cloud Agent env in `.cursor/environment.json` |
 | Understand feasibility & gaps | [docs/feasibility.md](docs/feasibility.md) |
 | Package binary + AUR | [docs/distribution.md](docs/distribution.md) |
+| CLI, control socket, state file, D-Bus, Waybar, autostart | [docs/desktop-integration.md](docs/desktop-integration.md) |
 | Backend endpoints / Polar | `../miniti-api/AGENTS.md` (and PLAN § API) |
 | Current macOS audio / echo / multichannel | `../miniti/docs/audio.md` (reference only — reimplement here) |
 | Call lifecycle policy semantics | `../miniti/docs/call-lifecycle-and-recording-presence-plan.md` |
@@ -77,6 +80,7 @@ Tauri 2 + Rust + React/TypeScript, `identifier=com.miniti.linux`, binary `miniti
 | Playbook | Streamable-HTTP MCP client (backend SSRF guard, tool discovery, chunk normalization), topic extraction every 20 s, per-topic lookup state, auto lookups for BYOK/Pro |
 | Coaching | `TrainingMetrics` + `CoachingAdvisor` ports; focus / stats / history; per-metric trend charts (SVG, categorical meeting axis, ringed latest point, broad-range band); grounded examples (real passages from recent meetings per metric, clickable); verbatim per-language filler lists |
 | History | search, pin, rename, delete, speaker rename, mark-as-you, trim (turn / before / after with regeneration), copy transcript, Markdown export (macOS section order), Granola CSV import with duplicate protection |
+| Desktop integration | `miniti` CLI in the same binary (clap: status / start / stop / toggle / questions / meetings / export / decide / watch / autostart / paths / completions; exit 3 = not running); control socket `$XDG_RUNTIME_DIR/miniti/miniti.sock` (JSON lines, `subscribe` stream) doubling as the single-instance guard that forwards deep links; `state.json` snapshot rewritten atomically on change; D-Bus `com.miniti.linux` / `com.miniti.linux.Control` (zbus, same handler as the socket); idle inhibit while recording (ScreenSaver then portal); XDG autostart entry from a pref; logs under `$XDG_STATE_HOME`; desktop entry with actions, AppStream metainfo, SVG + symbolic icons, man page, completions, all validated in CI. The Omarchy bar plugin lives in `../miniti-omarchy` and consumes `state.json` + the CLI |
 | Desktop shell | Tray with live timer + Start/Stop + decision rows, close-to-tray, floating recording surface at macOS parity (presence model pushed each second: timer, call app, meeting title, call/transcription/audio status, ending countdown; kind-specific prompt actions; nudges with dismiss / don't remind / enable sales; content-sized, auto-expand/collapse attention policy, monitor clamping, never takes focus; wlr-layer-shell overlay on Wayland when `libgtk-layer-shell` is present), desktop notifications with the surface-aware rule, deep links for OAuth returns, daily rolling log with an in-app viewer |
 | Smart meetings | `CallLifecycleEngine` port over PipeWire capture clients; quiet-ended prompts (threshold table + :00/:30 boundary); calendar transition prompt with Remind-in-2-min and gated 15 s handoff; calendar auto-start countdown; silence auto-stop; 10 s ending grace; live guidance nudges |
 | Integrations | Google Calendar (upcoming five, prep notes seeding live notes, auto title/attendees), Attio + Twenty send sheet (search, payload preview, per-task inclusion) — all via the backend |
@@ -96,7 +100,7 @@ Tauri 2 + Rust + React/TypeScript, `identifier=com.miniti.linux`, binary `miniti
 
 ### Verification
 
-`cargo test --manifest-path src-tauri/Cargo.toml` (150 tests), `cargo clippy` clean, and `pnpm build` pass on macOS. On the Arch ThinkPad, the mono BYOK/managed path has been run live; the dual-source, Smart-meetings and integration paths were built against the documented contracts and still need a real-hardware pass.
+`cargo test --manifest-path src-tauri/Cargo.toml` (168 tests), `cargo clippy` clean, and `pnpm build` pass on macOS. On the Arch ThinkPad, the mono BYOK/managed path has been run live; the dual-source, Smart-meetings and integration paths were built against the documented contracts and still need a real-hardware pass.
 
 - Dev environment for Cloud Agents: `.cursor/environment.json` (bootstrap `.cursor/install.sh`). Run locally per [README.md](README.md) § Develop.
 - Cursor-hosted repo: `ian/miniti-linux` (`https://origin.cursor.com/ian/miniti-linux.git`); page: https://cursor.com/codebase/ian/miniti-linux

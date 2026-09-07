@@ -1,10 +1,29 @@
 [Desktop Entry]
+Type=Application
 Name=miniti
-Comment=AI meeting assistant — live transcription and insights
+GenericName=Meeting assistant
+Comment=AI meeting assistant — live transcription, insights and coaching
 Exec=miniti %U
+TryExec=miniti
 Icon=miniti
 Terminal=false
-Type=Application
-Categories=Office;AudioVideo;
+Categories=Office;
+Keywords=meeting;transcript;transcription;notes;call;coaching;recording;AI;
+StartupNotify=true
 StartupWMClass=miniti
+SingleMainWindow=true
 MimeType=x-scheme-handler/miniti-google;x-scheme-handler/miniti-attio;x-scheme-handler/miniti-twenty;
+X-GNOME-UsesNotifications=true
+Actions=start;stop;toggle;
+
+[Desktop Action start]
+Name=Start a meeting
+Exec=miniti start
+
+[Desktop Action stop]
+Name=Stop the meeting
+Exec=miniti stop
+
+[Desktop Action toggle]
+Name=Start or stop recording
+Exec=miniti toggle

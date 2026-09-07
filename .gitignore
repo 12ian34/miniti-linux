@@ -50,3 +50,4 @@ coverage/
 !.cursor/environment.json
 !.cursor/install.sh
 *.canvas.data.json
+completions/

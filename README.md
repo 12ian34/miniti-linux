@@ -56,9 +56,11 @@ full toolchain. It produces the same app.
 
 **Omarchy.** It is Arch underneath, so the Arch package above is the one to use
 (and `yay -S miniti-bin` once the AUR listing is live). PipeWire is already
-there. Omarchy runs Hyprland, a Wayland compositor, so the floating recording
-surface may not appear where miniti asks; the tray timer and notifications are
-unaffected. If you see anything Omarchy-specific,
+there, and the floating recording surface pins itself to the corner through
+layer-shell on Hyprland. A bar widget with a live panel (timer, questions
+worth asking, start/stop) is a separate plugin,
+[miniti-omarchy](https://github.com/12ian34/miniti-omarchy). If you see
+anything Omarchy-specific,
 [open an issue](https://github.com/12ian34/miniti-linux/issues).
 
 **Debian / Ubuntu.** Download `miniti_<version>_amd64.deb` from the
@@ -127,6 +129,30 @@ it.
 | iOS companion, Apple subscriptions, Sparkle | No | Apple-only by nature |
 
 Known limits and verification status are tracked in [AGENTS.md](AGENTS.md) § Status.
+
+## command line, bars and keybinds
+
+The app is also its own CLI. `miniti status`, `miniti start`, `miniti stop`,
+`miniti toggle`, `miniti questions`, `miniti meetings`, `miniti export last`,
+`miniti decide primary` and `miniti watch` talk to the running app; `--json`
+makes any of them machine-readable and `man miniti` has the rest. The same
+state is in `$XDG_RUNTIME_DIR/miniti/state.json`, on a control socket next to
+it, and on the session bus as `com.miniti.linux`.
+
+```jsonc
+// Waybar
+"custom/miniti": { "exec": "miniti status --waybar", "return-type": "json", "interval": 1, "on-click": "miniti toggle" }
+```
+
+```
+# Hyprland
+bind = SUPER, M, exec, miniti toggle
+```
+
+miniti keeps the machine awake while a meeting records, can launch at login
+into the tray, and installs a desktop entry with Start / Stop / Toggle actions,
+AppStream metadata, icons, a man page and shell completions. Everything is
+documented in [docs/desktop-integration.md](docs/desktop-integration.md).
 
 ## develop and run locally
 

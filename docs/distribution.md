@@ -6,7 +6,7 @@ miniti Linux ships as a **normal dynamically linked desktop binary**, not Flatpa
 
 | Artifact | Contents | Audience |
 |---|---|---|
-| `miniti-VERSION-x86_64-unknown-linux-gnu.tar.gz` | `miniti` binary, `miniti.desktop`, icons, LICENSE, README (runtime deps) | Direct install / non-Arch |
+| `miniti-VERSION-x86_64-unknown-linux-gnu.tar.gz` | `miniti` binary, `miniti.desktop`, AppStream metainfo, man page, completions, icons, LICENSE, README (runtime deps) | Direct install / non-Arch |
 | `miniti-bin` (AUR) | PKGBUILD fetches the GitHub Release tarball or `.deb` | Arch, prebuilt |
 | `miniti` / `miniti-git` (AUR) | Build from source (`cargo` + frontend toolchain) | Arch, source |
 | Optional `.deb` | Tauri bundler output | Debian/Ubuntu; optional `-bin` source |
@@ -23,7 +23,10 @@ emits `miniti-<version>-x86_64-unknown-linux-gnu.tar.gz` plus a `.sha256`).
 miniti-1.0.0-x86_64-unknown-linux-gnu/
   miniti
   miniti.desktop
-  icons/hicolor/.../apps/miniti.png
+  com.miniti.linux.metainfo.xml
+  miniti.1
+  completions/{miniti.bash,_miniti,miniti.fish}   # generated from the binary
+  icons/hicolor/.../apps/miniti.png, scalable/apps/miniti.svg, symbolic/apps/miniti-symbolic.svg
   LICENSE
   README.md          # depends + install hints
 ```
@@ -83,7 +86,9 @@ If you drive `cargo` yourself instead of `pnpm tauri build`, pass `--features cu
 
 
 ```bash
-pnpm tauri build                       # binary + .deb
+pnpm build && cargo build --release --features custom-protocol --manifest-path src-tauri/Cargo.toml
+packaging/gen-completions.sh src-tauri/target/release/miniti packaging/completions   # the .deb bundles these
+pnpm tauri build                       # .deb (reuses the release binary)
 packaging/make-tarball.sh              # dist-release/miniti-<ver>-x86_64-unknown-linux-gnu.tar.gz + .sha256
 cd packaging/aur/miniti-bin && makepkg -si   # after pointing source= at the tarball (file:// works for local tests)
 ```

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- miniti app icon: the green hexagon on the dark tile, as in the PNG set. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <rect width="128" height="128" rx="22" fill="#0a0a0b"/>
+  <polygon fill="#3fb950" points="64,24 98.6,44 98.6,84 64,104 29.4,84 29.4,44"/>
+</svg>

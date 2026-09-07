@@ -4,6 +4,15 @@ public changelog for miniti for Linux. the changelog for every platform lives at
 
 ## releases
 
+### unreleased - v0.5.0
+
+- new: A `miniti` command line: start, stop, and toggle a meeting, see the live questions, list and export meetings, and answer a Smart-meeting prompt from a terminal, a keybind, or a script. `man miniti` and shell completions come with the packages
+- new: Bars and widgets can follow miniti live: a Waybar module (`miniti status --waybar`), a state file, a control socket, and a D-Bus interface, all documented in the repository
+- new: Launch at login, hidden in the tray (Settings → General, or `miniti autostart on`)
+- new: The desktop entry offers Start, Stop, and Toggle actions from the app menu, and the app now appears in software centres with a description, screenshots, and release notes
+- improvement: The machine no longer goes to sleep or locks in the middle of a meeting
+- fix: Connecting Google Calendar or a CRM opened a second copy of miniti instead of returning to the running one
+
 ### 2026-09-06 - v0.4.1
 
 - new: miniti tells you on the home screen when a newer version is available, with a link to the install steps. It shows once per release and you can dismiss it

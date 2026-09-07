@@ -29,7 +29,11 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with: { workspaces: src-tauri }
       - run: pnpm install --frozen-lockfile
-      - name: Build (binary + .deb)
+      - name: Build binary
+        run: pnpm build && cargo build --release --features custom-protocol --manifest-path src-tauri/Cargo.toml
+      - name: Shell completions (the .deb picks them up from packaging/completions)
+        run: packaging/gen-completions.sh src-tauri/target/release/miniti packaging/completions
+      - name: Bundle (.deb)
         run: pnpm tauri build
       - name: Tarball
         run: packaging/make-tarball.sh dist-release

@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- AppStream MetaInfo (https://www.freedesktop.org/software/appstream/docs/).
+     Installed to /usr/share/metainfo/ so software centres and distribution
+     catalogues can show miniti with its description, screenshots and releases.
+     Check with: appstreamcli validate packaging/com.miniti.linux.metainfo.xml -->
+<component type="desktop-application">
+  <id>com.miniti.linux</id>
+  <launchable type="desktop-id">miniti.desktop</launchable>
+  <name>miniti</name>
+  <summary>AI meeting assistant with live transcription and coaching</summary>
+  <developer_name>Ian Ahuja</developer_name>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>Elastic-2.0</project_license>
+  <description>
+    <p>
+      miniti transcribes every meeting live and surfaces the questions worth
+      asking while they can still be asked. It coaches you to speak with
+      clarity and confidence. Your transcripts and insights stay on your
+      machine, and you own them forever.
+    </p>
+    <ul>
+      <li>Live transcript in 11 languages, with remote callers and the people in the room kept apart as separate speakers</li>
+      <li>Insights while you talk: a rolling summary, the open questions worth asking next, and coaching on fillers, pace and talk ratio</li>
+      <li>Specialist views: Sales (MEDDPICC) with CRM sync to Attio or Twenty, Playbook answers from your own docs, and fillable templates</li>
+      <li>Smart meetings: notices when a call may have ended or the next one is about to start, with Google Calendar auto-start and auto-stop</li>
+      <li>A tray timer, a floating recording surface, desktop notifications, a command line, a control socket and a D-Bus interface for your bar and keybinds</li>
+      <li>Your data, your tools: local history, Markdown export, webhooks to Zapier, Make or n8n, Granola import</li>
+    </ul>
+  </description>
+  <url type="homepage">https://miniti.app</url>
+  <url type="help">https://miniti.app/docs</url>
+  <url type="bugtracker">https://github.com/12ian34/miniti-linux/issues</url>
+  <categories>
+    <category>Office</category>
+  </categories>
+  <keywords>
+    <keyword>meeting</keyword>
+    <keyword>transcription</keyword>
+    <keyword>notes</keyword>
+    <keyword>coaching</keyword>
+    <keyword>recording</keyword>
+  </keywords>
+  <screenshots>
+    <screenshot type="default">
+      <caption>A live call: transcript with named speakers on the left, questions worth asking on the right</caption>
+      <image>https://raw.githubusercontent.com/12ian34/miniti-linux/main/docs/screenshots/recording-questions.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Coaching overview: a focus for the next meeting, trends, and stats across recent meetings</caption>
+      <image>https://raw.githubusercontent.com/12ian34/miniti-linux/main/docs/screenshots/coaching.png</image>
+    </screenshot>
+  </screenshots>
+  <content_rating type="oars-1.1"/>
+  <provides>
+    <binary>miniti</binary>
+    <dbus type="user">com.miniti.linux</dbus>
+  </provides>
+  <recommends>
+    <control>pointing</control>
+    <control>keyboard</control>
+  </recommends>
+  <releases>
+    <release version="0.5.0" date="2026-09-07" type="development">
+      <description>
+        <p>A command line, a control socket, a D-Bus interface and a launch-at-login option. The machine stays awake during a meeting, and opening miniti twice no longer opens two copies.</p>
+      </description>
+    </release>
+    <release version="0.4.1" date="2026-09-06">
+      <description>
+        <p>A notice on the home screen when a newer version is available. Installing from source now opens the app instead of an error page.</p>
+      </description>
+    </release>
+    <release version="0.4.0" date="2026-09-06">
+      <description>
+        <p>Templates filled in as the meeting goes, a richer floating recording window, coaching charts with real quotes, a minutes-left counter, text size options and a debug log.</p>
+      </description>
+    </release>
+    <release version="0.3.0" date="2026-09-06">
+      <description>
+        <p>First public release: a recovery key is your account, no email needed, and Settings shows your devices.</p>
+      </description>
+    </release>
+  </releases>
+</component>

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Symbolic (monochrome, recolourable) icon for status areas and menus. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <path fill="#bebebe" d="M8 1.2 14 4.6v6.8L8 14.8 2 11.4V4.6L8 1.2Zm0 2.3L4 5.8v4.4l4 2.3 4-2.3V5.8L8 3.5Z"/>
+</svg>

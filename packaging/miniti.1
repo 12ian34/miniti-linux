@@ -1,0 +1,178 @@
+.TH MINITI 1 "September 2026" "miniti 0.5.0" "User Commands"
+.SH NAME
+miniti \- AI meeting assistant with live transcription, insights and coaching
+.SH SYNOPSIS
+.B miniti
+.RI [ \-\-hidden ]
+.RI [ \-\-start\-meeting ]
+.RI [ URL ...]
+.br
+.B miniti
+.I command
+.RI [ options ]
+.SH DESCRIPTION
+With no command,
+.B miniti
+opens the desktop app. If one is already running it is raised instead, and any
+.I URL
+arguments (OAuth returns such as
+.BR miniti\-google:// )
+are handed to it.
+.PP
+With a command,
+.B miniti
+talks to the running app over its control socket and exits. The same state is
+available as a JSON file and on the session bus (see
+.BR FILES ).
+.SH OPTIONS
+.TP
+.B \-\-hidden
+Start with the main window hidden; only the tray icon shows. Used by the
+launch\-at\-login entry.
+.TP
+.B \-\-start\-meeting
+Start a meeting as soon as the app is ready.
+.TP
+.B \-\-json
+Print machine\-readable JSON instead of text (valid with every command).
+.TP
+.BR \-h ", " \-\-help
+Print help. Add a command to see its options.
+.TP
+.BR \-V ", " \-\-version
+Print the version.
+.SH COMMANDS
+.TP
+.BR status " [" \-\-waybar ]
+Recording state, elapsed time, live questions and any pending prompt. With
+.B \-\-waybar
+print one line of JSON for a Waybar custom module (fields
+.IR text ", " tooltip ", " class ", " alt ", " percentage ).
+.TP
+.BR start " [" \fITITLE\fR ]
+Start a meeting. Launches miniti if it is not running.
+.TP
+.B stop
+Stop the meeting and save it.
+.TP
+.B toggle
+Start if idle, stop if recording.
+.TP
+.B show
+Raise the main window.
+.TP
+.BR open " [" \fIID\fR ]
+Raise the main window on a saved meeting.
+.I ID
+defaults to
+.BR last .
+.TP
+.B questions
+Questions worth asking in the live meeting.
+.TP
+.BR meetings " [" \-n " \fIN\fR]"
+List recent meetings (default 20).
+.TP
+.BR export " [" \fIID\fR "] [" \-o " \fIFILE\fR]"
+Markdown export of a meeting (transcript, notes, insights, coaching) to
+standard output or
+.IR FILE .
+.TP
+.BR decide " " primary | secondary | tertiary
+Answer the pending Smart\-meeting prompt (the buttons shown in the tray and on
+the floating surface).
+.TP
+.B watch
+Stream state changes as JSON lines until interrupted.
+.TP
+.B quit
+Quit the running app.
+.TP
+.BR autostart " [" on | off ]
+Show or change whether miniti starts at login
+.RB ( ~/.config/autostart/miniti.desktop ).
+.TP
+.B paths
+Where miniti keeps its files on this machine.
+.TP
+.BR completions " " bash | zsh | fish | elvish
+Print a shell completion script.
+.SH EXIT STATUS
+.TP
+.B 0
+Success.
+.TP
+.B 1
+The app refused the request or it failed.
+.TP
+.B 2
+Usage error.
+.TP
+.B 3
+miniti is not running.
+.SH FILES
+.TP
+.I $XDG_CONFIG_HOME/miniti/prefs.json
+Preferences.
+.TP
+.I $XDG_DATA_HOME/miniti/
+Meeting database and device identity.
+.TP
+.I $XDG_STATE_HOME/miniti/logs/
+Daily rolling logs (seven days).
+.TP
+.I $XDG_RUNTIME_DIR/miniti/miniti.sock
+Control socket: one JSON request per line, one JSON response per line.
+.TP
+.I $XDG_RUNTIME_DIR/miniti/state.json
+Live state, rewritten atomically on every change. Watch it instead of holding
+a socket open.
+.TP
+.I $XDG_CONFIG_HOME/autostart/miniti.desktop
+Launch\-at\-login entry.
+.SH D\-BUS
+Bus name
+.BR com.miniti.linux ,
+object
+.BR /com/miniti/linux ,
+interface
+.BR com.miniti.linux.Control :
+methods
+.BR Status ", " Start ", " Stop ", " Toggle ", " Show ", " OpenMeeting ", " Decide ;
+properties
+.BR Recording ", " ElapsedSeconds ", " MeetingTitle ", " Version ;
+signal
+.BR StateChanged .
+.PP
+.EX
+busctl --user call com.miniti.linux /com/miniti/linux com.miniti.linux.Control Toggle
+.EE
+.SH ENVIRONMENT
+.TP
+.B MINITI_SOCKET
+Override the control socket path.
+.TP
+.B RUST_LOG
+Log filter (default
+.BR info ).
+.TP
+.B MINITI_NO_LAYER_SHELL
+Set to keep the floating surface a normal window on Wayland.
+.TP
+.B WEBKIT_DISABLE_DMABUF_RENDERER
+Set to 0 to keep the DMA\-BUF renderer on NVIDIA (miniti disables it there by default).
+.SH EXAMPLES
+.EX
+miniti status --waybar
+miniti start "Weekly sync"
+miniti questions
+miniti export last -o ~/notes/last-meeting.md
+miniti watch --json | jq -r .elapsed_text
+.EE
+.SH SEE ALSO
+Full desktop\-integration notes:
+.I /usr/share/doc/miniti/README.md
+and
+.IR https://github.com/12ian34/miniti-linux/blob/main/docs/desktop-integration.md .
+.SH BUGS
+.I https://github.com/12ian34/miniti-linux/issues
