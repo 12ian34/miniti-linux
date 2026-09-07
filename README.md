@@ -198,6 +198,17 @@ desktop secret service (`com.miniti.linux` / `device-auth`), or in
 `~/.local/share/miniti/auth.json` (0600) when no secret service is running. Any
 build, from source or CI, can use managed mode.
 
+## try an unreleased build on Arch or Omarchy
+
+```bash
+scripts/install-and-check.sh
+```
+
+Builds the checkout, installs it through pacman, relaunches it, and runs the
+desktop-integration checks (CLI, socket, D-Bus, single instance, autostart,
+installed files, a short test recording), printing ok / FAIL per item.
+`--check` runs only the checks; `--no-build` reuses the existing release binary.
+
 ## release
 
 Releases are cut by pushing a `v*` tag. CI builds on Ubuntu 22.04 (the glibc
