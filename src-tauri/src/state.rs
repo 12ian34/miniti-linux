@@ -1470,6 +1470,29 @@ pub async fn stop_recording(
 // ---- Desktop shell glue -----------------------------------------------------
 
 /// Tray "Start / Stop meeting": reuse the command paths with the managed state.
+/// While the secret service has not answered (locked keyring at login, daemon
+/// not up yet), keep asking for a while; the moment credentials appear the
+/// UI drops the enrollment screen. Stops on its own once the keyring answers.
+pub fn spawn_keyring_retry(app: AppHandle) {
+    tauri::async_runtime::spawn(async move {
+        let auth = app.state::<AppState>().auth.clone();
+        if !auth.keyring_pending() {
+            return;
+        }
+        let deadline = Instant::now() + Duration::from_secs(180);
+        while auth.keyring_pending() && Instant::now() < deadline {
+            tokio::time::sleep(Duration::from_secs(3)).await;
+            if auth.retry_keyring() {
+                let _ = app.emit("auth_changed", ());
+                return;
+            }
+        }
+        if !auth.keyring_pending() {
+            let _ = app.emit("auth_changed", ());
+        }
+    });
+}
+
 /// `--start-meeting [--title]`: start once the app is up, with the CLI's title.
 pub async fn start_from_shell(app: AppHandle, title: Option<String>) {
     let state = app.state::<AppState>();

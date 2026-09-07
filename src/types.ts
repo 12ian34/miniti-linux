@@ -363,6 +363,8 @@ export type AuthStorage = "secret_service" | "file" | "none";
 
 export interface AuthStatus {
   enrolled: boolean;
+  /** The keyring has not answered yet; `enrolled` may still become true. */
+  keyring_pending: boolean;
   account_id: string | null;
   device_cap: number | null;
   storage: AuthStorage;

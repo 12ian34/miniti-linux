@@ -184,6 +184,8 @@ pub enum ApiError {
     NotEnrolled,
     #[error("this device is already enrolled")]
     AlreadyEnrolled,
+    #[error("the miniti backend already knows this computer, but its credentials are not on this machine (a locked, reset, or missing keyring does that). Restore with the account's recovery key; if it is lost, remove this device from the account on another device first")]
+    EnrolledElsewhere,
     #[error("that recovery key is not valid (check for typos; it starts with M1)")]
     InvalidRecoveryKey,
     #[error("this device's access was revoked; create or restore a recovery key to continue")]
@@ -251,6 +253,7 @@ pub fn map_error(status: u16, body: &str) -> Option<ApiError> {
             resets_at: parsed.resets_at,
         },
         (403, _) => ApiError::DeviceDisabled,
+        (409, "device_already_enrolled") => ApiError::EnrolledElsewhere,
         (429, _) => ApiError::RateLimited,
         (s, code) => ApiError::Http {
             status: s,
@@ -680,6 +683,10 @@ mod tests {
         assert!(matches!(
             map_error(401, r#"{"error":"unauthorized"}"#),
             Some(ApiError::Unauthorized)
+        ));
+        assert!(matches!(
+            map_error(409, r#"{"error":"device_already_enrolled","message":"This installation is already enrolled; restore or revoke it first"}"#),
+            Some(ApiError::EnrolledElsewhere)
         ));
         match map_error(500, r#"{"error":"internal_error","message":"boom"}"#) {
             Some(ApiError::Http {

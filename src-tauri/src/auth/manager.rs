@@ -61,6 +61,8 @@ pub enum StorageKind {
 #[derive(Debug, Clone, Serialize)]
 pub struct AuthStatus {
     pub enrolled: bool,
+    /// The secret service has not answered yet; `enrolled` may still flip to true.
+    pub keyring_pending: bool,
     pub account_id: Option<String>,
     pub device_cap: Option<u32>,
     pub storage: StorageKind,
@@ -123,10 +125,24 @@ fn keyring_entry() -> Option<keyring::Entry> {
     keyring::Entry::new(KEYRING_SERVICE, KEYRING_USER).ok()
 }
 
+/// What the secret service said. `Ok(None)` is a definite "nothing stored";
+/// `Err` is "could not ask" (no daemon, locked keyring, D-Bus timeout), which
+/// must not be mistaken for "not enrolled": the credentials may well be there.
 #[allow(clippy::disallowed_methods)]
-fn read_keyring() -> Option<Credentials> {
-    let raw = keyring_op(|| keyring_entry()?.get_password().ok())??;
-    serde_json::from_str(&raw).ok()
+fn read_keyring() -> Result<Option<Credentials>, String> {
+    let outcome = keyring_op(|| match keyring_entry() {
+        Some(entry) => entry.get_password().map(Some),
+        None => Ok(None),
+    });
+    match outcome {
+        None => Err("secret service did not answer in time".into()),
+        Some(Ok(None)) => Ok(None),
+        Some(Ok(Some(raw))) => serde_json::from_str(&raw)
+            .map(Some)
+            .map_err(|e| format!("stored credentials are unreadable: {e}")),
+        Some(Err(keyring::Error::NoEntry)) => Ok(None),
+        Some(Err(e)) => Err(e.to_string()),
+    }
 }
 
 #[allow(clippy::disallowed_methods)]
@@ -184,6 +200,9 @@ pub struct AuthManager {
     file_path: PathBuf,
     /// False in tests so nothing touches the real secret service.
     use_keyring: bool,
+    /// The secret service could not be asked at load and no file copy exists:
+    /// the answer to "enrolled?" is not known yet (see `retry_keyring`).
+    keyring_pending: std::sync::atomic::AtomicBool,
     /// Serializes concurrent refreshes so one expiry triggers one grant.
     refresh_gate: tokio::sync::Mutex<()>,
 }
@@ -196,17 +215,68 @@ impl AuthManager {
         app_version: impl Into<String>,
     ) -> Self {
         let file_path = auth_file_path();
-        let (creds, storage) = match read_keyring() {
-            Some(c) => (Some(c), StorageKind::SecretService),
-            None => match read_file(&file_path) {
+        let keyring = read_keyring();
+        let (creds, storage) = match &keyring {
+            Ok(Some(c)) => (Some(c.clone()), StorageKind::SecretService),
+            _ => match read_file(&file_path) {
                 Some(c) => (Some(c), StorageKind::File),
                 None => (None, StorageKind::None),
             },
         };
+        let pending = creds.is_none() && keyring.is_err();
+        if let Err(e) = &keyring {
+            if pending {
+                tracing::warn!("device auth: secret service unavailable ({e}); will keep asking before treating this device as new");
+            } else {
+                tracing::info!("device auth: secret service unavailable ({e}); using the file copy");
+            }
+        }
         let mut manager =
             Self::with_credentials(base, device_id, app_version, creds, storage, file_path);
         manager.use_keyring = true;
         manager
+            .keyring_pending
+            .store(pending, std::sync::atomic::Ordering::Relaxed);
+        manager
+    }
+
+    /// True while the secret service has not yet answered whether this
+    /// device holds credentials. The UI must not offer "create an account"
+    /// in that state: the backend already knows this device.
+    pub fn keyring_pending(&self) -> bool {
+        self.keyring_pending.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// Ask the secret service again. Returns true when credentials turned up
+    /// (a keyring that unlocked after login, a daemon that started late).
+    pub fn retry_keyring(&self) -> bool {
+        if !self.keyring_pending() || !self.use_keyring {
+            return false;
+        }
+        match read_keyring() {
+            Ok(Some(c)) => {
+                if let Ok(mut s) = self.storage.lock() {
+                    *s = StorageKind::SecretService;
+                }
+                if let Ok(mut cur) = self.creds.lock() {
+                    *cur = Some(c);
+                }
+                self.keyring_pending
+                    .store(false, std::sync::atomic::Ordering::Relaxed);
+                tracing::info!("device auth: credentials found in the secret service on retry");
+                true
+            }
+            Ok(None) => {
+                self.keyring_pending
+                    .store(false, std::sync::atomic::Ordering::Relaxed);
+                tracing::info!("device auth: secret service answered; this device holds no credentials");
+                false
+            }
+            Err(e) => {
+                tracing::debug!("device auth: secret service still unavailable ({e})");
+                false
+            }
+        }
     }
 
     /// File-only manager (no secret service); used by tests and the live check.
@@ -233,6 +303,7 @@ impl AuthManager {
             storage: Mutex::new(storage),
             file_path,
             use_keyring: false,
+            keyring_pending: std::sync::atomic::AtomicBool::new(false),
             refresh_gate: tokio::sync::Mutex::new(()),
         }
     }
@@ -249,6 +320,7 @@ impl AuthManager {
         let creds = self.creds.lock().ok().and_then(|c| c.clone());
         AuthStatus {
             enrolled: creds.is_some(),
+            keyring_pending: self.keyring_pending(),
             account_id: creds.as_ref().map(|c| c.account_id.clone()),
             device_cap: creds.as_ref().and_then(|c| c.device_cap),
             storage: self.storage.lock().map(|s| *s).unwrap_or(StorageKind::None),
@@ -424,6 +496,7 @@ impl AuthManager {
         label: Option<&str>,
         app_mode: AppMode,
     ) -> Result<String, ApiError> {
+        self.retry_keyring();
         if self.is_enrolled() {
             return Err(ApiError::AlreadyEnrolled);
         }
@@ -462,6 +535,7 @@ impl AuthManager {
         label: Option<&str>,
         app_mode: AppMode,
     ) -> Result<(), ApiError> {
+        self.retry_keyring();
         if self.is_enrolled() {
             return Err(ApiError::AlreadyEnrolled);
         }
@@ -650,6 +724,22 @@ mod tests {
         }
         std::fs::write(&path, "not json").unwrap();
         assert_eq!(read_file(&path), None);
+    }
+
+    #[test]
+    fn keyring_pending_is_off_for_file_backed_managers_and_retry_is_a_noop() {
+        let dir = tempfile::tempdir().unwrap();
+        let m = AuthManager::with_credentials(
+            "https://api.test",
+            "550e8400-e29b-41d4-a716-446655440000",
+            "0.5.0",
+            None,
+            StorageKind::None,
+            dir.path().join("auth.json"),
+        );
+        assert!(!m.status().keyring_pending);
+        assert!(!m.retry_keyring(), "nothing to retry without a secret service");
+        assert!(!m.is_enrolled());
     }
 
     #[test]

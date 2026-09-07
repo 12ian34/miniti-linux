@@ -12,6 +12,7 @@ public changelog for miniti for Linux. the changelog for every platform lives at
 - new: The desktop entry offers Start, Stop, and Toggle actions from the app menu, and the app now appears in software centres with a description, screenshots, and release notes
 - improvement: The machine no longer goes to sleep or locks in the middle of a meeting
 - fix: Connecting Google Calendar or a CRM opened a second copy of miniti instead of returning to the running one
+- fix: If the keyring had not unlocked yet when miniti started, the app could think this computer was new and offer to create a fresh recovery key, which the backend then refused. It now waits for the keyring and explains what to do if the credentials really are gone
 
 ### 2026-09-06 - v0.4.1
 

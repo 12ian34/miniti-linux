@@ -199,6 +199,11 @@ export function onRecordingNudge(handler: (n: RecordingNudge) => void): Promise<
 export function onDeepLink(handler: (ev: DeepLinkEvent) => void): Promise<UnlistenFn> {
   return listen<DeepLinkEvent>("deep_link", (e) => handler(e.payload));
 }
+/** Credentials turned up after launch (keyring unlocked) or the keyring finally answered. */
+export function onAuthChanged(handler: () => void): Promise<UnlistenFn> {
+  return listen("auth_changed", () => handler());
+}
+
 export function onNavigateMeeting(handler: (id: string) => void): Promise<UnlistenFn> {
   return listen<string>("navigate_meeting", (e) => handler(e.payload));
 }

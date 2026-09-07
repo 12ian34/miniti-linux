@@ -237,6 +237,7 @@ pub fn run() {
                 });
             }
             state::spawn_signal_handler(app.handle().clone());
+            state::spawn_keyring_retry(app.handle().clone());
             Ok(())
         })
         .on_window_event(|window, event| {

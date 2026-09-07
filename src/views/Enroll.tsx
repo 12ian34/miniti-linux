@@ -8,7 +8,7 @@ type Step = "choose" | "created" | "restore";
  * First managed launch: create or restore an anonymous recovery key
  * (roadmap P0.1). No email, no password; the key is the account.
  */
-export function Enroll({ onDone, inline = false }: { onDone: () => void; inline?: boolean }) {
+export function Enroll({ onDone, inline = false, keyringPending = false }: { onDone: () => void; inline?: boolean; keyringPending?: boolean }) {
   const wrap = inline ? "enroll-inline" : "gate";
   const [step, setStep] = useState<Step>("choose");
   const [busy, setBusy] = useState(false);
@@ -115,9 +115,16 @@ export function Enroll({ onDone, inline = false }: { onDone: () => void; inline?
         Managed mode uses the miniti backend for transcription and insights. Instead of an email or
         password, your account is an anonymous recovery key that only you hold.
       </p>
+      {keyringPending && (
+        <div className="banner">
+          Your keyring has not answered yet. If this computer was set up before, its credentials are
+          probably still there: unlock the keyring (or wait a moment) and this screen goes away on its
+          own. Creating a new key now would fail because the backend already knows this computer.
+        </div>
+      )}
       {error && <div className="banner error">{error}</div>}
       <div className="choice-list">
-        <button className="choice" disabled={busy} onClick={create}>
+        <button className="choice" disabled={busy || keyringPending} onClick={create}>
           <strong>{busy ? "Creating…" : "Create recovery key"}</strong>
           <span>New account. Free minutes every month; upgrade to Pro any time.</span>
         </button>
