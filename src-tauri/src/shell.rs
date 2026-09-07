@@ -10,6 +10,7 @@ use serde::Serialize;
 use tauri::menu::{Menu, MenuBuilder, MenuItem, MenuItemBuilder};
 use tauri::tray::{TrayIcon, TrayIconBuilder};
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder, Wry};
+#[cfg(not(target_os = "linux"))]
 use tauri_plugin_notification::NotificationExt;
 
 pub const PRESENCE_LABEL: &str = "presence";
@@ -421,10 +422,30 @@ pub fn main_is_focused(app: &AppHandle) -> bool {
         .unwrap_or(false)
 }
 
-/// Desktop notification (libnotify / portal via the notification plugin).
+/// Desktop notification. On Linux it goes straight to
+/// org.freedesktop.Notifications with the `desktop-entry` hint, so the
+/// desktop attributes it to miniti (per-app settings, muting, the app icon);
+/// elsewhere the Tauri plugin does the job.
 pub fn notify(app: &AppHandle, title: &str, body: &str) {
-    if let Err(e) = app.notification().builder().title(title).body(body).show() {
-        tracing::info!("notification unavailable: {e}");
+    #[cfg(target_os = "linux")]
+    {
+        let _ = app;
+        let result = notify_rust::Notification::new()
+            .appname("miniti")
+            .summary(title)
+            .body(body)
+            .icon("miniti")
+            .hint(notify_rust::Hint::DesktopEntry("miniti".into()))
+            .show();
+        if let Err(e) = result {
+            tracing::info!("notification unavailable: {e}");
+        }
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        if let Err(e) = app.notification().builder().title(title).body(body).show() {
+            tracing::info!("notification unavailable: {e}");
+        }
     }
 }
 
@@ -530,16 +551,33 @@ pub fn set_autostart(enabled: bool) -> std::io::Result<()> {
         };
     }
     let exe = std::env::current_exe()?;
-    let exe = exe.to_string_lossy();
-    let exec = if exe.contains(' ') {
-        format!("\"{exe}\"")
-    } else {
-        exe.to_string()
-    };
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    std::fs::write(&path, autostart_entry(&exec))
+    std::fs::write(&path, autostart_entry(&exec_quote(&exe.to_string_lossy())))
+}
+
+/// Quote one Exec argument as the desktop entry spec requires: reserved
+/// characters force double quotes, four of them are backslash-escaped inside,
+/// and a literal `%` is written `%%` (field codes).
+pub fn exec_quote(arg: &str) -> String {
+    const RESERVED: &[char] = &[
+        ' ', '\t', '\n', '"', '\'', '\\', '>', '<', '~', '|', '&', ';', '$', '*', '?', '#', '(',
+        ')', '`',
+    ];
+    let escaped_percent = arg.replace('%', "%%");
+    if !arg.contains(RESERVED) {
+        return escaped_percent;
+    }
+    let mut out = String::from("\"");
+    for c in escaped_percent.chars() {
+        if matches!(c, '"' | '`' | '$' | '\\') {
+            out.push('\\');
+        }
+        out.push(c);
+    }
+    out.push('"');
+    out
 }
 
 pub fn autostart_enabled() -> bool {
@@ -576,5 +614,16 @@ mod tests {
         assert!(e.contains("Exec=/usr/bin/miniti --hidden\n"));
         assert!(e.contains("X-GNOME-Autostart-enabled=true"));
         assert!(!e.contains("Hidden=true"));
+    }
+
+    #[test]
+    fn exec_quoting_follows_the_desktop_entry_spec() {
+        assert_eq!(exec_quote("/usr/bin/miniti"), "/usr/bin/miniti");
+        assert_eq!(exec_quote("/opt/my apps/miniti"), "\"/opt/my apps/miniti\"");
+        assert_eq!(exec_quote("/home/ian/it's/miniti"), "\"/home/ian/it's/miniti\"");
+        assert_eq!(exec_quote("/x/a(b)/miniti"), "\"/x/a(b)/miniti\"");
+        assert_eq!(exec_quote("/x/say \"hi\"/m"), "\"/x/say \\\"hi\\\"/m\"");
+        assert_eq!(exec_quote("/x/$HOME`/m"), "\"/x/\\$HOME\\`/m\"");
+        assert_eq!(exec_quote("/x/100%/miniti"), "/x/100%%/miniti");
     }
 }

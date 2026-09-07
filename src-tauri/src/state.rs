@@ -684,6 +684,16 @@ pub fn build_presence(app: &AppHandle) -> RecordingPresence {
 #[tauri::command]
 pub fn frontend_ready(window: tauri::WebviewWindow, user_agent: String, viewport: String) {
     tracing::info!(target: "frontend", "webview ready: window={} viewport={} ua={}", window.label(), viewport, user_agent);
+    if window.label() == crate::shell::MAIN_LABEL {
+        let app = window.app_handle().clone();
+        if let Some(pending) = app.try_state::<PendingLinks>() {
+            for url in pending.drain() {
+                if !crate::shell::handle_open_url(&app, &url) {
+                    tracing::info!("ignored link from the command line: {url}");
+                }
+            }
+        }
+    }
 }
 
 #[tauri::command]
@@ -1460,6 +1470,72 @@ pub async fn stop_recording(
 // ---- Desktop shell glue -----------------------------------------------------
 
 /// Tray "Start / Stop meeting": reuse the command paths with the managed state.
+/// `--start-meeting [--title]`: start once the app is up, with the CLI's title.
+pub async fn start_from_shell(app: AppHandle, title: Option<String>) {
+    let state = app.state::<AppState>();
+    match start_meeting(
+        app.clone(),
+        state.clone(),
+        StartOptions {
+            title,
+            ..Default::default()
+        },
+    )
+    .await
+    {
+        Ok(id) => {
+            let _ = app.emit("navigate_meeting", &id);
+        }
+        Err(e) => crate::shell::notify(&app, "miniti", &e),
+    }
+}
+
+/// Deep links passed on a cold start (`miniti miniti-google://…`), delivered
+/// once the webview is listening rather than dropped.
+pub struct PendingLinks(Mutex<Vec<String>>);
+
+impl PendingLinks {
+    pub fn new(urls: Vec<String>) -> Self {
+        Self(Mutex::new(urls))
+    }
+    fn drain(&self) -> Vec<String> {
+        self.0.lock().map(|mut v| std::mem::take(&mut *v)).unwrap_or_default()
+    }
+}
+
+/// SIGTERM / SIGINT / SIGHUP (logout, `kill`, closing the launching
+/// terminal): stop and save the meeting before exiting, inside the few
+/// seconds a session manager allows, instead of losing the recording.
+pub fn spawn_signal_handler(app: AppHandle) {
+    #[cfg(unix)]
+    tauri::async_runtime::spawn(async move {
+        use tokio::signal::unix::{signal, SignalKind};
+        let (Ok(mut term), Ok(mut int), Ok(mut hup)) = (
+            signal(SignalKind::terminate()),
+            signal(SignalKind::interrupt()),
+            signal(SignalKind::hangup()),
+        ) else {
+            return;
+        };
+        tokio::select! {
+            _ = term.recv() => {}
+            _ = int.recv() => {}
+            _ = hup.recv() => {}
+        }
+        tracing::info!("termination signal: stopping the meeting before exit");
+        let state = app.state::<AppState>();
+        let running = state.session.lock().map(|s| s.running).unwrap_or(false);
+        if running {
+            let _ = tokio::time::timeout(
+                Duration::from_secs(4),
+                stop_recording(app.clone(), state.clone()),
+            )
+            .await;
+        }
+        app.exit(0);
+    });
+}
+
 pub async fn toggle_recording_from_shell(app: AppHandle) {
     let state = app.state::<AppState>();
     let running = state.session.lock().map(|s| s.running).unwrap_or(false);

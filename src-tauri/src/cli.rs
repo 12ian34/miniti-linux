@@ -46,6 +46,10 @@ pub struct Cli {
     #[arg(long = "start-meeting")]
     pub start_meeting: bool,
 
+    /// Title for the meeting started by --start-meeting
+    #[arg(long, requires = "start_meeting", hide = true)]
+    pub title: Option<String>,
+
     /// Links to open (OAuth returns arrive here via the desktop entry's %U)
     #[arg(value_name = "URL", hide = true, value_parser = parse_link)]
     pub urls: Vec<String>,
@@ -145,6 +149,7 @@ fn parse_link(raw: &str) -> Result<String, String> {
 pub struct Launch {
     pub hidden: bool,
     pub start_meeting: bool,
+    pub title: Option<String>,
     pub urls: Vec<String>,
 }
 
@@ -156,6 +161,7 @@ pub fn run() -> Result<Launch, i32> {
         return Ok(Launch {
             hidden: cli.hidden,
             start_meeting: cli.start_meeting,
+            title: cli.title.filter(|t| !t.trim().is_empty()),
             urls: cli.urls,
         });
     };
@@ -239,6 +245,15 @@ fn execute(command: Command, out: &Output) -> Result<(), i32> {
                     out.error(&format!("autostart: {e}"));
                     EXIT_FAILED
                 })?;
+                // Settings shows the preference, so keep it in step (the
+                // running app re-reads prefs on its next save, if any).
+                let mut prefs = crate::prefs::Prefs::load();
+                if prefs.launch_at_login != enabled {
+                    prefs.launch_at_login = enabled;
+                    if let Err(e) = prefs.save() {
+                        out.error(&format!("autostart: preference not saved: {e}"));
+                    }
+                }
             }
             let enabled = crate::shell::autostart_enabled();
             if out.json {
@@ -258,8 +273,7 @@ fn execute(command: Command, out: &Output) -> Result<(), i32> {
                 }
                 let mut args = vec!["--start-meeting".to_string()];
                 if let Some(t) = title {
-                    // The launch path has no title flag; the meeting names itself.
-                    tracing::debug!("title {t:?} ignored on cold start");
+                    args.push(format!("--title={t}"));
                 }
                 return spawn_detached(&mut args).map_err(|e| {
                     out.error(&format!("could not launch miniti: {e}"));
@@ -290,7 +304,9 @@ fn execute(command: Command, out: &Output) -> Result<(), i32> {
         }
         Command::Toggle => {
             if !client::is_running() {
-                if !out.json {
+                if out.json {
+                    out.line(json!({ "ok": true, "launched": true, "recording": true }).to_string());
+                } else {
                     out.line("miniti is not running; starting it with a new meeting");
                 }
                 return spawn_detached(&mut vec!["--start-meeting".to_string()]).map_err(|e| {
@@ -392,13 +408,16 @@ fn execute(command: Command, out: &Output) -> Result<(), i32> {
             let c = connect(out)?;
             let json = out.json;
             c.subscribe(|line| {
-                if json {
-                    println!("{line}");
+                // A closed pipe (`miniti watch | head -1`) ends the stream
+                // instead of panicking in println!.
+                let mut stdout = std::io::stdout().lock();
+                let written = if json {
+                    writeln!(stdout, "{line}")
                 } else {
                     let v: Value = serde_json::from_str(line).unwrap_or(Value::Null);
-                    println!("{}", status_line(&v));
-                }
-                true
+                    writeln!(stdout, "{}", status_line(&v))
+                };
+                written.and_then(|_| stdout.flush()).is_ok()
             })
             .map_err(|e| {
                 out.error(&format!("stream ended: {e}"));
@@ -580,6 +599,9 @@ mod tests {
         assert!(cli.command.is_none() && !cli.hidden && cli.urls.is_empty());
         let cli = Cli::try_parse_from(["miniti", "--hidden"]).unwrap();
         assert!(cli.hidden);
+        let cli = Cli::try_parse_from(["miniti", "--start-meeting", "--title=Weekly sync"]).unwrap();
+        assert!(cli.start_meeting && cli.title.as_deref() == Some("Weekly sync"));
+        assert!(Cli::try_parse_from(["miniti", "--title=x"]).is_err(), "title needs --start-meeting");
         let cli =
             Cli::try_parse_from(["miniti", "miniti-google://oauth-callback?status=success"]).unwrap();
         assert_eq!(cli.urls, vec!["miniti-google://oauth-callback?status=success"]);

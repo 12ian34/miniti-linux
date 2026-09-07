@@ -7,13 +7,13 @@ pkgdesc="miniti — AI meeting assistant with live transcription, insights and c
 arch=('x86_64')
 url="https://github.com/12ian34/miniti-linux"
 license=('Elastic-2.0')
-depends=('webkit2gtk-4.1' 'gtk3' 'libsoup3' 'librsvg' 'libappindicator-gtk3' 'openssl'
+depends=('webkit2gtk-4.1' 'gtk3' 'libsoup3' 'librsvg' 'libappindicator-gtk3' 'alsa-lib'
          'pipewire' 'pipewire-pulse' 'libpulse' 'libsecret' 'libnotify' 'hicolor-icon-theme')
 optdepends=('gtk-layer-shell: pin the floating recording surface on Wayland compositors (Hyprland, Sway, KDE)'
             'gnome-keyring: keep the account credentials and device id in the secret service'
             'xdg-desktop-portal: keep the machine awake during a meeting on desktops without a screensaver service'
             'xdg-utils: open Polar / OAuth pages in the browser')
-provides=('miniti')
+provides=("miniti=${pkgver}")
 conflicts=('miniti' 'miniti-git')
 # The prebuilt binary is already stripped; skip makepkg's debug split (it would only warn).
 options=(!debug)
@@ -29,7 +29,7 @@ package() {
   install -Dm644 completions/miniti.bash "${pkgdir}/usr/share/bash-completion/completions/miniti"
   install -Dm644 completions/_miniti "${pkgdir}/usr/share/zsh/site-functions/_miniti"
   install -Dm644 completions/miniti.fish "${pkgdir}/usr/share/fish/vendor_completions.d/miniti.fish"
-  for size in 32x32 128x128 256x256@2 512x512; do
+  for size in 32x32 48x48 64x64 128x128 256x256 512x512; do
     install -Dm644 "icons/hicolor/${size}/apps/miniti.png" "${pkgdir}/usr/share/icons/hicolor/${size}/apps/miniti.png"
   done
   install -Dm644 icons/hicolor/scalable/apps/miniti.svg "${pkgdir}/usr/share/icons/hicolor/scalable/apps/miniti.svg"

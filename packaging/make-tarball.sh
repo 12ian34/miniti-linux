@@ -46,8 +46,10 @@ fi
 stage="$out_dir/$pkg"
 rm -rf "$stage"
 mkdir -p "$stage/icons/hicolor/32x32/apps" \
+         "$stage/icons/hicolor/48x48/apps" \
+         "$stage/icons/hicolor/64x64/apps" \
          "$stage/icons/hicolor/128x128/apps" \
-         "$stage/icons/hicolor/256x256@2/apps" \
+         "$stage/icons/hicolor/256x256/apps" \
          "$stage/icons/hicolor/512x512/apps" \
          "$stage/icons/hicolor/scalable/apps" \
          "$stage/icons/hicolor/symbolic/apps" \
@@ -63,8 +65,10 @@ install -m 0644 "$repo_root/LICENSE" "$stage/LICENSE"
 # Shell completions come from the binary itself, so they always match its flags.
 "$repo_root/packaging/gen-completions.sh" "$bin" "$stage/completions"
 install -m 0644 "$repo_root/src-tauri/icons/32x32.png"     "$stage/icons/hicolor/32x32/apps/miniti.png"
+install -m 0644 "$repo_root/src-tauri/icons/48x48.png"     "$stage/icons/hicolor/48x48/apps/miniti.png"
+install -m 0644 "$repo_root/src-tauri/icons/64x64.png"     "$stage/icons/hicolor/64x64/apps/miniti.png"
 install -m 0644 "$repo_root/src-tauri/icons/128x128.png"   "$stage/icons/hicolor/128x128/apps/miniti.png"
-install -m 0644 "$repo_root/src-tauri/icons/128x128@2x.png" "$stage/icons/hicolor/256x256@2/apps/miniti.png"
+install -m 0644 "$repo_root/src-tauri/icons/128x128@2x.png" "$stage/icons/hicolor/256x256/apps/miniti.png"
 install -m 0644 "$repo_root/src-tauri/icons/icon.png"        "$stage/icons/hicolor/512x512/apps/miniti.png"
 
 cat > "$stage/README.md" <<EOF

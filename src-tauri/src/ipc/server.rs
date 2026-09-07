@@ -19,9 +19,30 @@ pub fn spawn(app: AppHandle) {
     });
 }
 
+/// Advisory lock held for the life of the process so two instances starting
+/// at once cannot both decide the socket is stale and both bind it.
+fn take_instance_lock(dir: &std::path::Path) -> std::io::Result<()> {
+    use std::os::unix::io::AsRawFd;
+    let lock = std::fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(dir.join("miniti.lock"))?;
+    // SAFETY: flock on a file descriptor we own; LOCK_NB makes it non-blocking.
+    let rc = unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
+    if rc != 0 {
+        return Err(std::io::Error::other("another miniti holds the instance lock"));
+    }
+    std::mem::forget(lock);
+    Ok(())
+}
+
 async fn serve(app: AppHandle) -> std::io::Result<()> {
-    super::ensure_runtime_dir()?;
+    let dir = super::ensure_runtime_dir()?;
     let path = super::socket_path();
+    if std::env::var_os(super::SOCKET_ENV).is_none() {
+        take_instance_lock(&dir)?;
+    }
     if path.exists() {
         if super::client::ping(&path).is_ok() {
             tracing::warn!(
@@ -84,10 +105,18 @@ async fn handle_conn(app: AppHandle, stream: UnixStream) -> std::io::Result<()> 
                 .unwrap_or_else(|| serde_json::to_string(&super::snapshot::current(&app)).unwrap_or_default());
             write_line(&mut w, &first).await?;
             loop {
-                match rx.recv().await {
-                    Ok(json) => write_line(&mut w, &json).await?,
-                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
-                    Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                tokio::select! {
+                    msg = rx.recv() => match msg {
+                        Ok(json) => write_line(&mut w, &json).await?,
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                        Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                    },
+                    // A subscriber that hangs up while nothing changes would
+                    // otherwise keep its task until the next publish.
+                    eof = lines.next_line() => match eof {
+                        Ok(Some(_)) => continue,
+                        _ => break,
+                    },
                 }
             }
             return Ok(());

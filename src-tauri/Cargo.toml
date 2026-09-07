@@ -64,6 +64,9 @@ libc = "0.2"
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk = "0.18"
 libloading = "0.8"
+# Notifications with the `desktop-entry` hint (per-app attribution and
+# muting in GNOME / KDE); the Tauri plugin sends summary + body only.
+notify-rust = { version = "4", default-features = false, features = ["z"] }
 
 [dev-dependencies]
 tempfile = "3"

@@ -2855,6 +2855,7 @@ dependencies = [
  "keyring",
  "libc",
  "libloading 0.8.9",
+ "notify-rust",
  "p256",
  "rand_core 0.6.4",
  "reqwest 0.12.28",

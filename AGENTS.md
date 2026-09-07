@@ -39,6 +39,7 @@ Do not modify sibling repos from this workflow unless the user explicitly asks. 
 | Understand feasibility & gaps | [docs/feasibility.md](docs/feasibility.md) |
 | Package binary + AUR | [docs/distribution.md](docs/distribution.md) |
 | CLI, control socket, state file, D-Bus, Waybar, autostart | [docs/desktop-integration.md](docs/desktop-integration.md) |
+| What a gold-standard Linux app still needs (done / open / decided) | [docs/linux-roadmap.md](docs/linux-roadmap.md) |
 | Backend endpoints / Polar | `../miniti-api/AGENTS.md` (and PLAN § API) |
 | Current macOS audio / echo / multichannel | `../miniti/docs/audio.md` (reference only — reimplement here) |
 | Call lifecycle policy semantics | `../miniti/docs/call-lifecycle-and-recording-presence-plan.md` |
@@ -100,7 +101,7 @@ Tauri 2 + Rust + React/TypeScript, `identifier=com.miniti.linux`, binary `miniti
 
 ### Verification
 
-`cargo test --manifest-path src-tauri/Cargo.toml` (168 tests), `cargo clippy` clean, and `pnpm build` pass on macOS. On the Arch ThinkPad, the mono BYOK/managed path has been run live; the dual-source, Smart-meetings and integration paths were built against the documented contracts and still need a real-hardware pass.
+`cargo test --manifest-path src-tauri/Cargo.toml` (169 tests), `cargo clippy` clean, and `pnpm build` pass on macOS. On the Arch ThinkPad, the mono BYOK/managed path has been run live; the dual-source, Smart-meetings and integration paths were built against the documented contracts and still need a real-hardware pass.
 
 - Dev environment for Cloud Agents: `.cursor/environment.json` (bootstrap `.cursor/install.sh`). Run locally per [README.md](README.md) § Develop.
 - Cursor-hosted repo: `ian/miniti-linux` (`https://origin.cursor.com/ian/miniti-linux.git`); page: https://cursor.com/codebase/ian/miniti-linux

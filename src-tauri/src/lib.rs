@@ -178,7 +178,7 @@ pub fn run() {
                 .unwrap_or(false);
         }
         if launch.start_meeting {
-            let _ = client.call(&Request::Start { title: None });
+            let _ = client.call(&Request::Start { title: launch.title.clone() });
         }
         if !launch.hidden {
             let _ = client.call(&Request::Show);
@@ -208,6 +208,7 @@ pub fn run() {
         .plugin(tauri_plugin_clipboard_manager::init())
         .manage(build_state())
         .manage(ipc::snapshot::HubSlot::new(ipc::snapshot::Hub::new()))
+        .manage(state::PendingLinks::new(launch.urls.clone()))
         .setup(move |app| {
             let handle = app.handle().clone();
             let show_tray = handle
@@ -230,10 +231,12 @@ pub fn run() {
                 shell::show_main(&handle);
             }
             if launch.start_meeting {
+                let title = launch.title.clone();
                 tauri::async_runtime::spawn(async move {
-                    state::toggle_recording_from_shell(handle).await;
+                    state::start_from_shell(handle, title).await;
                 });
             }
+            state::spawn_signal_handler(app.handle().clone());
             Ok(())
         })
         .on_window_event(|window, event| {

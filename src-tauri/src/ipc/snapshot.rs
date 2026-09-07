@@ -160,10 +160,10 @@ fn insights_for(app: &AppHandle, hub: &Hub, meeting_id: Option<&str>) -> (Vec<Va
         return (Vec::new(), String::new());
     };
     let meeting_changed = cache.meeting_id.as_deref() != meeting_id;
-    if !meeting_changed && !hub.insights_dirty.swap(false, Ordering::Relaxed) {
+    let dirty = hub.insights_dirty.swap(false, Ordering::Relaxed);
+    if !meeting_changed && !dirty {
         return (cache.questions.clone(), cache.summary.clone());
     }
-    hub.insights_dirty.store(false, Ordering::Relaxed);
     cache.meeting_id = meeting_id.map(str::to_string);
     cache.questions.clear();
     cache.summary.clear();

@@ -1,0 +1,10 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: miniti
+Upstream-Contact: Ian Ahuja <hello@miniti.app>
+Source: https://github.com/12ian34/miniti-linux
+
+Files: *
+Copyright: 2026 Ian Ahuja
+License: Elastic-2.0
+ See /usr/share/doc/miniti/LICENSE or https://www.elastic.co/licensing/elastic-license
+ for the full text of the Elastic License 2.0.

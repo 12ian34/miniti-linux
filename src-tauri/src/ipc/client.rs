@@ -28,7 +28,7 @@ fn connect_path(path: &Path) -> std::io::Result<UnixStream> {
 /// Round-trip a `ping`; Ok only if a live miniti answers on `path`.
 pub fn ping(path: &Path) -> std::io::Result<()> {
     let mut client = Client::from_stream(connect_path(path)?)?;
-    let r = client.call(&Request::Ping)?;
+    let r = client.call_with_timeout(&Request::Ping, CONNECT_TIMEOUT)?;
     if r.ok {
         Ok(())
     } else {
@@ -36,10 +36,16 @@ pub fn ping(path: &Path) -> std::io::Result<()> {
     }
 }
 
-/// Connect to the running instance, if any.
+/// Connect to the running instance, if any. A connection that does not
+/// answer a ping promptly counts as no instance (see `call_with_timeout`).
 pub fn connect() -> std::io::Result<Client> {
     let stream = connect_path(&super::socket_path())?;
-    Client::from_stream(stream)
+    let mut client = Client::from_stream(stream)?;
+    let r = client.call_with_timeout(&Request::Ping, CONNECT_TIMEOUT)?;
+    if !r.ok {
+        return Err(std::io::Error::other(r.error.unwrap_or_default()));
+    }
+    Ok(client)
 }
 
 pub fn is_running() -> bool {
@@ -56,11 +62,17 @@ impl Client {
     }
 
     pub fn call(&mut self, req: &Request) -> std::io::Result<Response> {
+        self.call_with_timeout(req, CALL_TIMEOUT)
+    }
+
+    /// A wedged instance can accept the connection (the kernel does that) and
+    /// never answer; callers that only probe use a short deadline.
+    pub fn call_with_timeout(&mut self, req: &Request, timeout: Duration) -> std::io::Result<Response> {
         let mut line = serde_json::to_string(req).map_err(std::io::Error::other)?;
         line.push('\n');
         self.writer.write_all(line.as_bytes())?;
         self.writer.flush()?;
-        self.reader.get_ref().set_read_timeout(Some(CALL_TIMEOUT))?;
+        self.reader.get_ref().set_read_timeout(Some(timeout))?;
         let mut reply = String::new();
         if self.reader.read_line(&mut reply)? == 0 {
             return Err(std::io::Error::new(
