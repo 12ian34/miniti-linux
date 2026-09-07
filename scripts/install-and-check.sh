@@ -34,6 +34,14 @@ version="$(sed -n 's/^\s*"version"\s*:\s*"\([^"]*\)".*/\1/p' src-tauri/tauri.con
 bin="$root/src-tauri/target/dogfood/miniti"
 
 if [[ "$mode" != "--check" ]]; then
+  # Password first, then walk away: pacman needs sudo only at the end, and a
+  # ticket taken now would expire during the build, so a background loop
+  # refreshes it until this script exits.
+  bold "sudo (asked once now, kept alive until the install)"
+  sudo -v || exit 1
+  ( while true; do sudo -n true 2>/dev/null; sleep 50; done ) &
+  sudo_keepalive=$!
+  trap 'kill "$sudo_keepalive" 2>/dev/null' EXIT
   if [[ "$mode" != "--no-build" || ! -x "$bin" ]]; then
     bold "building miniti $version (dogfood profile)"
     if command -v mold >/dev/null 2>&1; then
