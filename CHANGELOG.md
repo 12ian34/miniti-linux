@@ -13,6 +13,7 @@ public changelog for miniti for Linux. the changelog for every platform lives at
 - improvement: The machine no longer goes to sleep or locks in the middle of a meeting
 - fix: Connecting Google Calendar or a CRM opened a second copy of miniti instead of returning to the running one
 - fix: If the keyring had not unlocked yet when miniti started, the app could think this computer was new and offer to create a fresh recovery key, which the backend then refused. It now waits for the keyring and explains what to do if the credentials really are gone
+- fix: A failed "create recovery key" attempt could leave the app signed in with a key the backend had never seen, so every meeting failed to start and the plan never loaded. That leftover is now ignored, and a plan that cannot be checked says why instead of spinning
 
 ### 2026-09-06 - v0.4.1
 

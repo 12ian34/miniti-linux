@@ -86,7 +86,7 @@ export function Home({ gate }: { gate: LaunchGate | null }) {
         </div>
 
         {prefs?.app_mode === "managed" && health?.enrolled ? (
-          <UsageBanner prefs={prefs} usage={usage} onUpgrade={() => subscribeUrl().then(openUrl).catch(() => navigate({ kind: "settings" }))} />
+          <UsageBanner prefs={prefs} usage={usage} error={usageError} onUpgrade={() => subscribeUrl().then(openUrl).catch(() => navigate({ kind: "settings" }))} />
         ) : (
           <StatusPills prefs={prefs} usage={usage} backendKey={health?.enrolled ?? null} />
         )}

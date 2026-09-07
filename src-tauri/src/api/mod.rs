@@ -190,6 +190,8 @@ pub enum ApiError {
     InvalidRecoveryKey,
     #[error("this device's access was revoked; create or restore a recovery key to continue")]
     Revoked,
+    #[error("this computer's stored key no longer matches its miniti account (an interrupted enrollment, or a restore from another copy of this installation). Sign out in Settings → Account, then restore with your recovery key")]
+    KeyMismatch,
     #[error("this device has been disabled")]
     DeviceDisabled,
     #[error("monthly managed minutes used up{}", resets_hint(.resets_at))]
@@ -244,6 +246,7 @@ pub fn map_error(status: u16, body: &str) -> Option<ApiError> {
     Some(match (status, parsed.error.as_str()) {
         (401, "unauthorized") | (401, "") => ApiError::Unauthorized,
         (401, "installation_revoked") | (401, "device_auth_required") => ApiError::Revoked,
+        (401, "invalid_proof") => ApiError::KeyMismatch,
         (401, code) => ApiError::Http {
             status: 401,
             code: code.into(),
@@ -687,6 +690,10 @@ mod tests {
         assert!(matches!(
             map_error(409, r#"{"error":"device_already_enrolled","message":"This installation is already enrolled; restore or revoke it first"}"#),
             Some(ApiError::EnrolledElsewhere)
+        ));
+        assert!(matches!(
+            map_error(401, r#"{"error":"invalid_proof","message":"proof of possession failed"}"#),
+            Some(ApiError::KeyMismatch)
         ));
         match map_error(500, r#"{"error":"internal_error","message":"boom"}"#) {
             Some(ApiError::Http {

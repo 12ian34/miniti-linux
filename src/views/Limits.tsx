@@ -4,8 +4,9 @@ import { errorMessage, subscribeUrl } from "../api";
 import type { Prefs, Usage } from "../types";
 
 /** Managed-mode remaining minutes; hidden for BYOK (macOS `UsageBanner`). */
-export function UsageBanner({ prefs, usage, onUpgrade }: { prefs: Prefs | null; usage: Usage | null; onUpgrade: () => void }) {
+export function UsageBanner({ prefs, usage, error, onUpgrade }: { prefs: Prefs | null; usage: Usage | null; error?: string | null; onUpgrade: () => void }) {
   if (!prefs || prefs.app_mode !== "managed") return null;
+  if (!usage && error) return <div className="banner error">plan unavailable: {error}</div>;
   if (!usage) return <span className="pill">checking plan…</span>;
   const pro = usage.tier === "pro";
   const limit = usage.minutes_limit;

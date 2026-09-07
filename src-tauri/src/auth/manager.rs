@@ -48,6 +48,22 @@ pub struct Credentials {
     pub device_cap: Option<u32>,
     #[serde(default)]
     pub enrolled_at: String,
+    /// Written before the enrollment request so a lost response cannot lose
+    /// the only recovery key. A draft is never an enrollment: it has no
+    /// account, no tokens, and a key the backend has not seen.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub draft: bool,
+}
+
+impl Credentials {
+    /// Drafts from this version carry the flag; older drafts are recognised
+    /// by having no account and no tokens.
+    pub fn is_draft(&self) -> bool {
+        self.draft
+            || (self.account_id.is_empty()
+                && self.access_token.is_none()
+                && self.refresh_token.is_none())
+    }
 }
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
@@ -170,6 +186,19 @@ pub fn read_file(path: &Path) -> Option<Credentials> {
     serde_json::from_str(&raw).ok()
 }
 
+/// The file copy, but only if it is a finished enrollment. An interrupted
+/// "create account" leaves a draft behind; loading that as credentials made
+/// every signed request fail with `invalid_proof` (the backend never saw the
+/// draft's key) while the real credentials sat in the secret service.
+pub fn read_file_enrolled(path: &Path) -> Option<Credentials> {
+    let creds = read_file(path)?;
+    if creds.is_draft() {
+        tracing::info!("device auth: ignoring an unfinished enrollment draft at {}", path.display());
+        return None;
+    }
+    Some(creds)
+}
+
 pub fn write_file(path: &Path, creds: &Credentials) -> std::io::Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
@@ -218,7 +247,7 @@ impl AuthManager {
         let keyring = read_keyring();
         let (creds, storage) = match &keyring {
             Ok(Some(c)) => (Some(c.clone()), StorageKind::SecretService),
-            _ => match read_file(&file_path) {
+            _ => match read_file_enrolled(&file_path) {
                 Some(c) => (Some(c), StorageKind::File),
                 None => (None, StorageKind::None),
             },
@@ -485,6 +514,7 @@ impl AuthManager {
             refresh_token: tokens.refresh_token,
             device_cap: tokens.device_cap,
             enrolled_at: chrono::Utc::now().to_rfc3339(),
+            draft: false,
         };
         self.persist(creds)
     }
@@ -512,6 +542,7 @@ impl AuthManager {
             refresh_token: None,
             device_cap: None,
             enrolled_at: String::new(),
+            draft: true,
         };
         let _ = write_file(&self.file_path, &draft);
         let tokens = self
@@ -704,6 +735,7 @@ mod tests {
             refresh_token: Some("mrt_x".into()),
             device_cap: Some(5),
             enrolled_at: "2026-09-06T00:00:00Z".into(),
+            draft: false,
         }
     }
 
@@ -724,6 +756,31 @@ mod tests {
         }
         std::fs::write(&path, "not json").unwrap();
         assert_eq!(read_file(&path), None);
+    }
+
+    #[test]
+    fn a_draft_on_disk_is_not_an_enrollment() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("auth.json");
+        let mut draft = creds();
+        draft.account_id.clear();
+        draft.access_token = None;
+        draft.refresh_token = None;
+        draft.draft = true;
+        write_file(&path, &draft).unwrap();
+        assert!(read_file(&path).unwrap().is_draft());
+        assert!(read_file_enrolled(&path).is_none(), "drafts must not load as credentials");
+        // A draft written by an older version has no flag but the same shape.
+        std::fs::write(
+            &path,
+            r#"{"installation_key":"x","recovery_key":"y","account_id":"","enrolled_at":""}"#,
+        )
+        .unwrap();
+        assert!(read_file_enrolled(&path).is_none());
+        // A real enrollment still loads, and the flag stays out of its JSON.
+        write_file(&path, &creds()).unwrap();
+        assert!(read_file_enrolled(&path).is_some());
+        assert!(!std::fs::read_to_string(&path).unwrap().contains("draft"));
     }
 
     #[test]
