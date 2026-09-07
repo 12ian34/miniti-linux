@@ -102,6 +102,16 @@ pub fn get_or_create() -> std::io::Result<String> {
     Ok(id)
 }
 
+/// Forget this installation's identity and mint a new one (file and keyring).
+/// Used by "start over": the backend knows the old id as an enrolled device
+/// whose credentials are gone for good, so the way forward is a new device.
+pub fn regenerate() -> std::io::Result<String> {
+    let id = uuid::Uuid::new_v4().to_string();
+    write_file(&device_id_path(), &id)?;
+    write_keyring(&id);
+    Ok(id)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

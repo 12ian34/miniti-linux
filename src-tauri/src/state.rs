@@ -2840,6 +2840,20 @@ pub async fn auth_remove_device(
 }
 
 /// Sign this device out: revoke server-side (best effort) and forget local credentials.
+/// "Start over on this computer": the backend knows this device as enrolled
+/// but its credentials are gone and the recovery key with them, so create
+/// would be refused for ever. Drop the local credentials and the device id,
+/// then restart so every component picks up the new identity; the app comes
+/// back on the enrollment screen where "create" now works. The old device
+/// record stays on the old account until it is removed from another device.
+#[tauri::command]
+pub async fn auth_start_over(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
+    state.auth.clear_local();
+    let id = crate::device_id::regenerate().map_err(|e| e.to_string())?;
+    tracing::warn!("device auth: starting over with a new device id {id}");
+    app.restart();
+}
+
 #[tauri::command]
 pub async fn auth_sign_out(state: State<'_, AppState>) -> Result<(), String> {
     let prefs = state.prefs_snapshot()?;

@@ -36,7 +36,8 @@ pub mod webhook;
 
 use state::{
     accept_terms, auth_create_account, auth_delete_account, auth_devices, auth_recovery_key,
-    auth_remove_device, auth_restore_account, auth_rotate_recovery_key, auth_sign_out, auth_status,
+    auth_remove_device, auth_restore_account, auth_rotate_recovery_key, auth_sign_out, auth_start_over,
+    auth_status,
     catch_up, coaching_overview, coaching_report, complete_onboarding, debug_log_clear,
     debug_log_export, debug_log_path, debug_log_reveal, debug_log_tail, delete_meeting,
     delete_segment, disable_nudge_kind, environment_health, export_markdown, frontend_ready,
@@ -276,6 +277,7 @@ pub fn run() {
             auth_devices,
             auth_remove_device,
             auth_sign_out,
+            auth_start_over,
             auth_delete_account,
             get_prefs,
             set_prefs,

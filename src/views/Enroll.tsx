@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
-import { authCreateAccount, authRestoreAccount, errorMessage, getPrefs, setPrefs } from "../api";
+import { authCreateAccount, authRestoreAccount, authStartOver, errorMessage, getPrefs, setPrefs } from "../api";
 
 type Step = "choose" | "created" | "restore";
 
@@ -17,6 +17,19 @@ export function Enroll({ onDone, inline = false, keyringPending = false }: { onD
   const [saved, setSaved] = useState(false);
   const [copied, setCopied] = useState(false);
   const [input, setInput] = useState("");
+  /** The backend knows this computer but its credentials are gone: offer a way out. */
+  const enrolledElsewhere = !!error && error.includes("already knows this computer");
+
+  async function startOver() {
+    setBusy(true);
+    setError(null);
+    try {
+      await authStartOver();
+    } catch (e) {
+      setError(errorMessage(e));
+      setBusy(false);
+    }
+  }
 
   async function create() {
     setBusy(true);
@@ -119,10 +132,22 @@ export function Enroll({ onDone, inline = false, keyringPending = false }: { onD
         <div className="banner">
           Your keyring has not answered yet. If this computer was set up before, its credentials are
           probably still there: unlock the keyring (or wait a moment) and this screen goes away on its
-          own. Creating a new key now would fail because the backend already knows this computer.
+          own.
         </div>
       )}
       {error && <div className="banner error">{error}</div>}
+      {enrolledElsewhere && (
+        <div className="choice-list">
+          <button className="choice" disabled={busy} onClick={() => { setStep("restore"); setError(null); }}>
+            <strong>Restore with the recovery key</strong>
+            <span>The key you saved when this computer was first set up. Keeps your plan and minutes.</span>
+          </button>
+          <button className="choice" disabled={busy} onClick={startOver}>
+            <strong>Start over as a new device</strong>
+            <span>No recovery key any more? This computer gets a new identity and a new account. miniti restarts.</span>
+          </button>
+        </div>
+      )}
       <div className="choice-list">
         <button className="choice" disabled={busy || keyringPending} onClick={create}>
           <strong>{busy ? "Creating…" : "Create recovery key"}</strong>

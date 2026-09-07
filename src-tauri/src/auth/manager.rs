@@ -1,11 +1,15 @@
 //! Credential storage and token lifecycle for device-bound authorization.
 //!
 //! Credentials (installation key secret, canonical recovery key, tokens) are
-//! stored as one JSON document in the desktop secret service under
-//! `com.miniti.linux` / `device-auth`. When no secret service is available the
-//! document falls back to `~/.local/share/miniti/auth.json` with mode 0600
-//! (the roadmap's "Keychain-backed fallback" equivalent); `AuthStatus.storage`
-//! reports which one is in use so the UI can say so.
+//! one JSON document. The file `~/.local/share/miniti/auth.json` (mode 0600)
+//! is canonical and always kept; when a desktop secret service exists the
+//! same document is mirrored there under `com.miniti.linux` / `device-auth`.
+//! A Linux desktop without a secret service (Hyprland, Sway, minimal installs)
+//! is a normal configuration, not a degraded one, and a keyring that is
+//! locked or slow at login must never look like "not enrolled": that is why
+//! the file, not the keyring, decides. The keyring mirror exists so that an
+//! install from before this rule (keyring only) can still be read, and it is
+//! what `AuthStatus.storage` reports when it is in use.
 //!
 //! Enrollment and token grants talk to `/api/auth/*` directly (no bearer);
 //! everything else goes through `api::ApiClient`, which asks this manager for
@@ -108,6 +112,29 @@ struct TokenResponse {
 
 pub fn auth_file_path() -> PathBuf {
     data_dir().join("auth.json")
+}
+
+/// Where an in-flight "create account" keeps its draft (see `create_account`).
+pub fn auth_draft_path(file_path: &Path) -> PathBuf {
+    file_path.with_file_name("auth.draft.json")
+}
+
+/// Whether a secret service exists on the session bus at all (owned now, or
+/// activatable). Distinguishes "no keyring on this desktop" (normal; the file
+/// is the store) from "a keyring that is locked or slow" (worth waiting for).
+pub fn secret_service_present() -> bool {
+    keyring_op(|| {
+        let conn = zbus::blocking::Connection::session().ok()?;
+        let dbus = zbus::blocking::fdo::DBusProxy::new(&conn).ok()?;
+        let name = zbus::names::BusName::try_from("org.freedesktop.secrets").ok()?;
+        if dbus.name_has_owner(name.clone()).unwrap_or(false) {
+            return Some(true);
+        }
+        let activatable = dbus.list_activatable_names().ok()?;
+        Some(activatable.iter().any(|n| n.as_str() == "org.freedesktop.secrets"))
+    })
+    .flatten()
+    .unwrap_or(false)
 }
 
 /// Run a secret-service call on its own thread with a deadline.
@@ -229,8 +256,9 @@ pub struct AuthManager {
     file_path: PathBuf,
     /// False in tests so nothing touches the real secret service.
     use_keyring: bool,
-    /// The secret service could not be asked at load and no file copy exists:
-    /// the answer to "enrolled?" is not known yet (see `retry_keyring`).
+    /// No file copy exists and a secret service that does exist could not be
+    /// asked (locked, slow): the answer to "enrolled?" is not known yet (see
+    /// `retry_keyring`). Never set when there is no secret service at all.
     keyring_pending: std::sync::atomic::AtomicBool,
     /// Serializes concurrent refreshes so one expiry triggers one grant.
     refresh_gate: tokio::sync::Mutex<()>,
@@ -244,22 +272,33 @@ impl AuthManager {
         app_version: impl Into<String>,
     ) -> Self {
         let file_path = auth_file_path();
-        let keyring = read_keyring();
-        let (creds, storage) = match &keyring {
-            Ok(Some(c)) => (Some(c.clone()), StorageKind::SecretService),
-            _ => match read_file_enrolled(&file_path) {
-                Some(c) => (Some(c), StorageKind::File),
-                None => (None, StorageKind::None),
+        // The file decides. The keyring is consulted only when there is no
+        // file: an install from the keyring-only days, which is then copied
+        // to the file so the next launch does not depend on the keyring.
+        let mut pending = false;
+        let (creds, storage) = match read_file_enrolled(&file_path) {
+            Some(c) => (Some(c), StorageKind::File),
+            None => match read_keyring() {
+                Ok(Some(c)) => {
+                    if let Err(e) = write_file(&file_path, &c) {
+                        tracing::warn!("device auth: could not copy credentials to the file store: {e}");
+                    } else {
+                        tracing::info!("device auth: credentials copied from the secret service to the file store");
+                    }
+                    (Some(c), StorageKind::SecretService)
+                }
+                Ok(None) => (None, StorageKind::None),
+                Err(e) => {
+                    if secret_service_present() {
+                        pending = true;
+                        tracing::warn!("device auth: the secret service exists but could not be asked ({e}); will keep asking before treating this device as new");
+                    } else {
+                        tracing::info!("device auth: no secret service on this desktop ({e}); the file store is the only store");
+                    }
+                    (None, StorageKind::None)
+                }
             },
         };
-        let pending = creds.is_none() && keyring.is_err();
-        if let Err(e) = &keyring {
-            if pending {
-                tracing::warn!("device auth: secret service unavailable ({e}); will keep asking before treating this device as new");
-            } else {
-                tracing::info!("device auth: secret service unavailable ({e}); using the file copy");
-            }
-        }
         let mut manager =
             Self::with_credentials(base, device_id, app_version, creds, storage, file_path);
         manager.use_keyring = true;
@@ -284,6 +323,7 @@ impl AuthManager {
         }
         match read_keyring() {
             Ok(Some(c)) => {
+                let _ = write_file(&self.file_path, &c);
                 if let Ok(mut s) = self.storage.lock() {
                     *s = StorageKind::SecretService;
                 }
@@ -375,15 +415,16 @@ impl AuthManager {
         InstallationKey::from_secret_b64(&creds.installation_key).ok_or(ApiError::NotEnrolled)
     }
 
-    /// Persist credentials: secret service when available, else the 0600 file.
+    /// Persist credentials: the 0600 file always, the secret service as a
+    /// mirror when it is there. The file is what the next launch reads, so a
+    /// locked or wiped keyring cannot turn an enrolled device into a new one.
     fn persist(&self, creds: Credentials) -> Result<(), ApiError> {
+        write_file(&self.file_path, &creds)
+            .map_err(|e| ApiError::Network(format!("could not store credentials: {e}")))?;
+        let _ = std::fs::remove_file(auth_draft_path(&self.file_path));
         let kind = if self.use_keyring && write_keyring(&creds) {
-            // Never leave a stale plaintext copy behind once the secret service works.
-            let _ = std::fs::remove_file(&self.file_path);
             StorageKind::SecretService
         } else {
-            write_file(&self.file_path, &creds)
-                .map_err(|e| ApiError::Network(format!("could not store credentials: {e}")))?;
             StorageKind::File
         };
         if let Ok(mut s) = self.storage.lock() {
@@ -410,6 +451,7 @@ impl AuthManager {
             delete_keyring();
         }
         let _ = std::fs::remove_file(&self.file_path);
+        let _ = std::fs::remove_file(auth_draft_path(&self.file_path));
         if let Ok(mut c) = self.creds.lock() {
             *c = None;
         }
@@ -544,7 +586,8 @@ impl AuthManager {
             enrolled_at: String::new(),
             draft: true,
         };
-        let _ = write_file(&self.file_path, &draft);
+        // Its own file: a draft must never overwrite real credentials.
+        let _ = write_file(&auth_draft_path(&self.file_path), &draft);
         let tokens = self
             .enroll(
                 "api/auth/account/create",
@@ -756,6 +799,26 @@ mod tests {
         }
         std::fs::write(&path, "not json").unwrap();
         assert_eq!(read_file(&path), None);
+    }
+
+    #[test]
+    fn the_draft_lives_beside_the_credentials_not_over_them() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("auth.json");
+        assert_eq!(auth_draft_path(&path), dir.path().join("auth.draft.json"));
+        let m = AuthManager::with_credentials(
+            "https://api.test",
+            "550e8400-e29b-41d4-a716-446655440000",
+            "0.5.0",
+            None,
+            StorageKind::None,
+            path.clone(),
+        );
+        std::fs::write(auth_draft_path(&path), "{}").unwrap();
+        m.persist(creds()).unwrap();
+        assert!(path.exists(), "the file copy is always kept");
+        assert!(!auth_draft_path(&path).exists(), "a finished enrollment removes the draft");
+        assert!(m.is_enrolled());
     }
 
     #[test]

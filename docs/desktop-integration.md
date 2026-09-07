@@ -41,9 +41,19 @@ full reference; packages install completions for bash, zsh and fish.
 | Logs (seven rolling days) | `$XDG_STATE_HOME/miniti/logs/` (`~/.local/state/miniti/logs`) |
 | Control socket, live state | `$XDG_RUNTIME_DIR/miniti/` (per session, owner-only) |
 | Launch-at-login entry | `$XDG_CONFIG_HOME/autostart/miniti.desktop` |
-| Account credentials, device id | the secret service (GNOME Keyring, KWallet) with a file fallback |
+| Account credentials, device id | `$XDG_DATA_HOME/miniti/` (owner-only files), mirrored into the secret service when one exists |
 
 `miniti paths` prints the resolved locations on the current machine.
+
+## no keyring needed
+
+A secret service (GNOME Keyring, KWallet) is optional. Credentials and the
+device id live in owner-only files under the data directory and are mirrored
+into the keyring when one is present, never the other way round: a locked,
+slow, or absent keyring cannot make an enrolled computer look new. Omarchy's
+full-disk encryption covers the files at rest; on an unencrypted home
+directory the keyring mirror adds nothing beyond that, so there is no reason
+to install one for miniti.
 
 ## the control socket
 

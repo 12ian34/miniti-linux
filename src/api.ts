@@ -84,6 +84,8 @@ export const authRotateRecoveryKey = () => invoke<string>("auth_rotate_recovery_
 export const authDevices = () => invoke<AuthDevices>("auth_devices");
 export const authRemoveDevice = (installationId: string) => invoke<void>("auth_remove_device", { installationId });
 export const authSignOut = () => invoke<void>("auth_sign_out");
+/** New device id + fresh enrollment screen (the app restarts). */
+export const authStartOver = () => invoke<void>("auth_start_over");
 export const authDeleteAccount = () => invoke<void>("auth_delete_account");
 
 export const launchGate = () => invoke<LaunchGate>("launch_gate");
