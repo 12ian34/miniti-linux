@@ -1,5 +1,4 @@
 [Desktop Entry]
-Version=1.5
 Type=Application
 Name=miniti
 GenericName=Meeting assistant
@@ -12,7 +11,6 @@ Categories=Office;
 Keywords=meeting;transcript;transcription;notes;call;coaching;recording;AI;
 StartupNotify=true
 StartupWMClass=miniti
-SingleMainWindow=true
 MimeType=x-scheme-handler/miniti-google;x-scheme-handler/miniti-attio;x-scheme-handler/miniti-twenty;
 X-GNOME-UsesNotifications=true
 Actions=start;stop;toggle;

@@ -13,7 +13,8 @@ Legend: **done** shipped (0.5.0 unless noted) · **open** not started ·
 
 | Item | Status |
 |---|---|
-| Desktop entry with `Keywords`, `GenericName`, `StartupNotify`, `SingleMainWindow`, `TryExec`, `X-GNOME-UsesNotifications`, one main category | done |
+| Desktop entry with `Keywords`, `GenericName`, `StartupNotify`, `TryExec`, `X-GNOME-UsesNotifications`, one main category | done |
+| `SingleMainWindow=true` (spec 1.5) | open: Ubuntu 22.04's `desktop-file-validate` (0.26) rejects 1.5 keys, and CI must stay on 22.04 for glibc; add it when CI validates with a newer desktop-file-utils |
 | Desktop actions (start / stop / toggle) in the launcher menu | done |
 | URL scheme handlers for the OAuth returns | done (0.2.0) |
 | Reverse-DNS desktop file and `app_id` (`app.miniti.Miniti`) | decided: keep `miniti`. Wayland `app_id`, `WM_CLASS`, icon name and desktop file already agree; renaming touches the WebKit data dir, the keyring service and every user's dock pin for no visible gain outside Flathub, which is off the ship list |
