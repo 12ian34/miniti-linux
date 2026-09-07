@@ -57,6 +57,9 @@ pub struct Prefs {
     /// Calendar automation: auto-start upcoming events / auto-stop at the end.
     pub calendar_auto_start: bool,
     pub calendar_auto_stop: bool,
+    /// Start miniti (tray only) when the desktop session starts; mirrored to
+    /// `~/.config/autostart/miniti.desktop`.
+    pub launch_at_login: bool,
 }
 
 impl Default for Prefs {
@@ -87,6 +90,7 @@ impl Default for Prefs {
             auto_stop_minutes: 0,
             calendar_auto_start: false,
             calendar_auto_stop: false,
+            launch_at_login: false,
         }
     }
 }

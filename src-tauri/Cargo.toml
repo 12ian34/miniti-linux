@@ -1,6 +1,6 @@
 [package]
 name = "miniti"
-version = "0.4.1"
+version = "0.5.0"
 description = "miniti — native Linux desktop meeting assistant (Tauri 2 + Rust)"
 authors = ["miniti"]
 edition = "2021"
@@ -51,6 +51,12 @@ p256 = { version = "0.13", default-features = false, features = ["ecdsa", "std"]
 rand_core = { version = "0.6", features = ["getrandom"] }
 sha2 = "0.10"
 base64 = "0.22"
+# Desktop integration: `miniti` CLI (clap), control socket + D-Bus interface
+# (zbus is already in the tree via the notification plugin), idle inhibit.
+clap = { version = "4", features = ["derive", "wrap_help"] }
+clap_complete = "4"
+zbus = { version = "5", default-features = false, features = ["tokio"] }
+libc = "0.2"
 
 # Linux-only: GTK hints for the floating surface (never take focus, stay
 # above) and an optional wlr-layer-shell binding loaded at runtime with dlopen,

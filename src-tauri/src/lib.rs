@@ -5,8 +5,10 @@
 //! `db` (SQLite), `prefs`, `device_id`, `coaching` (local metrics), `api`
 //! (backend client), `insights` (engine, providers, MCP), `webhook`, `gates`,
 //! `call_sensor`, `smart` (Smart meetings), `shell` (tray / presence /
-//! notifications / deep links), `integrations` (Calendar, CRM), `export`,
-//! `import`, and `state` (recording engine + Tauri commands).
+//! notifications / deep links / autostart), `integrations` (Calendar, CRM),
+//! `export`, `import`, `state` (recording engine + Tauri commands), `ipc`
+//! (control socket, state file, D-Bus, idle inhibit) and `cli` (the `miniti`
+//! command line, same binary).
 
 use std::sync::{Arc, Mutex};
 use tauri::Manager;
@@ -15,6 +17,7 @@ pub mod api;
 pub mod audio;
 pub mod auth;
 pub mod call_sensor;
+pub mod cli;
 pub mod coaching;
 pub mod db;
 pub mod deepgram;
@@ -24,6 +27,7 @@ pub mod gates;
 pub mod import;
 pub mod insights;
 pub mod integrations;
+pub mod ipc;
 pub mod prefs;
 pub mod shell;
 pub mod smart;
@@ -49,9 +53,15 @@ use state::{
 static LOG_GUARD: std::sync::OnceLock<tracing_appender::non_blocking::WorkerGuard> =
     std::sync::OnceLock::new();
 
-/// Directory holding the daily rolling log files (`miniti.log.YYYY-MM-DD`).
+/// Directory holding the daily rolling log files (`miniti.log.YYYY-MM-DD`):
+/// `$XDG_STATE_HOME/miniti/logs` (`~/.local/state/miniti/logs`), the XDG home
+/// for logs and other state that should survive a restart but is not user
+/// data. Platforms without a state dir (macOS dev box) keep logs under data.
 pub fn log_dir() -> std::path::PathBuf {
-    device_id::data_dir().join("logs")
+    dirs::state_dir()
+        .map(|d| d.join("miniti"))
+        .unwrap_or_else(device_id::data_dir)
+        .join("logs")
 }
 
 fn init_tracing() {
@@ -148,7 +158,37 @@ fn apply_webkit_workarounds() {
 }
 
 pub fn run() {
+    // Subcommands (`miniti status`, `miniti start`, …) never start the desktop
+    // app: they talk to the running one over the control socket and exit.
+    let launch = match cli::run() {
+        Ok(launch) => launch,
+        Err(code) => std::process::exit(code),
+    };
     init_tracing();
+    // Single instance: if a miniti already answers on the socket, hand it our
+    // job (raise the window, deliver deep links) and leave. Without this an
+    // OAuth return through the desktop entry started a second copy.
+    if let Ok(mut client) = ipc::client::connect() {
+        use ipc::protocol::Request;
+        let mut delivered = true;
+        for url in &launch.urls {
+            delivered &= client
+                .call(&Request::OpenUrl { url: url.clone() })
+                .map(|r| r.ok)
+                .unwrap_or(false);
+        }
+        if launch.start_meeting {
+            let _ = client.call(&Request::Start { title: None });
+        }
+        if !launch.hidden {
+            let _ = client.call(&Request::Show);
+        }
+        tracing::info!("miniti is already running; forwarded {} link(s)", launch.urls.len());
+        if !delivered {
+            eprintln!("miniti: the running instance did not accept one of the links");
+        }
+        return;
+    }
     apply_webkit_workarounds();
     #[cfg(all(not(debug_assertions), not(feature = "custom-protocol")))]
     tracing::error!(
@@ -167,7 +207,8 @@ pub fn run() {
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .manage(build_state())
-        .setup(|app| {
+        .manage(ipc::snapshot::HubSlot::new(ipc::snapshot::Hub::new()))
+        .setup(move |app| {
             let handle = app.handle().clone();
             let show_tray = handle
                 .state::<AppState>()
@@ -177,9 +218,22 @@ pub fn run() {
                 .unwrap_or(true);
             shell::setup_tray(&handle, show_tray);
             shell::setup_deep_links(&handle);
+            ipc::snapshot::listen(&handle);
+            ipc::server::spawn(handle.clone());
+            ipc::dbus::spawn(handle.clone());
             state::spawn_shell_ticker(handle.clone());
             state::spawn_smart_monitor(handle.clone());
-            state::spawn_calendar_refresher(handle);
+            state::spawn_calendar_refresher(handle.clone());
+            // The main window is created hidden (tauri.conf.json) so
+            // `--hidden` (launch at login) never flashes it.
+            if !launch.hidden || !show_tray {
+                shell::show_main(&handle);
+            }
+            if launch.start_meeting {
+                tauri::async_runtime::spawn(async move {
+                    state::toggle_recording_from_shell(handle).await;
+                });
+            }
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -276,6 +330,11 @@ pub fn run() {
             state::crm_preview,
             state::crm_send,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|_app, event| {
+            if let tauri::RunEvent::Exit = event {
+                ipc::snapshot::cleanup();
+            }
+        });
 }

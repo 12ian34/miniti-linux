@@ -2,7 +2,7 @@
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "miniti",
   "mainBinaryName": "miniti",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "identifier": "com.miniti.linux",
   "build": {
     "beforeDevCommand": "pnpm dev",
@@ -20,7 +20,8 @@
         "minHeight": 520,
         "backgroundColor": "#0A0A0B",
         "label": "main",
-        "center": true
+        "center": true,
+        "visible": false
       }
     ],
     "security": {
@@ -39,7 +40,32 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "linux": {
+      "deb": {
+        "desktopTemplate": "../packaging/miniti.desktop",
+        "files": {
+          "/usr/share/metainfo/com.miniti.linux.metainfo.xml": "../packaging/com.miniti.linux.metainfo.xml",
+          "/usr/share/man/man1/miniti.1": "../packaging/miniti.1",
+          "/usr/share/icons/hicolor/scalable/apps/miniti.svg": "../packaging/icons/miniti.svg",
+          "/usr/share/icons/hicolor/symbolic/apps/miniti-symbolic.svg": "../packaging/icons/miniti-symbolic.svg",
+          "/usr/share/bash-completion/completions/miniti": "../packaging/completions/miniti.bash",
+          "/usr/share/zsh/site-functions/_miniti": "../packaging/completions/_miniti",
+          "/usr/share/fish/vendor_completions.d/miniti.fish": "../packaging/completions/miniti.fish"
+        },
+        "depends": [
+          "pipewire",
+          "libsecret-1-0",
+          "libnotify4"
+        ],
+        "recommends": [
+          "gnome-keyring",
+          "xdg-utils",
+          "libgtk-layer-shell0"
+        ],
+        "section": "sound"
+      }
+    }
   },
   "plugins": {
     "deep-link": {

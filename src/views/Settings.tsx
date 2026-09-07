@@ -198,6 +198,7 @@ export function Settings() {
   const controls: Control[] = useMemo(() => [
     { id: "tray", dest: "general", label: "Tray icon", keywords: "tray menu bar timer icon" },
     { id: "presence", dest: "general", label: "Floating recording surface", keywords: "floating window indicator presence always on top" },
+    { id: "autostart", dest: "general", label: "Launch at login", keywords: "autostart login startup boot session tray hidden" },
     { id: "scale", dest: "general", label: "Interface scale", keywords: "interface scale text size compact standard large zoom" },
     { id: "mode", dest: "account", label: "Mode", keywords: "managed byok mode api backend" },
     { id: "plan", dest: "account", label: "Plan & usage", keywords: "pro upgrade subscription minutes usage polar portal restore license" },
@@ -290,6 +291,7 @@ export function Settings() {
           <>
             <C id="tray"><Toggle label="Show tray icon with recording timer (takes effect after restart)" checked={prefs.show_tray} onChange={(v) => update("show_tray", v)} /></C>
             <C id="presence"><Toggle label="Floating recording surface while recording (always on top; Wayland may ignore placement)" checked={prefs.show_floating_indicator} onChange={(v) => update("show_floating_indicator", v)} /></C>
+            <C id="autostart"><Toggle label="Launch at login, hidden in the tray (adds an entry to ~/.config/autostart)" checked={prefs.launch_at_login ?? false} onChange={(v) => update("launch_at_login", v)} /></C>
             <C id="scale">
               <Field label="Interface scale">
                 <select className="input" value={prefs.interface_scale ?? "standard"} onChange={(e) => { const v = e.currentTarget.value as Prefs["interface_scale"]; update("interface_scale", v); applyInterfaceScale(v); }}>

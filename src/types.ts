@@ -40,6 +40,7 @@ export interface Prefs {
   auto_stop_minutes: number;
   calendar_auto_start: boolean;
   calendar_auto_stop: boolean;
+  launch_at_login: boolean;
 }
 
 /** Smart-meeting decision shown on the floating surface / tray / in-app. */

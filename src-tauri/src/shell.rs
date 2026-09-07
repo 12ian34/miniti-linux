@@ -458,6 +458,24 @@ pub fn parse_deep_link(raw: &str) -> Option<DeepLinkEvent> {
     })
 }
 
+/// Schemes this app answers for (mirrors `plugins.deep-link` in tauri.conf.json).
+pub const DEEP_LINK_SCHEMES: [&str; 3] = ["miniti-google", "miniti-attio", "miniti-twenty"];
+
+/// Deliver one opened URL to the UI. Returns false for URLs that are not ours
+/// (a second instance forwards argv here, so it must not trust it blindly).
+pub fn handle_open_url(app: &AppHandle, raw: &str) -> bool {
+    let Some(ev) = parse_deep_link(raw) else {
+        return false;
+    };
+    if !DEEP_LINK_SCHEMES.contains(&ev.scheme.as_str()) {
+        return false;
+    }
+    tracing::info!("deep link: {}://{}", ev.scheme, ev.host);
+    let _ = app.emit("deep_link", &ev);
+    show_main(app);
+    true
+}
+
 /// Register `miniti-google://`, `miniti-attio://`, `miniti-twenty://` handlers
 /// and forward opened URLs to the UI as `deep_link` events.
 pub fn setup_deep_links(app: &AppHandle) {
@@ -471,13 +489,63 @@ pub fn setup_deep_links(app: &AppHandle) {
     let handle = app.clone();
     app.deep_link().on_open_url(move |event| {
         for u in event.urls() {
-            if let Some(ev) = parse_deep_link(u.as_str()) {
-                tracing::info!("deep link: {}://{}", ev.scheme, ev.host);
-                let _ = handle.emit("deep_link", &ev);
-                show_main(&handle);
-            }
+            handle_open_url(&handle, u.as_str());
         }
     });
+}
+
+// ---- Launch at login (XDG autostart) -------------------------------------------
+
+/// `~/.config/autostart/miniti.desktop` (honours `XDG_CONFIG_HOME`).
+pub fn autostart_path() -> std::path::PathBuf {
+    dirs::config_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join("autostart")
+        .join("miniti.desktop")
+}
+
+/// Desktop entry that starts miniti to the tray. `exec` is the absolute
+/// binary path so it works for tarball installs outside `$PATH`.
+pub fn autostart_entry(exec: &str) -> String {
+    format!(
+        "[Desktop Entry]\n\
+         Type=Application\n\
+         Name=miniti\n\
+         Comment=AI meeting assistant\n\
+         Exec={exec} --hidden\n\
+         Icon=miniti\n\
+         Terminal=false\n\
+         StartupNotify=false\n\
+         X-GNOME-Autostart-enabled=true\n\
+         X-KDE-autostart-after=panel\n"
+    )
+}
+
+pub fn set_autostart(enabled: bool) -> std::io::Result<()> {
+    let path = autostart_path();
+    if !enabled {
+        return match std::fs::remove_file(&path) {
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            r => r,
+        };
+    }
+    let exe = std::env::current_exe()?;
+    let exe = exe.to_string_lossy();
+    let exec = if exe.contains(' ') {
+        format!("\"{exe}\"")
+    } else {
+        exe.to_string()
+    };
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::write(&path, autostart_entry(&exec))
+}
+
+pub fn autostart_enabled() -> bool {
+    std::fs::read_to_string(autostart_path())
+        .map(|s| !s.lines().any(|l| l.trim() == "Hidden=true"))
+        .unwrap_or(false)
 }
 
 #[cfg(test)]
@@ -499,5 +567,14 @@ mod tests {
             Some("denied by user")
         );
         assert!(parse_deep_link("not a url").is_none());
+    }
+
+    #[test]
+    fn autostart_entry_starts_hidden_with_the_given_binary() {
+        let e = autostart_entry("/usr/bin/miniti");
+        assert!(e.starts_with("[Desktop Entry]\n"));
+        assert!(e.contains("Exec=/usr/bin/miniti --hidden\n"));
+        assert!(e.contains("X-GNOME-Autostart-enabled=true"));
+        assert!(!e.contains("Hidden=true"));
     }
 }

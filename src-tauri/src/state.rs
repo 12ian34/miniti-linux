@@ -1164,7 +1164,15 @@ pub fn get_prefs(state: State<AppState>) -> Prefs {
 #[tauri::command]
 pub fn set_prefs(state: State<AppState>, prefs: Prefs) -> Result<(), String> {
     prefs.save().map_err(|e| e.to_string())?;
-    *state.prefs.lock().map_err(|_| "prefs poisoned")? = prefs;
+    let mut current = state.prefs.lock().map_err(|_| "prefs poisoned")?;
+    if current.launch_at_login != prefs.launch_at_login {
+        // Keep the XDG autostart entry in step with the preference (and never
+        // fail the whole save over it: the pref still wins next launch).
+        if let Err(e) = crate::shell::set_autostart(prefs.launch_at_login) {
+            tracing::warn!("autostart entry: {e}");
+        }
+    }
+    *current = prefs;
     Ok(())
 }
 
@@ -1494,6 +1502,9 @@ pub fn spawn_shell_ticker(app: AppHandle) {
             let presence = build_presence(&app);
             let _ = app.emit("presence", &presence);
             crate::shell::update_tray(&app, recording, elapsed, presence.stream_state.as_deref());
+            // External surfaces (state.json, socket subscribers, D-Bus) see the
+            // same presence the tray and the floating surface show this second.
+            crate::ipc::snapshot::publish(&app, presence);
             if recording != was_recording {
                 let surface = state
                     .prefs
@@ -1505,6 +1516,8 @@ pub fn spawn_shell_ticker(app: AppHandle) {
                 } else {
                     crate::shell::hide_presence(&app);
                 }
+                // Keep the session awake for the length of the meeting.
+                crate::ipc::inhibit::follow(&app, recording).await;
                 was_recording = recording;
             }
         }
@@ -1762,6 +1775,26 @@ pub async fn smart_decision(
     };
     for a in actions {
         perform_smart_action(&app, a).await;
+    }
+    Ok(())
+}
+
+/// Answer the pending Smart-meeting prompt from outside the webview (CLI,
+/// D-Bus, bar widgets): same path as the surface buttons.
+pub async fn decide_from_shell(app: &AppHandle, choice: &str) -> Result<(), String> {
+    if !matches!(choice, "primary" | "secondary" | "tertiary") {
+        return Err(format!("choice must be primary, secondary or tertiary (got {choice:?})"));
+    }
+    let actions = {
+        let slot = crate::smart::slot(app).ok_or("smart monitor unavailable")?;
+        let mut m = slot.lock().map_err(|_| "monitor poisoned")?;
+        m.decide(app, "", choice, Instant::now())
+    };
+    if actions.is_empty() {
+        return Err("no prompt is waiting for a decision".into());
+    }
+    for a in actions {
+        perform_smart_action(app, a).await;
     }
     Ok(())
 }
