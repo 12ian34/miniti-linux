@@ -50,7 +50,8 @@ jobs:
           $bin --help >/dev/null
           $bin completions bash | grep -q miniti
           # No app running: status must say so on exit 3 and Waybar output must still be valid JSON.
-          $bin status; test $? -eq 3
+          code=0; $bin status || code=$?
+          test "$code" -eq 3
           $bin status --waybar | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["class"] == "stopped"'
 
   # Launch the real binary under a virtual display and prove the webview paints:
