@@ -200,8 +200,8 @@ export function onDeepLink(handler: (ev: DeepLinkEvent) => void): Promise<Unlist
   return listen<DeepLinkEvent>("deep_link", (e) => handler(e.payload));
 }
 /** Credentials turned up after launch (keyring unlocked) or the keyring finally answered. */
-export function onAuthChanged(handler: () => void): Promise<UnlistenFn> {
-  return listen("auth_changed", () => handler());
+export function onAuthChanged(handler: (payload: null) => void): Promise<UnlistenFn> {
+  return listen<null>("auth_changed", (e) => handler(e.payload));
 }
 
 export function onNavigateMeeting(handler: (id: string) => void): Promise<UnlistenFn> {

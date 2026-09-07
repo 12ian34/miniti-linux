@@ -42,7 +42,7 @@ function MainApp() {
   useEffect(() => {
     refreshGate();
   }, [refreshGate]);
-  useTauriEvent(onAuthChanged, refreshGate);
+  useTauriEvent<null>(onAuthChanged, () => refreshGate());
 
   if (!gateChecked) {
     return (
