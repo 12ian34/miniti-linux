@@ -6,7 +6,11 @@
 #
 #   scripts/install-and-check.sh            # build + install + checks
 #   scripts/install-and-check.sh --check    # checks only (already installed)
-#   scripts/install-and-check.sh --no-build # reuse the existing release binary
+#   scripts/install-and-check.sh --no-build # reuse the last dogfood binary
+#
+# Builds with the `dogfood` cargo profile (no LTO, incremental): the first
+# build takes as long as ever, later ones seconds to a minute. Installing
+# `mold` makes linking faster still; the script uses it when present.
 #
 # Released versions never need this: pacman installs them from the Omarchy
 # package repository. This exists because the checked-in package pins the last
@@ -27,17 +31,22 @@ check() { # check "<label>" <command...>
 }
 
 version="$(sed -n 's/^\s*"version"\s*:\s*"\([^"]*\)".*/\1/p' src-tauri/tauri.conf.json | head -1)"
-bin="src-tauri/target/release/miniti"
+bin="$root/src-tauri/target/dogfood/miniti"
 
 if [[ "$mode" != "--check" ]]; then
   if [[ "$mode" != "--no-build" || ! -x "$bin" ]]; then
-    bold "building miniti $version"
-    pnpm install --frozen-lockfile && pnpm build || exit 1
-    cargo build --release --features custom-protocol --manifest-path src-tauri/Cargo.toml || exit 1
+    bold "building miniti $version (dogfood profile)"
+    if command -v mold >/dev/null 2>&1; then
+      export RUSTFLAGS="${RUSTFLAGS:-} -C link-arg=-fuse-ld=mold"
+    else
+      echo "  (tip: sudo pacman -S mold makes the link step much faster)"
+    fi
+    pnpm install --frozen-lockfile --prefer-offline && pnpm build || exit 1
+    cargo build --profile dogfood --features custom-protocol --manifest-path src-tauri/Cargo.toml || exit 1
   fi
   bold "packaging"
   packaging/gen-completions.sh "$bin" packaging/completions || exit 1
-  packaging/make-tarball.sh dist-release >/dev/null || exit 1
+  MINITI_BIN="$bin" packaging/make-tarball.sh dist-release >/dev/null || exit 1
   tarball="$root/dist-release/miniti-$version-x86_64-unknown-linux-gnu.tar.gz"
   work="$(mktemp -d /tmp/miniti-pkg.XXXXXX)"
   sed -e "s|^pkgver=.*|pkgver=$version|" \

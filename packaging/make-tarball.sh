@@ -24,7 +24,8 @@ repo_root="$(cd "$(dirname "$0")/.." && pwd)"
 out_dir="${1:-$repo_root/dist-release}"
 target="x86_64-unknown-linux-gnu"
 
-bin="$repo_root/src-tauri/target/release/miniti"
+# MINITI_BIN overrides the binary (the dogfood profile, a cross build).
+bin="${MINITI_BIN:-$repo_root/src-tauri/target/release/miniti}"
 if [[ ! -x "$bin" ]]; then
   echo "error: release binary not found at $bin — run 'pnpm tauri build' first" >&2
   exit 1

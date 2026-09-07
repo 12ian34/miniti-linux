@@ -78,3 +78,13 @@ lto = true
 opt-level = 3
 panic = "abort"
 strip = true
+
+# Same code, quick turnaround: no LTO, many codegen units, incremental. For
+# trying a checkout on a real machine (scripts/install-and-check.sh); every
+# published binary uses `release`.
+[profile.dogfood]
+inherits = "release"
+lto = "off"
+codegen-units = 16
+incremental = true
+strip = false
