@@ -41,7 +41,20 @@ async fn serve(app: AppHandle) -> std::io::Result<()> {
     let dir = super::ensure_runtime_dir()?;
     let path = super::socket_path();
     if std::env::var_os(super::SOCKET_ENV).is_none() {
-        take_instance_lock(&dir)?;
+        // A restart (`auth_start_over`) launches us while the previous
+        // process still holds the lock for a moment; wait it out.
+        let mut attempt = 0;
+        loop {
+            match take_instance_lock(&dir) {
+                Ok(()) => break,
+                Err(e) if attempt < 20 => {
+                    attempt += 1;
+                    tracing::debug!("instance lock busy ({e}); retrying");
+                    tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+                }
+                Err(e) => return Err(e),
+            }
+        }
     }
     if path.exists() {
         if super::client::ping(&path).is_ok() {

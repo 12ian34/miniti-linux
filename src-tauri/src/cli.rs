@@ -116,6 +116,17 @@ pub enum Command {
     },
     /// Where miniti keeps its files on this machine
     Paths,
+    /// Forget this computer's account credentials and device identity (offline)
+    ///
+    /// For a computer the backend still lists as enrolled while its
+    /// credentials are gone. Afterwards miniti starts on the enrollment
+    /// screen as a new device; restore there with a recovery key if you have
+    /// one. The old device record stays on its account until removed there.
+    ResetDevice {
+        /// Do it (without this flag the command only explains itself)
+        #[arg(long)]
+        yes: bool,
+    },
     /// Shell completion script for bash, zsh, fish or elvish
     Completions {
         #[arg(value_enum)]
@@ -224,6 +235,29 @@ fn execute(command: Command, out: &Output) -> Result<(), i32> {
     match command {
         Command::Completions { shell } => {
             clap_complete::generate(shell, &mut Cli::command(), "miniti", &mut std::io::stdout());
+            Ok(())
+        }
+        Command::ResetDevice { yes } => {
+            if client::is_running() {
+                out.error("quit miniti first (miniti quit)");
+                return Err(EXIT_FAILED);
+            }
+            if !yes {
+                out.line("This forgets the account credentials and device id stored on this computer.\nRun again with --yes to do it; then start miniti and restore or create a recovery key.");
+                return Ok(());
+            }
+            let device = crate::device_id::get_or_create().unwrap_or_default();
+            let auth = crate::auth::manager::AuthManager::load(crate::api::DEFAULT_BASE_URL, device, crate::state::APP_VERSION);
+            auth.clear_local();
+            let id = crate::device_id::regenerate().map_err(|e| {
+                out.error(&format!("could not write a new device id: {e}"));
+                EXIT_FAILED
+            })?;
+            if out.json {
+                out.value(&json!({ "device_id": id }));
+            } else {
+                out.line(format!("credentials cleared; new device id {id}. Start miniti to enroll again."));
+            }
             Ok(())
         }
         Command::Paths => {

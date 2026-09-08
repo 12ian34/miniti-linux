@@ -2851,6 +2851,9 @@ pub async fn auth_start_over(app: AppHandle, state: State<'_, AppState>) -> Resu
     state.auth.clear_local();
     let id = crate::device_id::regenerate().map_err(|e| e.to_string())?;
     tracing::warn!("device auth: starting over with a new device id {id}");
+    // The replacement process starts before this one is gone; without this
+    // it would find our socket alive, hand off to us, and exit.
+    crate::ipc::snapshot::cleanup();
     app.restart();
 }
 
