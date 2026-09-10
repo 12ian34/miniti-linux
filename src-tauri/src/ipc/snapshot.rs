@@ -34,6 +34,10 @@ pub struct Snapshot {
     pub prompt: Option<Value>,
     /// Latest live-guidance nudge (`{kind, title, body, …}`), cleared on stop.
     pub nudge: Option<Value>,
+    /// What keeps the machine awake while recording: "screensaver"
+    /// (org.freedesktop.ScreenSaver: KDE, hypridle, swayidle), "portal", or
+    /// null when nothing could be asked.
+    pub idle_inhibit: Option<&'static str>,
 }
 
 impl Snapshot {
@@ -197,6 +201,9 @@ pub fn build(app: &AppHandle, presence: RecordingPresence) -> Snapshot {
     let nudge = hub
         .as_ref()
         .and_then(|h| h.nudge.lock().ok().and_then(|n| n.clone()));
+    let idle_inhibit = hub
+        .as_ref()
+        .and_then(|h| h.inhibit.try_lock().ok().and_then(|i| i.kind()));
     Snapshot {
         schema: super::protocol::SCHEMA,
         app_version: crate::state::APP_VERSION,
@@ -207,6 +214,7 @@ pub fn build(app: &AppHandle, presence: RecordingPresence) -> Snapshot {
         summary,
         prompt,
         nudge,
+        idle_inhibit,
     }
 }
 
@@ -313,6 +321,7 @@ mod tests {
             summary: String::new(),
             prompt: None,
             nudge: None,
+            idle_inhibit: None,
         };
         let mut b = a.clone();
         b.updated_at = 2;

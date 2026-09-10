@@ -90,7 +90,7 @@ bold "recording (starts a real meeting for ~8 seconds)"
 if miniti start "install check" >/dev/null 2>&1; then
   sleep 5
   check "status shows recording"                  bash -c 'miniti status | grep -q "recording"'
-  check "idle inhibit held while recording"       bash -c 'systemd-inhibit --list 2>/dev/null | grep -qi miniti'
+  check "idle inhibit held while recording"       bash -c 'miniti status --json | python3 -c "import json,sys; d=json.load(sys.stdin); assert d[\"idle_inhibit\"], \"no inhibit: is a screensaver service (hypridle, swayidle, KDE) or xdg-desktop-portal running?\""'
   check "questions command answers"               miniti questions
   sleep 3
   check "stop saves a meeting"                    bash -c 'miniti stop | grep -q "stopped"'
