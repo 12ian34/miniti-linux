@@ -6,16 +6,16 @@ public changelog for miniti for Linux. the changelog for every platform lives at
 
 ### 2026-09-10 - v0.5.0
 
-- new: (Linux) A `miniti` command line: start, stop, and toggle a meeting, see the live questions, list and export meetings, and answer a Smart-meeting prompt from a terminal, a keybind, or a script. `man miniti` and shell completions come with the packages
-- new: (Linux) Bars and widgets can follow miniti live: a Waybar module (`miniti status --waybar`), a state file, a control socket, and a D-Bus interface, all documented in the repository. An Omarchy bar widget with a live panel is a separate plugin
-- new: (Linux) Launch at login, hidden in the tray (Settings → General, or `miniti autostart on`)
-- new: (Linux) The desktop entry offers Start, Stop, and Toggle actions from the app menu, and the app appears in software centres with a description, screenshots, and release notes
-- new: (Linux) On Omarchy the app installs from the Omarchy package repository with `sudo pacman -S miniti-bin` once the package is listed; the same package builds anywhere with `makepkg`
-- improvement: (Linux) The machine no longer goes to sleep or locks in the middle of a meeting, and logging out or shutting down while recording saves the meeting first
-- improvement: (Linux) A keyring is no longer needed. Your account credentials are kept in your own files, as the device id already was, and only mirrored into GNOME Keyring or KWallet when one exists, so a locked, slow, or missing keyring can no longer make your computer look new
-- fix: (Linux) Connecting Google Calendar or a CRM opened a second copy of miniti instead of returning to the running one
-- fix: (Linux) A failed "create recovery key" attempt could leave the app signed in with a key the backend had never seen, so every meeting failed to start and the plan never loaded. If the backend already knows this computer but its credentials are gone, the enrollment screen now offers to restore with your recovery key or to start over as a new device
-- fix: (Linux) Building the Arch package from the repository failed on 0.4.1 because the recipe expected files that release did not ship
+- new: A `miniti` command line: start, stop, and toggle a meeting, see the live questions, list and export meetings, and answer a Smart-meeting prompt from a terminal, a keybind, or a script. `man miniti` and shell completions come with the packages
+- new: Bars and widgets can follow miniti live: a Waybar module (`miniti status --waybar`), a state file, a control socket, and a D-Bus interface, all documented in the repository. An Omarchy bar widget with a live panel is a separate plugin
+- new: Launch at login, hidden in the tray (Settings → General, or `miniti autostart on`)
+- new: The desktop entry offers Start, Stop, and Toggle actions from the app menu, and the app appears in software centres with a description, screenshots, and release notes
+- new: On Omarchy the app installs from the Omarchy package repository with `sudo pacman -S miniti-bin` once the package is listed; the same package builds anywhere with `makepkg`
+- improvement: The machine no longer goes to sleep or locks in the middle of a meeting, and logging out or shutting down while recording saves the meeting first
+- improvement: A keyring is no longer needed. Your account credentials are kept in your own files, as the device id already was, and only mirrored into GNOME Keyring or KWallet when one exists, so a locked, slow, or missing keyring can no longer make your computer look new
+- fix: Connecting Google Calendar or a CRM opened a second copy of miniti instead of returning to the running one
+- fix: A failed "create recovery key" attempt could leave the app signed in with a key the backend had never seen, so every meeting failed to start and the plan never loaded. If the backend already knows this computer but its credentials are gone, the enrollment screen now offers to restore with your recovery key or to start over as a new device
+- fix: Building the Arch package from the repository failed on 0.4.1 because the recipe expected files that release did not ship
 
 ### 2026-09-06 - v0.4.1
 
