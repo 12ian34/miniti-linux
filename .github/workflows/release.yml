@@ -33,10 +33,18 @@ jobs:
         run: pnpm build && cargo build --release --features custom-protocol --manifest-path src-tauri/Cargo.toml
       - name: Shell completions (the .deb picks them up from packaging/completions)
         run: packaging/gen-completions.sh src-tauri/target/release/miniti packaging/completions
-      - name: Bundle (.deb)
-        run: pnpm tauri build
       - name: Tarball
         run: packaging/make-tarball.sh dist-release
+      # The tarball feeds the Omarchy package and every other install path, so
+      # a bundler problem must not sink the release; a missing .deb shows up
+      # as a warning on the run and in the asset list.
+      - name: Bundle (.deb)
+        id: deb
+        continue-on-error: true
+        run: pnpm tauri build
+      - name: Warn if the .deb failed
+        if: steps.deb.outcome == 'failure'
+        run: echo "::warning::the .deb bundle failed; the release ships without it"
       - name: Collect artifacts
         run: |
           mkdir -p out
