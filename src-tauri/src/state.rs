@@ -1510,6 +1510,7 @@ pub async fn stop_recording(
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<Option<String>, String> {
+    let stop_started = Instant::now();
     let parts = {
         let mut session = state.session.lock().map_err(|_| "session poisoned")?;
         session.begin_stop()
@@ -1517,6 +1518,7 @@ pub async fn stop_recording(
     let Some(parts) = parts else {
         return Ok(None);
     };
+    tracing::info!("stop: capture torn down in {} ms", stop_started.elapsed().as_millis());
     state.levels.reset();
 
     // Let Deepgram flush its finals (CloseStream → drain), then the consumers.
@@ -1534,6 +1536,7 @@ pub async fn stop_recording(
     if let Ok(mut s) = state.last_status.lock() {
         *s = None;
     }
+    tracing::info!("stop: stream drained in {} ms", stop_started.elapsed().as_millis());
 
     let meeting_id = parts.meeting.id.clone();
     let ended_at = chrono::Utc::now().timestamp();
@@ -1592,6 +1595,7 @@ pub async fn stop_recording(
     }
 
     let _ = app.emit("meeting_saved", &meeting.id);
+    tracing::info!("stop: meeting saved in {} ms", stop_started.elapsed().as_millis());
 
     // Final insights as meeting-scoped background work (macOS "Stopped session").
     if !segments.is_empty() {

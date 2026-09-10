@@ -134,7 +134,15 @@ async fn handle_conn(app: AppHandle, stream: UnixStream) -> std::io::Result<()> 
             }
             return Ok(());
         }
+        let started = std::time::Instant::now();
+        let label = line.chars().take(60).collect::<String>();
+        tracing::info!("control: {label}");
         let resp = handle(&app, req).await;
+        tracing::info!(
+            "control: {label} -> {} in {} ms",
+            if resp.ok { "ok" } else { "error" },
+            started.elapsed().as_millis()
+        );
         write_line(&mut w, &serde_json::to_string(&resp).unwrap_or_default()).await?;
     }
     Ok(())

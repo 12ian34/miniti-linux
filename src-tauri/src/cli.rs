@@ -224,6 +224,10 @@ fn call(client: &mut Client, req: Request, out: &Output) -> Result<Value, i32> {
             out.error(error.as_deref().unwrap_or("request failed"));
             Err(EXIT_FAILED)
         }
+        Err(e) if e.kind() == std::io::ErrorKind::WouldBlock || e.kind() == std::io::ErrorKind::TimedOut => {
+            out.error("miniti did not answer within two minutes (the log in `miniti paths` says what it was doing)");
+            Err(EXIT_FAILED)
+        }
         Err(e) => {
             out.error(&format!("lost the connection to miniti: {e}"));
             Err(EXIT_FAILED)
