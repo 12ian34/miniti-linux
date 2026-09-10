@@ -155,7 +155,7 @@ jobs:
             test -x /usr/bin/miniti
             test -f /usr/share/applications/miniti.desktop
             test -f /usr/share/metainfo/com.miniti.linux.metainfo.xml
-            test -f /usr/share/man/man1/miniti.1
+            test -f /usr/share/man/man1/miniti.1.gz -o -f /usr/share/man/man1/miniti.1   # makepkg zips man pages
             test -f /usr/share/icons/hicolor/scalable/apps/miniti.svg
             miniti --version
             namcap /tmp/pkg/*.pkg.tar.zst || true

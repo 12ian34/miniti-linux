@@ -82,7 +82,7 @@ check "deep link raises the running app"          bash -c 'xdg-open "miniti-goog
 check "autostart entry written and removed"       bash -c 'miniti autostart on >/dev/null && test -f ~/.config/autostart/miniti.desktop && miniti autostart off >/dev/null && ! test -f ~/.config/autostart/miniti.desktop'
 check "desktop entry valid"                       desktop-file-validate /usr/share/applications/miniti.desktop
 check "appstream metainfo valid"                  appstreamcli validate --no-net /usr/share/metainfo/com.miniti.linux.metainfo.xml
-check "man page installed"                        test -f /usr/share/man/man1/miniti.1
+check "man page installed"                        bash -c 'test -f /usr/share/man/man1/miniti.1.gz -o -f /usr/share/man/man1/miniti.1'
 check "completions installed"                     test -f /usr/share/bash-completion/completions/miniti -a -f /usr/share/zsh/site-functions/_miniti -a -f /usr/share/fish/vendor_completions.d/miniti.fish
 check "icons installed"                           test -f /usr/share/icons/hicolor/scalable/apps/miniti.svg -a -f /usr/share/icons/hicolor/symbolic/apps/miniti-symbolic.svg -a -f /usr/share/icons/hicolor/48x48/apps/miniti.png
 
