@@ -410,7 +410,7 @@ export function Settings() {
             </C>
             <C id="corrections">
               <Field label="Corrections (what was heard → what it should say; applied live and sent to Deepgram on the next meeting)">
-                <CorrectionsEditor list={prefs.dictionary_corrections ?? []} onChange={(list) => update("dictionary_corrections", list)} />
+                <CorrectionsEditor list={prefs.dictionary_corrections ?? []} onChange={async () => { setPrefsState(await getPrefs()); await refreshPrefs(); }} />
               </Field>
             </C>
             <C id="fillers">
@@ -749,20 +749,21 @@ function Toggle({ label, checked, onChange }: { label: string; checked: boolean;
 }
 
 /** Editable heard → correct pairs (macOS Settings → Language → corrections). */
-function CorrectionsEditor({ list, onChange }: { list: Correction[]; onChange: (list: Correction[]) => void }) {
+function CorrectionsEditor({ list, onChange }: { list: Correction[]; onChange: () => Promise<void> }) {
   const [heard, setHeard] = useState("");
   const [correct, setCorrect] = useState("");
   const [err, setErr] = useState<string | null>(null);
   async function add() {
     setErr(null);
     try {
-      onChange(await addCorrection(heard, correct, null, false));
+      await addCorrection(heard, correct, null, false);
+      await onChange();
       setHeard(""); setCorrect("");
     } catch (e) { setErr(errorMessage(e)); }
   }
   async function remove(h: string) {
     setErr(null);
-    try { onChange(await removeCorrection(h)); } catch (e) { setErr(errorMessage(e)); }
+    try { await removeCorrection(h); await onChange(); } catch (e) { setErr(errorMessage(e)); }
   }
   return (
     <div className="corrections">

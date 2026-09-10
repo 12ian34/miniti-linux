@@ -119,17 +119,44 @@ impl Corrector {
         }
     }
 
-    /// The corrected text and whether anything changed.
+    /// The corrected text and whether anything changed. Idempotent: text
+    /// that already reads `correct` is left alone, so a pair like
+    /// `ian → Ian Ahuja` does not become "Ian Ahuja Ahuja" once Deepgram (or
+    /// an earlier pass) has applied it.
     pub fn apply(&self, text: &str) -> (String, bool) {
-        let mut out = std::borrow::Cow::Borrowed(text);
+        let mut out = text.to_string();
         let mut changed = false;
         for (re, correct) in &self.rules {
-            if re.is_match(&out) {
-                out = std::borrow::Cow::Owned(re.replace_all(&out, NoExpand(correct)).into_owned());
+            if !re.is_match(&out) {
+                continue;
+            }
+            let mut rebuilt = String::with_capacity(out.len() + 16);
+            let mut rest = out.as_str();
+            let mut touched = false;
+            loop {
+                match rest.find(correct.as_str()) {
+                    Some(at) => {
+                        let (before, after) = rest.split_at(at);
+                        let fixed = re.replace_all(before, NoExpand(correct));
+                        touched |= fixed != before;
+                        rebuilt.push_str(&fixed);
+                        rebuilt.push_str(correct);
+                        rest = &after[correct.len()..];
+                    }
+                    None => {
+                        let fixed = re.replace_all(rest, NoExpand(correct));
+                        touched |= fixed != rest;
+                        rebuilt.push_str(&fixed);
+                        break;
+                    }
+                }
+            }
+            if touched {
+                out = rebuilt;
                 changed = true;
             }
         }
-        (out.into_owned(), changed)
+        (out, changed)
     }
 }
 
@@ -181,5 +208,17 @@ mod tests {
         assert_eq!(dollars.apply("acme rocks").0, "A$1\\B rocks", "no template expansion");
         let symbol = Corrector::new(&list(&[("c sharp", "C#")])).unwrap();
         assert_eq!(symbol.apply("I write c sharp daily").0, "I write C# daily");
+    }
+
+    #[test]
+    fn corrector_is_idempotent_when_correct_contains_heard() {
+        let c = Corrector::new(&list(&[("ian", "Ian Ahuja"), ("meet", "Google Meet")])).unwrap();
+        let once = c.apply("ian said meet at ten. Ian Ahuja agreed on Google Meet.").0;
+        assert_eq!(once, "Ian Ahuja said Google Meet at ten. Ian Ahuja agreed on Google Meet.");
+        let twice = c.apply(&once);
+        assert_eq!(twice.0, once, "a second pass changes nothing");
+        assert!(!twice.1);
+        // Text that already carries the correction reports no change.
+        assert!(!c.apply("Ian Ahuja is here").1);
     }
 }

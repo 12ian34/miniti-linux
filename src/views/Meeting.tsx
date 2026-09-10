@@ -65,7 +65,7 @@ function ts(s: number): string {
 /** Port of the macOS MeetingView: TerminalHeader · speaker legend · transcript + notes · insights. */
 export function MeetingView({ id }: { id: string }) {
   const store = useStore();
-  const { recording, stop, stopping, navigate, refreshMeetings, insightsOpen, setInsightsOpen, prefs } = store;
+  const { recording, stop, stopping, navigate, refreshMeetings, refreshPrefs, insightsOpen, setInsightsOpen, prefs } = store;
   const live = recording.recording && recording.meeting_id === id;
 
   const [detail, setDetail] = useState<MeetingDetail | null>(null);
@@ -162,6 +162,9 @@ export function MeetingView({ id }: { id: string }) {
     if (!correcting || !correcting.correct.trim()) return;
     try {
       await addCorrection(correcting.heard, correcting.correct, id, correcting.fixEarlier);
+      // The backend changed prefs (corrections + a new keyterm); any later
+      // whole-object save must start from the new copy.
+      await refreshPrefs();
       setNotice(`"${correcting.heard}" is now "${correcting.correct.trim()}" (also for the next meeting)`);
       setCorrecting(null);
       window.getSelection()?.removeAllRanges();

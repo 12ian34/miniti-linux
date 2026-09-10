@@ -10,6 +10,7 @@ public changelog for miniti for Linux. the changelog for every platform lives at
 - new: Join the call from miniti. Calendar prompts, the meeting reminder notification, the upcoming list, and the prepare sheet offer "join and take notes" when the event has a Meet, Zoom, Teams, or Webex link; the live meeting keeps a "join call" button for a dropped call. Starting a meeting on its own never opens a browser
 - improvement: One person on the mic stays one speaker. A new voice needs real evidence before it counts, more so on an online call, so the transcript no longer splits you into Speaker 2 and Speaker 3. When it still happens, "mark all mic speakers as me" fixes it in one click
 - improvement: On a 1:1 calendar call the other person is named from the invitation without an AI request
+- note: On an online call, a second person speaking into the same laptop mic now needs a few sentences before they appear as their own speaker; their first words attach to you. In a room with no call nothing changes
 
 ### 2026-09-10 - v0.5.0
 

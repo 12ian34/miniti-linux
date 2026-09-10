@@ -104,7 +104,16 @@ pub fn build_ws_url(cfg: &DeepgramConfig) -> String {
 
     let query = params
         .iter()
-        .map(|(k, v)| format!("{}={}", k, urlencode(v)))
+        .map(|(k, v)| {
+            // Deepgram splits `replace=find:replace` on a literal colon, and
+            // documents the raw form; everything else in the value is encoded.
+            let value = if k == "replace" {
+                v.split(':').map(urlencode).collect::<Vec<_>>().join(":")
+            } else {
+                urlencode(v)
+            };
+            format!("{k}={value}")
+        })
         .collect::<Vec<_>>()
         .join("&");
     format!("{DEEPGRAM_WS_BASE}?{query}")
@@ -852,7 +861,7 @@ mod tests {
         };
         let url = build_ws_url(&cfg);
         let k = url.find("keyterm=Lightdash").unwrap();
-        let r = url.find("replace=light%20dash%3ALightdash").unwrap();
+        let r = url.find("replace=light%20dash:Lightdash").unwrap();
         assert!(k < r, "replace items follow the keyterms");
         assert_eq!(url.matches("replace=").count(), 2);
     }

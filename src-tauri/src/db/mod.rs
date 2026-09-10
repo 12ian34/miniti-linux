@@ -679,7 +679,7 @@ pub fn list_segments(conn: &Connection, meeting_id: &str) -> DbResult<Vec<Transc
 /// speaker and timing are untouched.
 pub fn set_segment_text(conn: &Connection, segment_id: &str, text: &str) -> DbResult<()> {
     conn.execute(
-        "UPDATE segments SET text = ?1 WHERE id = ?2",
+        "UPDATE transcript_segments SET text = ?1 WHERE id = ?2",
         rusqlite::params![text, segment_id],
     )?;
     Ok(())
@@ -824,6 +824,21 @@ mod tests {
             0,
             "underscore is literal, not wildcard"
         );
+    }
+
+    #[test]
+    fn segment_text_can_be_rewritten_in_place() {
+        let conn = open_in_memory().unwrap();
+        let m = Meeting::new("t", "en");
+        upsert_meeting(&conn, &m).unwrap();
+        let seg = TranscriptSegment::new(&m.id, 1000, "we met sasha", 0.0, 1.0, "microphone");
+        add_segment(&conn, &seg).unwrap();
+        set_segment_text(&conn, &seg.id, "we met Sascha").unwrap();
+        let back = list_segments(&conn, &m.id).unwrap();
+        assert_eq!(back.len(), 1);
+        assert_eq!(back[0].id, seg.id, "identity survives a rewrite");
+        assert_eq!(back[0].text, "we met Sascha");
+        assert_eq!(back[0].speaker, 1000);
     }
 
     #[test]
