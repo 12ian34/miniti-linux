@@ -4,6 +4,13 @@ public changelog for miniti for Linux. the changelog for every platform lives at
 
 ## releases
 
+### unreleased - v0.6.0
+
+- new: Correct a misheard word from the transcript: select it, choose correct, and the fix applies to the rest of the meeting as it arrives, to earlier mentions if you want, and to future meetings. Corrections live in Settings → Language and never touch your insights
+- new: Join the call from miniti. Calendar prompts, the meeting reminder notification, the upcoming list, and the prepare sheet offer "join and take notes" when the event has a Meet, Zoom, Teams, or Webex link; the live meeting keeps a "join call" button for a dropped call. Starting a meeting on its own never opens a browser
+- improvement: One person on the mic stays one speaker. A new voice needs real evidence before it counts, more so on an online call, so the transcript no longer splits you into Speaker 2 and Speaker 3. When it still happens, "mark all mic speakers as me" fixes it in one click
+- improvement: On a 1:1 calendar call the other person is named from the invitation without an AI request
+
 ### 2026-09-10 - v0.5.0
 
 - new: A `miniti` command line: start, stop, and toggle a meeting, see the live questions, list and export meetings, and answer a Smart-meeting prompt from a terminal, a keybind, or a script. `man miniti` and shell completions come with the packages
