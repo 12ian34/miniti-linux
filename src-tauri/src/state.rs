@@ -223,6 +223,7 @@ pub struct RecordingSession {
 /// Everything `stop` needs after releasing the session lock.
 struct StopParts {
     meeting: Meeting,
+    readers: Vec<JoinHandle<()>>,
     started_at: Option<Instant>,
     dg_task: Option<tauri::async_runtime::JoinHandle<()>>,
     consumer_tasks: Vec<tauri::async_runtime::JoinHandle<()>>,
@@ -460,6 +461,14 @@ impl RecordingSession {
         let levels_mic = levels.clone();
         let mixer_for_mic = mixer.clone();
         self.readers.push(std::thread::spawn(move || {
+            // The queue is drained only while the Deepgram socket is up. A
+            // blocking send here filled it while the stream was still
+            // connecting and left this thread stuck for ever; stop then
+            // joined it under the session lock and the whole app froze.
+            // Frames that nobody can take are dropped (the stream was not
+            // receiving them anyway) and the drop is logged once a burst.
+            let mut dropped: u64 = 0;
+            let mut last_drop_log: Option<Instant> = None;
             while let Ok(frame) = mic_rx.recv() {
                 Levels::set(&levels_mic.mic, frame.level);
                 levels_mic.note_activity(frame.level);
@@ -472,8 +481,16 @@ impl RecordingSession {
                 } else {
                     audio::pcm::pcm16_to_le_bytes(&frame.samples)
                 };
-                if pcm_tx.blocking_send(bytes).is_err() {
-                    break;
+                match pcm_tx.try_send(bytes) {
+                    Ok(()) => {}
+                    Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
+                        dropped += 1;
+                        if last_drop_log.map(|t| t.elapsed() >= Duration::from_secs(10)).unwrap_or(true) {
+                            tracing::warn!("audio queue full (transcription not receiving); dropped {dropped} frames so far");
+                            last_drop_log = Some(Instant::now());
+                        }
+                    }
+                    Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => break,
                 }
             }
         }));
@@ -570,9 +587,8 @@ impl RecordingSession {
             h.stop();
         }
         self.reader_stop.store(true, Ordering::SeqCst);
-        for join in self.readers.drain(..) {
-            let _ = join.join();
-        }
+        // Reader threads are joined by `stop_recording` after this lock is
+        // released: a thread that will not exit must never freeze the app.
         self.running = false;
         if let Some((stop, _)) = &self.engine {
             stop.store(true, Ordering::SeqCst);
@@ -580,6 +596,7 @@ impl RecordingSession {
         Some(StopParts {
             meeting: self.meeting.take()?,
             started_at: self.started_at.take(),
+            readers: std::mem::take(&mut self.readers),
             dg_task: self.dg_task.take(),
             consumer_tasks: std::mem::take(&mut self.consumer_tasks),
             credential: self.credential.take(),
@@ -1519,6 +1536,18 @@ pub async fn stop_recording(
         return Ok(None);
     };
     tracing::info!("stop: capture torn down in {} ms", stop_started.elapsed().as_millis());
+    // Join the capture readers off the lock, with a deadline: the threads
+    // exit as soon as their capture handle is gone, and if one does not the
+    // meeting still saves and the log says so.
+    let readers = parts.readers;
+    let joined = tauri::async_runtime::spawn_blocking(move || {
+        for j in readers {
+            let _ = j.join();
+        }
+    });
+    if tokio::time::timeout(Duration::from_secs(5), joined).await.is_err() {
+        tracing::warn!("stop: a capture reader thread did not exit within 5 s; continuing");
+    }
     state.levels.reset();
 
     // Let Deepgram flush its finals (CloseStream → drain), then the consumers.
