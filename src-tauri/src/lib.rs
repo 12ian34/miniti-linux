@@ -228,10 +228,14 @@ pub fn run() {
             state::spawn_shell_ticker(handle.clone());
             state::spawn_smart_monitor(handle.clone());
             state::spawn_calendar_refresher(handle.clone());
-            // The main window is created hidden (tauri.conf.json) so
-            // `--hidden` (launch at login) never flashes it.
-            if !launch.hidden || !show_tray {
-                shell::show_main(&handle);
+            // The window is created the ordinary way (a window created
+            // hidden and shown later came up without a usable close button
+            // under Hyprland until it was resized); `--hidden` at login hides
+            // it again at once, which is a brief flash at most.
+            if launch.hidden && show_tray {
+                if let Some(w) = handle.get_webview_window(shell::MAIN_LABEL) {
+                    let _ = w.hide();
+                }
             }
             if launch.start_meeting {
                 let title = launch.title.clone();

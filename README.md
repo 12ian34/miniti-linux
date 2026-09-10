@@ -30,6 +30,8 @@ a Linux desk gets everything a Mac desk gets.
 - ⏪ **catch me up** when you zoned out, and **investigate** a question on the web or in a local codebase without leaving the call
 - 📈 **coaching over time**: your speaking stats across meetings, with one practical focus for the next one
 - 📅 **smart meetings**: notices when a call may have ended or the next one is about to start, with Google Calendar auto-start and auto-stop
+- ✍️ **corrections**: select a misheard word in the transcript and fix it once; it applies to the rest of the meeting, to earlier mentions if you want, and to every meeting after
+- ↗ **join from miniti**: calendar prompts, the reminder notification and the upcoming list offer "join and take notes" when the event has a Meet, Zoom, Teams or Webex link
 - 🔒 **your data, your tools**: local history, Markdown export, webhooks to Zapier, Make or n8n, Granola import
 
 ![coaching overview: a next-meeting focus, trends, and stats across recent meetings](docs/screenshots/coaching.png)

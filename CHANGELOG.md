@@ -4,7 +4,7 @@ public changelog for miniti for Linux. the changelog for every platform lives at
 
 ## releases
 
-### unreleased - v0.6.0
+### 2026-09-10 - v0.6.1
 
 - new: Correct a misheard word from the transcript: select it, choose correct, and the fix applies to the rest of the meeting as it arrives, to earlier mentions if you want, and to future meetings. Corrections live in Settings → Language and never touch your insights
 - new: Join the call from miniti. Calendar prompts, the meeting reminder notification, the upcoming list, and the prepare sheet offer "join and take notes" when the event has a Meet, Zoom, Teams, or Webex link; the live meeting keeps a "join call" button for a dropped call. Starting a meeting on its own never opens a browser

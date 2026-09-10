@@ -2,7 +2,7 @@
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "miniti",
   "mainBinaryName": "miniti",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "identifier": "com.miniti.linux",
   "build": {
     "beforeDevCommand": "pnpm dev",
@@ -20,8 +20,7 @@
         "minHeight": 520,
         "backgroundColor": "#0A0A0B",
         "label": "main",
-        "center": true,
-        "visible": false
+        "center": true
       }
     ],
     "security": {
