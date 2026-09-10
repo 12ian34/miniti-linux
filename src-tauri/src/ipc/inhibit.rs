@@ -27,6 +27,17 @@ impl Inhibitor {
         self.screensaver_cookie.is_some() || self.portal_request.is_some()
     }
 
+    /// Which mechanism holds the inhibit, for the status snapshot.
+    pub fn kind(&self) -> Option<&'static str> {
+        if self.screensaver_cookie.is_some() {
+            Some("screensaver")
+        } else if self.portal_request.is_some() {
+            Some("portal")
+        } else {
+            None
+        }
+    }
+
     pub async fn acquire(&mut self, conn: Connection) {
         if self.active() {
             return;

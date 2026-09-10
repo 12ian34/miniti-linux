@@ -10,8 +10,10 @@ use std::time::Duration;
 use super::protocol::{Request, Response};
 
 const CONNECT_TIMEOUT: Duration = Duration::from_millis(500);
-/// Starting a managed meeting talks to the backend; give commands room.
-const CALL_TIMEOUT: Duration = Duration::from_secs(30);
+/// Starting a managed meeting talks to the backend, and stopping one drains
+/// Deepgram, ends the session and hands off to the final insights pass; the
+/// app's own UI allows two minutes for a command, so the CLI does too.
+const CALL_TIMEOUT: Duration = Duration::from_secs(120);
 
 pub struct Client {
     reader: BufReader<UnixStream>,
