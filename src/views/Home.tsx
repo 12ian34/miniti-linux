@@ -12,6 +12,7 @@ import {
   startMeetingFromEvent,
   subscribeUrl,
   setPrefs,
+  joinAndStartFromEvent,
 } from "../api";
 import { useStore } from "../store";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -58,6 +59,16 @@ export function Home({ gate }: { gate: LaunchGate | null }) {
     try {
       await setPrepNotes(e.id, prepNotes);
       const id = await startMeetingFromEvent(e.id);
+      setPrepEvent(null);
+      navigate({ kind: "meeting", id });
+    } catch (err) {
+      setUsageError(errorMessage(err));
+    }
+  }
+  async function joinFromEvent(e: CalendarEvent) {
+    try {
+      if (prepEvent?.id === e.id) await setPrepNotes(e.id, prepNotes);
+      const id = await joinAndStartFromEvent(e.id);
       setPrepEvent(null);
       navigate({ kind: "meeting", id });
     } catch (err) {
@@ -148,12 +159,17 @@ export function Home({ gate }: { gate: LaunchGate | null }) {
           <div className="upcoming">
             <div className="upcoming-label muted tiny">upcoming</div>
             {calendar.upcoming.map((e) => (
-              <button className="event-row" key={e.id} onClick={() => openPrep(e)}>
-                <span className="dot dot-info" />
-                <span className="event-when">{fmtEventWhen(e)}</span>
-                <span className="ellipsis">{e.title || "(no title)"}</span>
-                {e.attendees.length > 0 && <span className="muted tiny">👥 {e.attendees.filter((a) => !a.self).length}</span>}
-              </button>
+              <div className="event-row-wrap" key={e.id}>
+                <button className="event-row" onClick={() => openPrep(e)}>
+                  <span className="dot dot-info" />
+                  <span className="event-when">{fmtEventWhen(e)}</span>
+                  <span className="ellipsis">{e.title || "(no title)"}</span>
+                  {e.attendees.length > 0 && <span className="muted tiny">👥 {e.attendees.filter((a) => !a.self).length}</span>}
+                </button>
+                {joinUrl(e) && (
+                  <button className="ghost tiny join-btn" title={`join ${joinUrl(e)} and take notes`} disabled={starting} onClick={() => joinFromEvent(e)}>↗ join</button>
+                )}
+              </div>
             ))}
           </div>
         )}
@@ -166,10 +182,11 @@ export function Home({ gate }: { gate: LaunchGate | null }) {
             {fmtEventWhen(prepEvent)}
             {prepEvent.attendees.length > 0 && ` · ${prepEvent.attendees.map((a) => a.displayName || a.email).join(", ")}`}
           </p>
-          {(prepEvent.meetLink || prepEvent.conferenceUrl) && <p className="muted small">{prepEvent.meetLink || prepEvent.conferenceUrl}</p>}
+          {joinUrl(prepEvent) && <p className="muted small">{joinUrl(prepEvent)}</p>}
           <textarea className="notes-area short" placeholder="Private notes for this meeting — they seed the live notes when you start." value={prepNotes} onChange={(e) => setPrepNotesState(e.currentTarget.value)} />
           <div className="save-row">
-            <button className="control positive" onClick={() => startFromEvent(prepEvent)} disabled={starting}>◉ start this meeting</button>
+            {joinUrl(prepEvent) && <button className="control positive" onClick={() => joinFromEvent(prepEvent)} disabled={starting}>↗ join &amp; take notes</button>}
+            <button className={`control ${joinUrl(prepEvent) ? "" : "positive"}`} onClick={() => startFromEvent(prepEvent)} disabled={starting}>◉ {joinUrl(prepEvent) ? "take notes only" : "start this meeting"}</button>
             <button className="control" onClick={async () => { await setPrepNotes(prepEvent.id, prepNotes); setPrepEvent(null); }}>save notes</button>
           </div>
         </Sheet>
@@ -211,6 +228,15 @@ function StatusPills({ prefs, usage, backendKey }: { prefs: Prefs | null; usage:
       <span className={`pill ${pct >= 90 ? "warn" : ""}`}>{Math.round(usage.minutes_used)} / {usage.minutes_limit ?? "∞"} min</span>
     </div>
   );
+}
+
+/** The link to join, https only (mirrors the Rust `join_url`). */
+function joinUrl(e: CalendarEvent): string | null {
+  for (const u of [e.conferenceUrl, e.meetLink]) {
+    const t = (u ?? "").trim();
+    if (t.startsWith("https://") && t.length > 8) return t;
+  }
+  return null;
 }
 
 function fmtEventWhen(e: CalendarEvent): string {

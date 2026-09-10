@@ -121,6 +121,7 @@ pub struct StartOptions {
     pub calendar_event_id: Option<String>,
     pub attendees_json: Option<String>,
     pub notes: Option<String>,
+    pub join_url: Option<String>,
 }
 
 /// What the current meeting is authenticated with.
@@ -263,6 +264,7 @@ impl RecordingSession {
         let mut meeting = Meeting::new(title, prefs.language.clone());
         meeting.sales_enabled = prefs.sales_insights_default;
         meeting.calendar_event_id = opts.calendar_event_id.clone();
+        meeting.join_url = opts.join_url.clone();
         if let Some(a) = opts.attendees_json.clone() {
             meeting.attendees = a;
         }
@@ -1450,8 +1452,14 @@ pub async fn start_meeting(
     )?;
     if let Some(mut cfg) = engine_cfg {
         cfg.meeting_id = id.clone();
-        session.engine = Some(LiveEngine::spawn(app, db, cfg.clone()));
+        session.engine = Some(LiveEngine::spawn(app.clone(), db, cfg.clone()));
         session.engine_cfg = Some(cfg);
+    }
+    drop(session);
+    if let Some(slot) = crate::smart::slot(&app) {
+        if let Ok(mut m) = slot.lock() {
+            m.reset_join_guard();
+        }
     }
     Ok(id)
 }
@@ -1765,6 +1773,22 @@ async fn perform_smart_action(app: &AppHandle, action: crate::smart::Action) {
         Action::StartFromEvent(event) => start_from_event(app, &state, &event).await.map(|id| {
             let _ = app.emit("navigate_meeting", &id);
         }),
+        // The link opens only after the start was accepted, so a refused
+        // start (terms, plan limit) never leaves a browser tab behind.
+        Action::JoinAndStartEvent(event) => start_from_event(app, &state, &event).await.map(|id| {
+            let _ = app.emit("navigate_meeting", &id);
+            open_join_link(app, &event);
+        }),
+        Action::EndAndJoinEvent(event) => {
+            let stopped = stop_recording(app.clone(), state.clone()).await.map(|_| ());
+            match stopped {
+                Ok(()) => start_from_event(app, &state, &event).await.map(|id| {
+                    let _ = app.emit("navigate_meeting", &id);
+                    open_join_link(app, &event);
+                }),
+                Err(e) => Err(e),
+            }
+        }
         Action::StartFromCall(_) => {
             start_meeting(app.clone(), state.clone(), StartOptions::default())
                 .await
@@ -1816,9 +1840,68 @@ async fn start_from_event(
             calendar_event_id: Some(event.id.clone()),
             attendees_json: Some(event.attendees_json()),
             notes: Some(notes),
+            join_url: event.join_url(),
         },
     )
     .await
+}
+
+/// Open the call link for an event, once per event per meeting start, and
+/// never from a timer: only an explicit "join" reaches here.
+fn open_join_link(app: &AppHandle, event: &crate::integrations::CalendarEvent) {
+    let Some(url) = event.join_url() else { return };
+    let fresh = crate::smart::slot(app)
+        .and_then(|s| s.lock().ok().map(|mut m| m.mark_join_opened(&event.id)))
+        .unwrap_or(true);
+    if !fresh {
+        tracing::info!("join link for {} already opened this meeting", event.id);
+        return;
+    }
+    match tauri_plugin_opener::open_url(&url, None::<&str>) {
+        Ok(()) => tracing::info!("opened join link for {}", event.id),
+        Err(e) => {
+            tracing::warn!("could not open the join link: {e}");
+            crate::shell::notify(app, "miniti", &format!("Could not open the call link: {e}"));
+        }
+    }
+}
+
+/// Home / prep sheet: start the meeting from the event, then open its link.
+#[tauri::command]
+pub async fn join_and_start_from_event(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    event_id: String,
+) -> Result<String, String> {
+    let event = calendar_snapshot(&app)
+        .into_iter()
+        .find(|e| e.id == event_id)
+        .ok_or("event not found")?;
+    if let Some(slot) = crate::smart::slot(&app) {
+        if let Ok(mut m) = slot.lock() {
+            m.clear_prompt(&app);
+        }
+    }
+    let id = start_from_event(&app, &state, &event).await?;
+    open_join_link(&app, &event);
+    Ok(id)
+}
+
+/// Live header "join call": open the link of the meeting's event again (a
+/// dropped call); starts nothing.
+#[tauri::command]
+pub fn open_meeting_join_link(state: State<AppState>, meeting_id: String) -> Result<(), String> {
+    let url = {
+        let conn = state.db.lock().map_err(|_| "db poisoned")?;
+        db::get_meeting(&conn, &meeting_id)
+            .map_err(|e| e.to_string())?
+            .and_then(|m| m.join_url)
+            .ok_or("this meeting has no call link")?
+    };
+    if !url.starts_with("https://") {
+        return Err("only https links are opened".into());
+    }
+    tauri_plugin_opener::open_url(&url, None::<&str>).map_err(|e| e.to_string())
 }
 
 /// 1 Hz Smart-meetings monitor + live guidance.
@@ -1990,8 +2073,8 @@ pub async fn smart_decision(
 /// Answer the pending Smart-meeting prompt from outside the webview (CLI,
 /// D-Bus, bar widgets): same path as the surface buttons.
 pub async fn decide_from_shell(app: &AppHandle, choice: &str) -> Result<(), String> {
-    if !matches!(choice, "primary" | "secondary" | "tertiary") {
-        return Err(format!("choice must be primary, secondary or tertiary (got {choice:?})"));
+    if !matches!(choice, "primary" | "secondary" | "tertiary" | "join") {
+        return Err(format!("choice must be primary, secondary, tertiary or join (got {choice:?})"));
     }
     let actions = {
         let slot = crate::smart::slot(app).ok_or("smart monitor unavailable")?;

@@ -134,6 +134,11 @@ export function onTranscriptCorrected(handler: (meetingId: string) => void): Pro
   return listen<string>("transcript_corrected", (e) => handler(e.payload));
 }
 
+/** Start from a calendar event, then open its call link (one tab per start). */
+export const joinAndStartFromEvent = (eventId: string) => invoke<string>("join_and_start_from_event", { eventId });
+/** Re-open the live meeting's call link (a dropped call); starts nothing. */
+export const openMeetingJoinLink = (meetingId: string) => invoke<void>("open_meeting_join_link", { meetingId });
+
 export const setSpeakerName = (meetingId: string, speakerId: number, name: string) =>
   invoke<Record<string, string>>("set_speaker_name", { meetingId, speakerId, name });
 export const markAsYou = (meetingId: string, speakerId: number, isYou: boolean) =>
@@ -172,7 +177,7 @@ export const trimTranscript = (meetingId: string, beforeS: number | null, afterS
 
 export const notify = (title: string, body: string) => invoke<void>("notify", { title, body });
 export const showMainWindow = () => invoke<void>("show_main_window");
-export const smartDecision = (promptId: string, choice: "primary" | "secondary" | "tertiary") =>
+export const smartDecision = (promptId: string, choice: "primary" | "secondary" | "tertiary" | "join") =>
   invoke<void>("smart_decision", { promptId, choice });
 
 export const googleStatus = () => invoke<{ connected: boolean; email: string | null }>("google_status");

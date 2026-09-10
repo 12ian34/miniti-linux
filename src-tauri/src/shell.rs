@@ -449,6 +449,71 @@ pub fn notify(app: &AppHandle, title: &str, body: &str) {
     }
 }
 
+/// A Smart-meeting prompt as a notification. On Linux the notification
+/// carries the prompt's buttons as actions (and "join and take notes" when
+/// the event has a call link); clicking the body counts as the primary
+/// choice, the way the Apple reminder works. The choice is routed back
+/// through the same decision path as the surface buttons. Servers without
+/// action support (some minimal bars) still show the text.
+pub fn notify_prompt(app: &AppHandle, prompt: &crate::smart::SmartPrompt) {
+    #[cfg(target_os = "linux")]
+    {
+        let app = app.clone();
+        let prompt = prompt.clone();
+        std::thread::Builder::new()
+            .name("miniti-notify-prompt".into())
+            .spawn(move || {
+                let mut n = notify_rust::Notification::new();
+                n.appname("miniti")
+                    .summary(&prompt.message)
+                    .icon("miniti")
+                    .hint(notify_rust::Hint::DesktopEntry("miniti".into()))
+                    .timeout(notify_rust::Timeout::Milliseconds(25_000));
+                if prompt.join_url.is_some() {
+                    n.action("join", "Join and take notes");
+                }
+                n.action("primary", &prompt.primary).action("secondary", &prompt.secondary);
+                if let Some(t) = &prompt.tertiary {
+                    n.action("tertiary", t);
+                }
+                n.action("default", &prompt.primary);
+                let handle = match n.show() {
+                    Ok(h) => h,
+                    Err(e) => {
+                        tracing::info!("notification unavailable: {e}");
+                        return;
+                    }
+                };
+                handle.wait_for_action(|action| {
+                    let choice = match action {
+                        "join" => "join",
+                        "default" | "primary" => "primary",
+                        "tertiary" => "tertiary",
+                        "secondary" => "secondary",
+                        _ => return, // dismissed or expired: the prompt stays on the surface
+                    };
+                    tracing::info!("notification action: {choice}");
+                    let app = app.clone();
+                    let choice = choice.to_string();
+                    tauri::async_runtime::spawn(async move {
+                        if let Err(e) = crate::state::decide_from_shell(&app, &choice).await {
+                            tracing::info!("notification decision ignored: {e}");
+                        }
+                    });
+                });
+            })
+            .ok();
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        notify(
+            app,
+            "miniti",
+            &format!("{} ({} / {})", prompt.message, prompt.primary, prompt.secondary),
+        );
+    }
+}
+
 /// Surface-aware delivery contract: when miniti is frontmost the floating
 /// surface / in-app UI carries the message; otherwise Notification Center.
 pub fn deliver_guidance(app: &AppHandle, title: &str, body: &str, surface_enabled: bool) {

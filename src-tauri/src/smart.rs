@@ -422,6 +422,9 @@ pub struct SmartPrompt {
     pub event_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub countdown: Option<u64>,
+    /// Link to join the call, when the prompt is about a calendar event that has one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub join_url: Option<String>,
 }
 
 impl SmartPrompt {
@@ -435,6 +438,7 @@ impl SmartPrompt {
             tertiary: None,
             event_id: None,
             countdown: None,
+            join_url: None,
         }
     }
 }
@@ -565,6 +569,8 @@ pub struct MonitorState {
     dismissed_events: HashSet<String>,
     last_question_nudge: Option<Instant>,
     notified_questions: HashSet<String>,
+    /// Events whose join link was opened this meeting; two surfaces never open two tabs.
+    opened_join_event_ids: HashSet<String>,
     last_monologue_nudge: Option<Instant>,
     monologue_nudged_run_start: Option<f64>,
     last_filler_nudge: Option<Instant>,
@@ -586,6 +592,9 @@ pub enum Action {
     StartFromCall(Option<ActiveCall>),
     EndAndStartEvent(CalendarEvent),
     EndAndStartNew,
+    /// Explicit "join": start from the event, then open its call link.
+    JoinAndStartEvent(CalendarEvent),
+    EndAndJoinEvent(CalendarEvent),
 }
 
 fn emit_prompt(app: &AppHandle, prompt: &SmartPrompt, surface_enabled: bool, notifications: bool) {
@@ -603,14 +612,7 @@ fn emit_prompt(app: &AppHandle, prompt: &SmartPrompt, surface_enabled: bool, not
         crate::shell::raise_presence(app);
     }
     if notifications && !(surface_enabled && crate::shell::main_is_focused(app)) {
-        crate::shell::notify(
-            app,
-            "miniti",
-            &format!(
-                "{} ({} / {})",
-                prompt.message, prompt.primary, prompt.secondary
-            ),
-        );
+        crate::shell::notify_prompt(app, prompt);
     }
 }
 
@@ -630,6 +632,16 @@ impl MonitorState {
     ) {
         self.pending = Some(pending);
         emit_prompt(app, &prompt, surface, notifications);
+    }
+
+    /// One-shot per event per meeting; returns true the first time.
+    pub fn mark_join_opened(&mut self, event_id: &str) -> bool {
+        self.opened_join_event_ids.insert(event_id.to_string())
+    }
+
+    /// A new meeting starts: links may be opened again for its event.
+    pub fn reset_join_guard(&mut self) {
+        self.opened_join_event_ids.clear();
     }
 
     pub fn clear_prompt(&mut self, app: &AppHandle) {
@@ -719,6 +731,7 @@ impl MonitorState {
                             tertiary: None,
                             event_id: None,
                             countdown: Some(left),
+                            join_url: None,
                         },
                     );
                 }
@@ -750,6 +763,7 @@ impl MonitorState {
                             tertiary: Some("Remind in 2 min".into()),
                             event_id: Some(event.id.clone()),
                             countdown: Some(left),
+                            join_url: event.join_url(),
                         },
                     );
                 }
@@ -776,6 +790,7 @@ impl MonitorState {
                             tertiary: None,
                             event_id: Some(event.id.clone()),
                             countdown: Some(left),
+                            join_url: event.join_url(),
                         },
                     );
                 }
@@ -821,6 +836,7 @@ impl MonitorState {
                                     tertiary: None,
                                     event_id: None,
                                     countdown: None,
+                                    join_url: None,
                                 },
                                 surface,
                                 notifications,
@@ -857,6 +873,7 @@ impl MonitorState {
                                     tertiary: None,
                                     event_id: None,
                                     countdown: None,
+                                    join_url: None,
                                 },
                                 surface,
                                 notifications,
@@ -880,6 +897,7 @@ impl MonitorState {
                                     tertiary: None,
                                     event_id: None,
                                     countdown: Some(ENDING_GRACE.as_secs()),
+                                    join_url: None,
                                 },
                                 surface,
                                 notifications,
@@ -913,6 +931,7 @@ impl MonitorState {
                                     tertiary: None,
                                     event_id: None,
                                     countdown: None,
+                                    join_url: None,
                                 },
                                 surface,
                                 notifications,
@@ -976,6 +995,7 @@ impl MonitorState {
                             tertiary: None,
                             event_id: None,
                             countdown: None,
+                            join_url: None,
                         },
                         surface,
                         notifications,
@@ -1030,6 +1050,7 @@ impl MonitorState {
                                 tertiary: Some("Remind in 2 min".into()),
                                 event_id: Some(event.id.clone()),
                                 countdown: None,
+                                join_url: event.join_url(),
                             },
                             surface,
                             notifications,
@@ -1098,6 +1119,7 @@ impl MonitorState {
                                 tertiary: None,
                                 event_id: Some(e.id.clone()),
                                 countdown: Some(d as u64),
+                                join_url: e.join_url(),
                             },
                             surface,
                             notifications,
@@ -1126,6 +1148,7 @@ impl MonitorState {
                                 tertiary: None,
                                 event_id: Some(e.id.clone()),
                                 countdown: None,
+                                join_url: e.join_url(),
                             },
                             surface,
                             notifications,
@@ -1255,6 +1278,9 @@ impl MonitorState {
             (Pending::CalendarTransition { event, .. }, "primary") => {
                 actions.push(Action::EndAndStartEvent(event))
             }
+            (Pending::CalendarTransition { event, .. }, "join") => {
+                actions.push(Action::EndAndJoinEvent(event))
+            }
             (Pending::CalendarTransition { event, .. }, "tertiary") => {
                 self.snoozed_events
                     .insert(event.id.clone(), now + CALENDAR_SNOOZE);
@@ -1265,6 +1291,10 @@ impl MonitorState {
             (Pending::CalendarStart { event, .. }, "primary") => {
                 self.dismissed_events.insert(event.id.clone());
                 actions.push(Action::StartFromEvent(event));
+            }
+            (Pending::CalendarStart { event, .. }, "join") => {
+                self.dismissed_events.insert(event.id.clone());
+                actions.push(Action::JoinAndStartEvent(event));
             }
             (Pending::CalendarStart { event, .. }, _) => {
                 self.dismissed_events.insert(event.id.clone());

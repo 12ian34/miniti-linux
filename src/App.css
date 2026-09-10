@@ -422,3 +422,8 @@ code { font-family: var(--mono); background: var(--surface-card); padding: 1px 5
 .correction-correct { color: var(--text); }
 .correction-add .input { flex: 1; min-width: 0; }
 .field { display: flex; flex-direction: column; gap: 4px; }
+
+/* Join links (0.6.0) */
+.event-row-wrap { display: flex; align-items: center; gap: 6px; }
+.event-row-wrap .event-row { flex: 1; min-width: 0; }
+.join-btn { white-space: nowrap; }

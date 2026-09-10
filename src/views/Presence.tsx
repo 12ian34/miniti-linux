@@ -208,6 +208,11 @@ export function Presence() {
                 >
                   {prompt.primary}
                 </button>
+                {prompt.join_url && (prompt.kind === "start" || prompt.kind === "calendar") && (
+                  <button className="control positive" disabled={busy} title={prompt.join_url} onClick={() => run(() => smartDecision(prompt.id, "join"))}>
+                    {prompt.kind === "calendar" ? "join next" : "join & take notes"}
+                  </button>
+                )}
                 <button className="control" disabled={busy} onClick={() => run(() => smartDecision(prompt.id, "secondary"))}>{prompt.secondary}</button>
                 {prompt.tertiary && <button className="ghost" disabled={busy} onClick={() => run(() => smartDecision(prompt.id, "tertiary"))}>{prompt.tertiary}</button>}
               </div>

@@ -23,6 +23,7 @@ import {
   trimTranscript,
   addCorrection,
   onTranscriptCorrected,
+  openMeetingJoinLink,
 } from "../api";
 import { LevelMeter } from "../components/LevelMeter";
 import { dateOnly, displayTitle, duration, elapsed, fallbackSpeakerLabel, speakerColor, streamStatusText, timeOnly } from "../format";
@@ -363,9 +364,14 @@ export function MeetingView({ id }: { id: string }) {
 
           <div className="th-actions">
             {live ? (
-              <button className="control recording emph" onClick={onStop} disabled={stopping}>
-                <span className="glyph">■</span> {stopping ? "finishing…" : "stop"} <span className="kbd light">Ctrl+R</span>
-              </button>
+              <>
+                {m?.join_url && (
+                  <button className="control quiet" title={m.join_url} onClick={() => openMeetingJoinLink(id).catch((e) => setError(errorMessage(e)))}><span className="glyph">↗</span> join call</button>
+                )}
+                <button className="control recording emph" onClick={onStop} disabled={stopping}>
+                  <span className="glyph">■</span> {stopping ? "finishing…" : "stop"} <span className="kbd light">Ctrl+R</span>
+                </button>
+              </>
             ) : (
               <button className="control primary emph" onClick={() => navigate({ kind: "home" })}>
                 <span className="glyph">▤</span> back to meetings

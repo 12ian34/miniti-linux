@@ -57,6 +57,8 @@ export interface SmartPrompt {
   meeting_id?: string | null;
   /** Seconds remaining for a countdown (ending grace / handoff). */
   countdown?: number | null;
+  /** Link to join the call, when the prompt's event has one. */
+  join_url?: string | null;
 }
 
 export type NudgeKind = "question" | "monologue" | "filler" | "sales";
@@ -130,6 +132,8 @@ export interface Meeting {
   investigations: string;
   template_id: string;
   template_sections: string;
+  /** Link to join the call, from the calendar event the meeting started from. */
+  join_url?: string | null;
   created_at: number;
 }
 

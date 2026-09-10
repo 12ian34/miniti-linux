@@ -108,6 +108,16 @@ pub struct CalendarEvent {
 }
 
 impl CalendarEvent {
+    /// The link to join the call: the conference URL first, then the Meet
+    /// link, trimmed, https only (third-party data passing through the backend).
+    pub fn join_url(&self) -> Option<String> {
+        [&self.conference_url, &self.meet_link]
+            .into_iter()
+            .flatten()
+            .map(|u| u.trim().to_string())
+            .find(|u| u.starts_with("https://") && u.len() > "https://".len())
+    }
+
     pub fn start_ts(&self) -> Option<i64> {
         crate::api::parse_iso8601(&self.start)
     }
