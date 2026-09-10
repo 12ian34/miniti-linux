@@ -139,7 +139,7 @@ export function Enroll({ onDone, inline = false, keyringPending = false }: { onD
         <div className="choice-list">
           <button className="choice" disabled={busy} onClick={() => { setStep("restore"); setError(null); }}>
             <strong>Restore with the recovery key</strong>
-            <span>The key you saved when this computer was first set up. Keeps your plan and minutes.</span>
+            <span>The key you saved when this computer was first set up. Puts this computer back on that account.</span>
           </button>
           <button className="choice" disabled={busy} onClick={startOver}>
             <strong>Start over as a new device</strong>
