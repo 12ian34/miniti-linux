@@ -315,6 +315,12 @@ impl AuthManager {
         self.keyring_pending.load(std::sync::atomic::Ordering::Relaxed)
     }
 
+    /// Stop reporting "pending": the wait is over and no credentials exist.
+    pub fn stop_waiting_for_keyring(&self) {
+        self.keyring_pending
+            .store(false, std::sync::atomic::Ordering::Relaxed);
+    }
+
     /// Ask the secret service again. Returns true when credentials turned up
     /// (a keyring that unlocked after login, a daemon that started late).
     pub fn retry_keyring(&self) -> bool {

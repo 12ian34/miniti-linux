@@ -1479,17 +1479,22 @@ pub fn spawn_keyring_retry(app: AppHandle) {
         if !auth.keyring_pending() {
             return;
         }
-        let deadline = Instant::now() + Duration::from_secs(180);
+        // Long enough for a keyring that unlocks with the session; short
+        // enough that a keyring service that is installed but broken (a
+        // service file with no working daemon) does not hold anyone up.
+        let deadline = Instant::now() + Duration::from_secs(20);
         while auth.keyring_pending() && Instant::now() < deadline {
-            tokio::time::sleep(Duration::from_secs(3)).await;
+            tokio::time::sleep(Duration::from_secs(2)).await;
             if auth.retry_keyring() {
                 let _ = app.emit("auth_changed", ());
                 return;
             }
         }
-        if !auth.keyring_pending() {
-            let _ = app.emit("auth_changed", ());
+        if auth.keyring_pending() {
+            tracing::info!("device auth: giving up on the secret service; this device holds no credentials");
+            auth.stop_waiting_for_keyring();
         }
+        let _ = app.emit("auth_changed", ());
     });
 }
 

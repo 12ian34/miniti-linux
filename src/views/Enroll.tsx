@@ -130,9 +130,8 @@ export function Enroll({ onDone, inline = false, keyringPending = false }: { onD
       </p>
       {keyringPending && (
         <div className="banner">
-          Your keyring has not answered yet. If this computer was set up before, its credentials are
-          probably still there: unlock the keyring (or wait a moment) and this screen goes away on its
-          own.
+          Checking the keyring for an earlier setup of this computer. If it had one, this screen goes
+          away on its own in a few seconds; otherwise carry on.
         </div>
       )}
       {error && <div className="banner error">{error}</div>}
@@ -149,7 +148,7 @@ export function Enroll({ onDone, inline = false, keyringPending = false }: { onD
         </div>
       )}
       <div className="choice-list">
-        <button className="choice" disabled={busy || keyringPending} onClick={create}>
+        <button className="choice" disabled={busy} onClick={create}>
           <strong>{busy ? "Creating…" : "Create recovery key"}</strong>
           <span>New account. Free minutes every month; upgrade to Pro any time.</span>
         </button>

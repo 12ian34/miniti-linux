@@ -109,6 +109,14 @@ jobs:
           grep -qi miniti windows-default.txt || { echo "::error::no miniti window appeared"; exit 1; }
           grep -q "webview ready" app-default.log || echo "::warning::webview never reported ready in the default variant"
           [ "$UNIQUE" -ge 40 ] || { echo "::error::window looks blank ($UNIQUE colours)"; exit 1; }
+      - name: Tarball from this build
+        run: |
+          packaging/gen-completions.sh src-tauri/target/release/miniti packaging/completions
+          packaging/make-tarball.sh dist-release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tarball
+          path: dist-release/*.tar.gz
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -117,3 +125,34 @@ jobs:
             screenshot-*.png
             app-*.log
             windows-*.txt
+
+  # The pacman recipe must install what the tarball actually ships (issue #4):
+  # build the package from this run's tarball in an Arch container, install
+  # it, and let namcap look at it.
+  package:
+    runs-on: ubuntu-22.04
+    needs: smoke
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v4
+        with: { name: tarball, path: dist-release }
+      - name: makepkg in archlinux:base-devel
+        run: |
+          version="$(sed -n 's/^\s*"version"\s*:\s*"\([^"]*\)".*/\1/p' src-tauri/tauri.conf.json | head -1)"
+          docker run --rm -v "$PWD:/work" -w /work archlinux:base-devel bash -euxo pipefail -c "
+            pacman -Syu --noconfirm namcap >/dev/null
+            useradd -m build
+            mkdir -p /tmp/pkg && cp packaging/omarchy-pkgs/miniti-bin/PKGBUILD /tmp/pkg/
+            sed -i -e 's|^pkgver=.*|pkgver=$version|' \
+                   -e \"s|^source_x86_64=.*|source_x86_64=(\\\"file:///work/dist-release/miniti-$version-x86_64-unknown-linux-gnu.tar.gz\\\")|\" /tmp/pkg/PKGBUILD
+            chown -R build /tmp/pkg
+            su build -c 'cd /tmp/pkg && updpkgsums && makepkg -s --noconfirm'
+            pacman -U --noconfirm /tmp/pkg/*.pkg.tar.zst
+            test -x /usr/bin/miniti
+            test -f /usr/share/applications/miniti.desktop
+            test -f /usr/share/metainfo/com.miniti.linux.metainfo.xml
+            test -f /usr/share/man/man1/miniti.1
+            test -f /usr/share/icons/hicolor/scalable/apps/miniti.svg
+            miniti --version
+            namcap /tmp/pkg/*.pkg.tar.zst || true
+          "
