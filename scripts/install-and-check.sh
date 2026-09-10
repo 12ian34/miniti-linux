@@ -59,9 +59,10 @@ if [[ "$mode" != "--check" ]]; then
   work="$(mktemp -d /tmp/miniti-pkg.XXXXXX)"
   sed -e "s|^pkgver=.*|pkgver=$version|" \
       -e "s|^source_x86_64=.*|source_x86_64=(\"file://$tarball\")|" \
+      -e "s|^sha256sums_x86_64=.*|sha256sums_x86_64=('SKIP')|" \
       packaging/omarchy-pkgs/miniti-bin/PKGBUILD > "$work/PKGBUILD"
-  bold "installing through pacman (sudo will ask once)"
-  ( cd "$work" && updpkgsums && makepkg -si --noconfirm ) || exit 1
+  bold "installing through pacman"
+  ( cd "$work" && makepkg -si --noconfirm ) || exit 1
   miniti quit 2>/dev/null || true
   sleep 1
   bold "relaunching"

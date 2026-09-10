@@ -144,9 +144,10 @@ jobs:
             useradd -m build
             mkdir -p /tmp/pkg && cp packaging/omarchy-pkgs/miniti-bin/PKGBUILD /tmp/pkg/
             sed -i -e 's|^pkgver=.*|pkgver=$version|' \
-                   -e \"s|^source_x86_64=.*|source_x86_64=(\\\"file:///work/dist-release/miniti-$version-x86_64-unknown-linux-gnu.tar.gz\\\")|\" /tmp/pkg/PKGBUILD
+                   -e \"s|^source_x86_64=.*|source_x86_64=(\\\"file:///work/dist-release/miniti-$version-x86_64-unknown-linux-gnu.tar.gz\\\")|\" \
+                   -e \"s|^sha256sums_x86_64=.*|sha256sums_x86_64=('SKIP')|\" /tmp/pkg/PKGBUILD
             chown -R build /tmp/pkg
-            su build -c 'cd /tmp/pkg && updpkgsums && makepkg -s --noconfirm'
+            su build -c 'cd /tmp/pkg && makepkg -s --noconfirm'
             pacman -U --noconfirm /tmp/pkg/*.pkg.tar.zst
             test -x /usr/bin/miniti
             test -f /usr/share/applications/miniti.desktop
