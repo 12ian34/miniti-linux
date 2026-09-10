@@ -8,6 +8,8 @@
 //! after sustained evidence.
 
 use std::collections::{BTreeSet, HashMap};
+use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
@@ -391,12 +393,57 @@ impl PendingSpeakerEvidence {
     }
 }
 
+/// How much evidence an additional mic speaker (1001+) needs before it is
+/// promoted. `Standard` is the shared-mic room setting; `Strict` applies when
+/// the meeting looks like an online call, where a second mic voice is far
+/// more often diarizer churn than a second person in the room. Values are
+/// the Apple 2.7.0 ones (roadmap P1.3).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum MicPromotionPolicy {
+    #[default]
+    Standard,
+    Strict,
+}
+
+impl MicPromotionPolicy {
+    pub fn from_u8(v: u8) -> Self {
+        if v == 1 {
+            Self::Strict
+        } else {
+            Self::Standard
+        }
+    }
+    pub fn as_u8(self) -> u8 {
+        match self {
+            Self::Standard => 0,
+            Self::Strict => 1,
+        }
+    }
+    /// (words, seconds, average speaker confidence) an unconfirmed extra mic
+    /// speaker must accumulate before it becomes a speaker of its own.
+    fn thresholds(self) -> (usize, f64, f64) {
+        match self {
+            Self::Standard => (
+                MIN_WORDS_FOR_NEW_SPEAKER_PROMOTION,
+                MIN_DURATION_FOR_NEW_SPEAKER_PROMOTION,
+                MIN_AVG_SPEAKER_CONFIDENCE_FOR_NEW_SPEAKER,
+            ),
+            Self::Strict => (12, 4.0, 0.85),
+        }
+    }
+}
+
 /// Speaker-switch confirmation state. Keys are app speaker IDs, already
 /// source-scoped by the identity mapping (mic ≥ 1000, system < 1000).
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct SegmentationState {
     pub confirmed_speaker_ids: BTreeSet<i64>,
     pub pending_speaker_evidence: HashMap<i64, PendingSpeakerEvidence>,
+    /// The speaker each source last committed a segment to. A response that
+    /// opens with an unconfirmed speaker is a candidate switch away from
+    /// this one, not an accepted new speaker (first-word gating).
+    pub last_committed_speaker_by_source: HashMap<SegmentSource, i64>,
+    pub policy: MicPromotionPolicy,
 }
 
 /// A stabilized transcript segment ready to render / persist.
@@ -468,7 +515,26 @@ pub fn segment_by_speaker(
         return Vec::new();
     }
     let mut segments = Vec::new();
-    let mut current_speaker = words[0].speaker;
+    // First-word gating: an unconfirmed opener is judged like a mid-response
+    // switch away from the speaker this source last committed to. Without
+    // this, every final whose first word carries a fresh diarizer id minted
+    // and confirmed a new speaker on no evidence at all (S1, S5, S5…).
+    let opener = words[0].speaker;
+    let opener_privileged = opener == MIC_SPEAKER_ID
+        && !state
+            .confirmed_speaker_ids
+            .iter()
+            .any(|&id| is_mic_app_speaker_id(id) && id != MIC_SPEAKER_ID);
+    let mut current_speaker = match state.last_committed_speaker_by_source.get(&source) {
+        Some(&last)
+            if last != opener
+                && !state.confirmed_speaker_ids.contains(&opener)
+                && !opener_privileged =>
+        {
+            last
+        }
+        _ => opener,
+    };
     let mut current_words: Vec<Word> = Vec::new();
     let mut start_time = words[0].start;
 
@@ -509,15 +575,26 @@ pub fn segment_by_speaker(
 
         let mut allow_switch = passes_general && passes_confidence;
         if allow_switch && !is_known {
+            // Evidence accrues from finals only: cumulative interims replay
+            // the same words on every message and would clear any bar in a
+            // few messages. Interims still promote once the evidence is there.
+            let (min_words, min_duration, min_conf) = if is_mic_app_speaker_id(new_speaker) {
+                state.policy.thresholds()
+            } else {
+                MicPromotionPolicy::Standard.thresholds()
+            };
             let evidence = state
                 .pending_speaker_evidence
                 .entry(new_speaker)
                 .or_default();
-            evidence.add(candidate);
-            let promoted = evidence.word_count >= MIN_WORDS_FOR_NEW_SPEAKER_PROMOTION
-                && evidence.duration >= MIN_DURATION_FOR_NEW_SPEAKER_PROMOTION
-                && evidence.average_speaker_confidence().unwrap_or(1.0)
-                    >= MIN_AVG_SPEAKER_CONFIDENCE_FOR_NEW_SPEAKER;
+            let mut peek = evidence.clone();
+            peek.add(candidate);
+            if is_final {
+                *evidence = peek.clone();
+            }
+            let promoted = peek.word_count >= min_words
+                && peek.duration >= min_duration
+                && peek.average_speaker_confidence().unwrap_or(1.0) >= min_conf;
             if promoted {
                 state.confirmed_speaker_ids.insert(new_speaker);
                 state.pending_speaker_evidence.remove(&new_speaker);
@@ -558,6 +635,13 @@ pub fn segment_by_speaker(
             source,
         ));
     }
+    if is_final {
+        if let Some(last) = segments.last() {
+            state
+                .last_committed_speaker_by_source
+                .insert(source, last.speaker_id);
+        }
+    }
     segments
 }
 
@@ -569,15 +653,23 @@ pub struct Processor {
     pub mono_source: SegmentSource,
     pub segmentation: SegmentationState,
     pub identities: SpeakerIdentityState,
+    /// Shared with the app: the environment inference flips it between
+    /// standard and strict as the meeting reveals what it is.
+    pub policy: Arc<AtomicU8>,
 }
 
 impl Processor {
     pub fn new(multichannel: bool, mono_source: SegmentSource) -> Self {
+        Self::with_policy(multichannel, mono_source, Arc::new(AtomicU8::new(0)))
+    }
+
+    pub fn with_policy(multichannel: bool, mono_source: SegmentSource, policy: Arc<AtomicU8>) -> Self {
         Self {
             multichannel,
             mono_source,
             segmentation: SegmentationState::default(),
             identities: SpeakerIdentityState::default(),
+            policy,
         }
     }
 
@@ -599,6 +691,7 @@ impl Processor {
             return Vec::new();
         }
         let is_final = should_promote(res.is_final, res.speech_final);
+        self.segmentation.policy = MicPromotionPolicy::from_u8(self.policy.load(Ordering::Relaxed));
         let stream_channel = res.channel_index.first().copied();
         let source = response_source(self.multichannel, stream_channel, self.mono_source);
 
@@ -891,6 +984,73 @@ mod tests {
     }
 
     // ---- segment_by_speaker ----
+
+    #[test]
+    fn first_word_of_a_response_does_not_mint_a_speaker_without_evidence() {
+        // One person on the mic; the diarizer opens a later final with id 1001.
+        let mut st = SegmentationState::default();
+        let first = run("hello", 1000, 0.0, 8);
+        let segs = segment_by_speaker(&first, true, 0.9, None, SegmentSource::Microphone, &mut st);
+        assert_eq!(segs.len(), 1);
+        st.confirmed_speaker_ids.insert(1000);
+        // Four words, a second of speech: folded into the last committed speaker.
+        let churn = run("churn", 1001, 3.0, 4);
+        let segs = segment_by_speaker(&churn, true, 0.9, None, SegmentSource::Microphone, &mut st);
+        assert_eq!(segs.len(), 1);
+        assert_eq!(segs[0].speaker_id, 1000, "an unconfirmed opener is not a new speaker");
+        // Sustained speech from the same id over several finals does promote.
+        let mut promoted = None;
+        for k in 0..4 {
+            let more = run("more", 1001, 6.0 + k as f64 * 3.0, 6);
+            let segs = segment_by_speaker(&more, true, 0.9, None, SegmentSource::Microphone, &mut st);
+            if segs[0].speaker_id == 1001 {
+                promoted = Some(k);
+                break;
+            }
+        }
+        assert!(promoted.is_some(), "a real second voice is still promoted");
+        assert!(st.confirmed_speaker_ids.contains(&1001));
+    }
+
+    #[test]
+    fn interims_do_not_accumulate_promotion_evidence() {
+        let mut st = SegmentationState::default();
+        st.confirmed_speaker_ids.insert(1000);
+        st.last_committed_speaker_by_source.insert(SegmentSource::Microphone, 1000);
+        // The same 4-word interim replayed many times must not clear the bar.
+        for _ in 0..10 {
+            let words = run("x", 1001, 1.0, 4);
+            let segs = segment_by_speaker(&words, false, 0.9, None, SegmentSource::Microphone, &mut st);
+            assert_eq!(segs[0].speaker_id, 1000);
+        }
+        assert!(!st.confirmed_speaker_ids.contains(&1001));
+    }
+
+    #[test]
+    fn strict_policy_needs_much_more_before_a_second_mic_speaker() {
+        let words = {
+            let mut w = run("a", 1000, 0.0, 4);
+            w.extend(run("b", 1001, 2.0, 7)); // clears standard (6 words, 1.5 s) in one final
+            w
+        };
+        let mut standard = SegmentationState::default();
+        standard.confirmed_speaker_ids.insert(1000);
+        let segs = segment_by_speaker(&words, true, 0.9, None, SegmentSource::Microphone, &mut standard);
+        assert_eq!(segs.len(), 2, "standard policy splits as before");
+
+        let mut strict = SegmentationState { policy: MicPromotionPolicy::Strict, ..Default::default() };
+        strict.confirmed_speaker_ids.insert(1000);
+        let segs = segment_by_speaker(&words, true, 0.9, None, SegmentSource::Microphone, &mut strict);
+        assert_eq!(segs.len(), 1, "strict policy keeps one person on the mic together");
+        assert_eq!(segs[0].speaker_id, 1000);
+        // System (remote) speakers are never affected by the mic policy.
+        let mut strict_sys = SegmentationState { policy: MicPromotionPolicy::Strict, ..Default::default() };
+        strict_sys.confirmed_speaker_ids.insert(0);
+        let mut sys = run("a", 0, 0.0, 4);
+        sys.extend(run("b", 1, 2.0, 7));
+        let segs = segment_by_speaker(&sys, true, 0.9, Some(1), SegmentSource::System, &mut strict_sys);
+        assert_eq!(segs.len(), 2);
+    }
 
     #[test]
     fn short_interjection_is_absorbed_into_current_speaker() {

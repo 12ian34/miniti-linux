@@ -511,6 +511,58 @@ enum Pending {
     },
 }
 
+/// What kind of meeting this looks like, inferred from context the app has
+/// anyway (Apple `MeetingEnvironmentInferenceEngine`, reduced to what Linux
+/// can observe). Persisted on the meeting so live and history agree.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum MeetingEnvironment {
+    #[default]
+    Unknown,
+    /// An online call: a call app holds the mic, or the meeting started from
+    /// an event with a join link, and the mic has carried one voice.
+    RemoteLikely,
+    /// Several people share the mic and no call is in evidence.
+    InRoomLikely,
+    /// A call plus several people in the room.
+    HybridLikely,
+}
+
+impl MeetingEnvironment {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Unknown => "unknown",
+            Self::RemoteLikely => "remote_likely",
+            Self::InRoomLikely => "in_room_likely",
+            Self::HybridLikely => "hybrid_likely",
+        }
+    }
+    pub fn parse(s: &str) -> Self {
+        match s {
+            "remote_likely" => Self::RemoteLikely,
+            "in_room_likely" => Self::InRoomLikely,
+            "hybrid_likely" => Self::HybridLikely,
+            _ => Self::Unknown,
+        }
+    }
+}
+
+/// Seconds of speech from mic speakers other than the primary before a
+/// second in-room person is believed (Apple `hybridSecondaryMicSpeechSeconds`).
+pub const SECONDARY_MIC_SPEECH_FOR_ROOM: f64 = 20.0;
+
+/// `call_context`: a call app is associated with the recording, or the
+/// meeting started from an event with a join link. `secondary_mic_seconds`:
+/// speech from mic ids other than 1000, finals only.
+pub fn infer_environment(call_context: bool, secondary_mic_seconds: f64) -> MeetingEnvironment {
+    let room = secondary_mic_seconds >= SECONDARY_MIC_SPEECH_FOR_ROOM;
+    match (call_context, room) {
+        (true, false) => MeetingEnvironment::RemoteLikely,
+        (true, true) => MeetingEnvironment::HybridLikely,
+        (false, true) => MeetingEnvironment::InRoomLikely,
+        (false, false) => MeetingEnvironment::Unknown,
+    }
+}
+
 /// Live activity the monitor needs from the recording engine.
 #[derive(Debug, Clone, Copy)]
 pub struct Activity {
@@ -1746,5 +1798,21 @@ mod tests {
             fillers: 9,
         }];
         assert!(filler_rate_due(&few, 160.0).is_none(), "needs 20 words");
+    }
+}
+
+#[cfg(test)]
+mod environment_tests {
+    use super::*;
+
+    #[test]
+    fn environment_follows_call_context_and_room_speech() {
+        assert_eq!(infer_environment(false, 0.0), MeetingEnvironment::Unknown);
+        assert_eq!(infer_environment(true, 0.0), MeetingEnvironment::RemoteLikely);
+        assert_eq!(infer_environment(true, 19.9), MeetingEnvironment::RemoteLikely);
+        assert_eq!(infer_environment(true, 20.0), MeetingEnvironment::HybridLikely);
+        assert_eq!(infer_environment(false, 25.0), MeetingEnvironment::InRoomLikely);
+        assert_eq!(MeetingEnvironment::parse("remote_likely"), MeetingEnvironment::RemoteLikely);
+        assert_eq!(MeetingEnvironment::parse("garbage"), MeetingEnvironment::Unknown);
     }
 }

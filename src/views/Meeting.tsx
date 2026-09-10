@@ -24,6 +24,7 @@ import {
   addCorrection,
   onTranscriptCorrected,
   openMeetingJoinLink,
+  markAllMicAsYou,
 } from "../api";
 import { LevelMeter } from "../components/LevelMeter";
 import { dateOnly, displayTitle, duration, elapsed, fallbackSpeakerLabel, speakerColor, streamStatusText, timeOnly } from "../format";
@@ -319,6 +320,7 @@ export function MeetingView({ id }: { id: string }) {
   }
 
   const speakerIds = useMemo(() => Array.from(new Set(lines.filter((l) => l.final).map((l) => l.speaker))).sort((a, b) => a - b), [lines]);
+  const micIds = useMemo(() => speakerIds.filter((sid) => sid >= 1000), [speakerIds]);
   const selfCount = speakerIds.filter(isYou).length;
   const remoteCount = speakerIds.length - selfCount;
   const attendees: { self?: boolean; is_self?: boolean }[] = useMemo(() => {
@@ -434,6 +436,11 @@ export function MeetingView({ id }: { id: string }) {
               )}
             </span>
           ))}
+          {micIds.length > 1 && micIds.some((sid) => !isYou(sid)) && (
+            <button className="ghost tiny" title="one person on the mic was split into several speakers" onClick={async () => { try { await markAllMicAsYou(id); await load(); } catch (e) { setError(errorMessage(e)); } }}>
+              mark all mic speakers as me
+            </button>
+          )}
           {speakerIds.length === 1 && <span className="legend-k">{isYou(speakerIds[0]) ? "(you only)" : "(single speaker)"}</span>}
           {selfCount >= 1 && remoteCount === 1 && <span className="legend-k">{selfCount > 1 ? `(you ×${selfCount} + 1 remote)` : "(you + 1 remote)"}</span>}
         </div>

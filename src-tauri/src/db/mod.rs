@@ -74,6 +74,7 @@ const MIGRATIONS: &[(&str, &str)] = &[
     ("meetings", "template_id TEXT NOT NULL DEFAULT ''"),
     ("meetings", "template_sections TEXT NOT NULL DEFAULT '{}'"),
     ("meetings", "join_url TEXT"),
+    ("meetings", "inferred_environment TEXT NOT NULL DEFAULT ''"),
 ];
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -119,6 +120,9 @@ pub struct Meeting {
     /// Link to join the call, from the calendar event the meeting started from.
     #[serde(default)]
     pub join_url: Option<String>,
+    /// unknown | remote_likely | in_room_likely | hybrid_likely (see `smart::MeetingEnvironment`).
+    #[serde(default)]
+    pub inferred_environment: String,
     pub created_at: i64,
 }
 
@@ -146,6 +150,7 @@ impl Meeting {
             managed_session_id: None,
             calendar_event_id: None,
             join_url: None,
+            inferred_environment: String::new(),
             import_source: None,
             pinned: false,
             insights_updated_at: None,
@@ -283,20 +288,20 @@ const MEETING_COLS: &str = "id,title,started_at,ended_at,language,notes,summary,
     key_decisions,topics,discussion_flow,suggested_questions,docs,speaker_names,self_speaker_ids,\
     meddpicc,attendees,managed_session_id,calendar_event_id,import_source,pinned,\
     insights_updated_at,sales_enabled,title_auto,doc_topics,manual_speaker_ids,investigations,\
-    template_id,template_sections,created_at,join_url";
+    template_id,template_sections,created_at,join_url,inferred_environment";
 
 pub fn upsert_meeting(conn: &Connection, m: &Meeting) -> DbResult<()> {
     conn.execute(
         &format!(
             r#"INSERT INTO meetings ({MEETING_COLS}) VALUES
-            (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?23,?24,?25,?26,?27,?28,?29,?30,?31)
+            (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?23,?24,?25,?26,?27,?28,?29,?30,?31,?32)
            ON CONFLICT(id) DO UPDATE SET
              title=?2,started_at=?3,ended_at=?4,language=?5,notes=?6,summary=?7,action_items=?8,
              key_decisions=?9,topics=?10,discussion_flow=?11,suggested_questions=?12,docs=?13,
              speaker_names=?14,self_speaker_ids=?15,meddpicc=?16,attendees=?17,
              managed_session_id=?18,calendar_event_id=?19,import_source=?20,pinned=?21,
              insights_updated_at=?22,sales_enabled=?23,title_auto=?24,doc_topics=?25,
-             manual_speaker_ids=?26,investigations=?27,template_id=?28,template_sections=?29,join_url=?31"#
+             manual_speaker_ids=?26,investigations=?27,template_id=?28,template_sections=?29,join_url=?31,inferred_environment=?32"#
         ),
         params![
             m.id, m.title, m.started_at, m.ended_at, m.language, m.notes, m.summary,
@@ -305,7 +310,7 @@ pub fn upsert_meeting(conn: &Connection, m: &Meeting) -> DbResult<()> {
             m.managed_session_id, m.calendar_event_id, m.import_source, m.pinned as i64,
             m.insights_updated_at, m.sales_enabled as i64, m.title_auto as i64, m.doc_topics,
             m.manual_speaker_ids, m.investigations, m.template_id, m.template_sections, m.created_at,
-            m.join_url,
+            m.join_url, m.inferred_environment,
         ],
     )?;
     Ok(())
@@ -344,6 +349,7 @@ fn row_to_meeting(row: &rusqlite::Row) -> DbResult<Meeting> {
         template_sections: row.get(28)?,
         created_at: row.get(29)?,
         join_url: row.get(30)?,
+        inferred_environment: row.get(31)?,
     })
 }
 
@@ -514,6 +520,14 @@ pub fn set_attendees(conn: &Connection, id: &str, json: &str) -> DbResult<()> {
     conn.execute(
         "UPDATE meetings SET attendees=?2 WHERE id=?1",
         params![id, json],
+    )?;
+    Ok(())
+}
+
+pub fn set_inferred_environment(conn: &Connection, id: &str, env: &str) -> DbResult<()> {
+    conn.execute(
+        "UPDATE meetings SET inferred_environment=?2 WHERE id=?1",
+        params![id, env],
     )?;
     Ok(())
 }

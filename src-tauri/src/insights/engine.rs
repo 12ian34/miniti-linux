@@ -478,6 +478,44 @@ fn apply_questions(
 
 /// Merge inferred names, never overwriting manual renames (port of the
 /// inferred/override split).
+/// One-to-one calendar shortcut (Apple B5): a calendar call with exactly one
+/// other attendee who has a display name, and exactly one remote (system)
+/// speaker with enough speech, is named locally with no model request.
+/// Never applies to mic ids; manual renames and existing names win.
+pub fn one_to_one_calendar_name(meeting: &Meeting, segments: &[TranscriptSegment]) -> Option<(i64, String)> {
+    let raw: Vec<Value> = serde_json::from_str(&meeting.attendees).unwrap_or_default();
+    let others: Vec<String> = raw
+        .iter()
+        .filter(|a| !a.get("is_self").and_then(Value::as_bool).unwrap_or(false))
+        .filter_map(|a| a.get("name").or(a.get("displayName")).and_then(Value::as_str))
+        .map(|n| n.trim().to_string())
+        .filter(|n| !n.is_empty())
+        .collect();
+    if others.len() != 1 {
+        return None;
+    }
+    let mut counts: HashMap<i64, usize> = HashMap::new();
+    for s in segments.iter().filter(|s| s.source == "system" && !crate::deepgram::is_mic_app_speaker_id(s.speaker)) {
+        *counts.entry(s.speaker).or_default() += 1;
+    }
+    if counts.len() != 1 {
+        return None;
+    }
+    let (&id, &n) = counts.iter().next()?;
+    if n < 5 {
+        return None;
+    }
+    let manual: Vec<i64> = serde_json::from_str(&meeting.manual_speaker_ids).unwrap_or_default();
+    if manual.contains(&id) {
+        return None;
+    }
+    let names: HashMap<String, String> = serde_json::from_str(&meeting.speaker_names).unwrap_or_default();
+    if names.get(&id.to_string()).map(|n| !n.trim().is_empty()).unwrap_or(false) {
+        return None;
+    }
+    Some((id, others.into_iter().next()?))
+}
+
 fn apply_speaker_names(conn: &Connection, meeting: &Meeting, v: &Value) -> Result<bool, String> {
     let inferred = v
         .get("speakers")
@@ -979,6 +1017,23 @@ impl LiveEngine {
     }
 
     async fn run_speaker_names(&mut self, snap: &Snapshot) {
+        if let Some((id, name)) = one_to_one_calendar_name(&snap.meeting, &snap.segments) {
+            let applied = self
+                .db
+                .lock()
+                .ok()
+                .map(|conn| {
+                    apply_speaker_names(&conn, &snap.meeting, &json!({ "speakers": { id.to_string(): name } }))
+                        .unwrap_or(false)
+                })
+                .unwrap_or(false);
+            if applied {
+                tracing::info!("speaker names: 1:1 calendar call, named speaker {id} locally");
+                let _ = self.app.emit("insights_updated", &self.cfg.meeting_id);
+            }
+            // Nothing else to name on a 1:1 call: the mic side is "You".
+            return;
+        }
         let transcript = transcript_with_speaker_ids(&snap.segments);
         let candidates: Vec<String> = attendees_of(&snap.meeting)
             .into_iter()
@@ -1826,6 +1881,32 @@ mod tests {
             "literal 'null' strings are nulls"
         );
         assert!(med.get("paper_process").is_some());
+    }
+
+    #[test]
+    fn one_to_one_calendar_call_names_the_single_remote_speaker_locally() {
+        let mut m = Meeting::new("Sync", "en");
+        m.attendees = r#"[{"email":"me@x.io","name":"Ian","is_self":true},{"email":"s@y.io","name":"Sasha","is_self":false}]"#.into();
+        let seg = |speaker: i64, source: &str| TranscriptSegment::new(&m.id, speaker, "words words words", 0.0, 1.0, source);
+        let mut segs: Vec<TranscriptSegment> = (0..5).map(|_| seg(0, "system")).collect();
+        segs.push(seg(1000, "microphone"));
+        assert_eq!(one_to_one_calendar_name(&m, &segs), Some((0, "Sasha".to_string())));
+        // Two remote speakers: not a 1:1, ask the model.
+        let mut two = segs.clone();
+        two.extend((0..5).map(|_| seg(1, "system")));
+        assert_eq!(one_to_one_calendar_name(&m, &two), None);
+        // Too little speech, a manual rename, or an existing name: leave it.
+        assert_eq!(one_to_one_calendar_name(&m, &segs[..3]), None);
+        let mut manual = m.clone();
+        manual.manual_speaker_ids = "[0]".into();
+        assert_eq!(one_to_one_calendar_name(&manual, &segs), None);
+        let mut named = m.clone();
+        named.speaker_names = r#"{"0":"Someone"}"#.into();
+        assert_eq!(one_to_one_calendar_name(&named, &segs), None);
+        // Two other attendees: ambiguous.
+        let mut group = m.clone();
+        group.attendees = r#"[{"email":"a@y.io","name":"A"},{"email":"b@y.io","name":"B"}]"#.into();
+        assert_eq!(one_to_one_calendar_name(&group, &segs), None);
     }
 
     #[test]

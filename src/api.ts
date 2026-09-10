@@ -141,6 +141,8 @@ export const openMeetingJoinLink = (meetingId: string) => invoke<void>("open_mee
 
 export const setSpeakerName = (meetingId: string, speakerId: number, name: string) =>
   invoke<Record<string, string>>("set_speaker_name", { meetingId, speakerId, name });
+/** Every mic speaker id becomes "you" in one action (a shared mic split one person). */
+export const markAllMicAsYou = (meetingId: string) => invoke<number[]>("mark_all_mic_as_you", { meetingId });
 export const markAsYou = (meetingId: string, speakerId: number, isYou: boolean) =>
   invoke<number[]>("mark_as_you", { meetingId, speakerId, isYou });
 export const deleteMeeting = (id: string) => invoke<void>("delete_meeting", { id });

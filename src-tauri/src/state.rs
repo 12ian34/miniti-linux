@@ -87,6 +87,9 @@ impl Levels {
 pub struct ActivityTrack {
     pub last_final_at: Mutex<Option<Instant>>,
     pub meaningful_finals: std::sync::atomic::AtomicUsize,
+    /// Milliseconds of final speech from mic speakers other than the primary
+    /// (environment inference: several people on one mic).
+    pub secondary_mic_speech_ms: std::sync::atomic::AtomicU64,
 }
 
 impl ActivityTrack {
@@ -95,6 +98,16 @@ impl ActivityTrack {
             *t = None;
         }
         self.meaningful_finals.store(0, Ordering::Relaxed);
+        self.secondary_mic_speech_ms.store(0, Ordering::Relaxed);
+    }
+    pub fn note_mic_speech(&self, speaker_id: i64, seconds: f64) {
+        if deepgram::is_mic_app_speaker_id(speaker_id) && speaker_id != deepgram::MIC_SPEAKER_ID && seconds > 0.0 {
+            self.secondary_mic_speech_ms
+                .fetch_add((seconds * 1000.0) as u64, Ordering::Relaxed);
+        }
+    }
+    pub fn secondary_mic_seconds(&self) -> f64 {
+        self.secondary_mic_speech_ms.load(Ordering::Relaxed) as f64 / 1000.0
     }
     fn note_final(&self, text: &str) {
         if let Ok(mut t) = self.last_final_at.lock() {
@@ -201,6 +214,10 @@ pub struct RecordingSession {
         tauri::async_runtime::JoinHandle<()>,
     )>,
     engine_cfg: Option<EngineConfig>,
+    /// Mic promotion policy shared with the Deepgram processor (0 standard, 1 strict).
+    pub policy: Arc<std::sync::atomic::AtomicU8>,
+    /// Last environment written to the meeting row, to write only on change.
+    pub environment: crate::smart::MeetingEnvironment,
 }
 
 /// Everything `stop` needs after releasing the session lock.
@@ -296,7 +313,13 @@ impl RecordingSession {
             keyterms: deepgram_keyterms(prefs),
             replacements: crate::corrections::deepgram_replace_items(&prefs.dictionary_corrections),
         };
-        let processor = Processor::new(dual, SegmentSource::Microphone);
+        // Strict from the first response when the context is known at start
+        // (a join link), not only after the first remote final.
+        self.policy = Arc::new(std::sync::atomic::AtomicU8::new(
+            if meeting.join_url.is_some() { 1 } else { 0 },
+        ));
+        self.environment = crate::smart::MeetingEnvironment::Unknown;
+        let processor = Processor::with_policy(dual, SegmentSource::Microphone, self.policy.clone());
         let (pcm_tx, pcm_rx) = tokio::sync::mpsc::channel::<Vec<u8>>(256);
         let (ev_tx, mut ev_rx) = tokio::sync::mpsc::channel::<TranscriptEvent>(512);
         let (st_tx, mut st_rx) = tokio::sync::mpsc::channel::<StreamStatus>(32);
@@ -354,6 +377,7 @@ impl RecordingSession {
                 let ev = &corrected;
                 finals += 1;
                 activity_for_consumer.note_final(&ev.text);
+                activity_for_consumer.note_mic_speech(ev.speaker_id, ev.end - ev.start);
                 if let Some(focus) = insights_engine::detect_investigation_moment(&ev.text) {
                     let _ = persist_app.emit("investigation_suggested", serde_json::json!({
                         "meeting_id": meeting_id, "focus": focus
@@ -1904,6 +1928,63 @@ pub fn open_meeting_join_link(state: State<AppState>, meeting_id: String) -> Res
     tauri_plugin_opener::open_url(&url, None::<&str>).map_err(|e| e.to_string())
 }
 
+/// Once a second while recording: what kind of meeting is this? A call app on
+/// the mic or a join link means remote-likely, and then a second mic voice
+/// needs strict evidence before it splits off (a headset user stays one
+/// person). Twenty seconds of speech from other mic ids means a room.
+/// Transitions are rare; the policy and the meeting row change only then.
+fn evaluate_environment(app: &AppHandle, state: &AppState, meeting_id: Option<&str>) {
+    let Some(meeting_id) = meeting_id else { return };
+    let call_app = crate::smart::slot(app)
+        .and_then(|s| s.lock().ok().map(|m| m.engine.associated_app.is_some()))
+        .unwrap_or(false);
+    let join_link = state
+        .session
+        .lock()
+        .ok()
+        .and_then(|s| s.meeting.as_ref().map(|m| m.join_url.is_some()))
+        .unwrap_or(false);
+    let env = crate::smart::infer_environment(call_app || join_link, state.activity.secondary_mic_seconds());
+    let Ok(mut session) = state.session.lock() else { return };
+    if session.environment == env {
+        return;
+    }
+    tracing::info!("environment inference: {} → {}", session.environment.as_str(), env.as_str());
+    session.environment = env;
+    session
+        .policy
+        .store(
+            if env == crate::smart::MeetingEnvironment::RemoteLikely { 1 } else { 0 },
+            Ordering::Relaxed,
+        );
+    if let Some(m) = session.meeting.as_mut() {
+        m.inferred_environment = env.as_str().to_string();
+    }
+    drop(session);
+    if let Ok(conn) = state.db.lock() {
+        let _ = db::set_inferred_environment(&conn, meeting_id, env.as_str());
+    }
+}
+
+/// "Mark all mic speakers as me": one action when a shared mic split one
+/// person into several ids (Apple B4).
+#[tauri::command]
+pub fn mark_all_mic_as_you(state: State<AppState>, meeting_id: String) -> Result<Vec<i64>, String> {
+    let conn = state.db.lock().map_err(|_| "db poisoned")?;
+    let segments = db::list_segments(&conn, &meeting_id).map_err(|e| e.to_string())?;
+    let mut ids: Vec<i64> = segments
+        .iter()
+        .map(|s| s.speaker)
+        .filter(|&id| deepgram::is_mic_app_speaker_id(id))
+        .collect();
+    ids.push(deepgram::MIC_SPEAKER_ID);
+    ids.sort_unstable();
+    ids.dedup();
+    let json = serde_json::to_string(&ids).map_err(|e| e.to_string())?;
+    db::set_self_speaker_ids(&conn, &meeting_id, &json).map_err(|e| e.to_string())?;
+    Ok(ids)
+}
+
 /// 1 Hz Smart-meetings monitor + live guidance.
 pub fn spawn_smart_monitor(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
@@ -1928,6 +2009,9 @@ pub fn spawn_smart_monitor(app: AppHandle) {
                     )
                 })
                 .unwrap_or((false, 0.0, None, None));
+            if recording {
+                evaluate_environment(&app, &state, meeting_id.as_deref());
+            }
             let activity = crate::smart::Activity {
                 recording,
                 recording_duration: elapsed,
