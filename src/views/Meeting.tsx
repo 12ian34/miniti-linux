@@ -21,6 +21,8 @@ import {
   setPinned,
   setSpeakerName,
   trimTranscript,
+  addCorrection,
+  onTranscriptCorrected,
 } from "../api";
 import { LevelMeter } from "../components/LevelMeter";
 import { dateOnly, displayTitle, duration, elapsed, fallbackSpeakerLabel, speakerColor, streamStatusText, timeOnly } from "../format";
@@ -82,6 +84,10 @@ export function MeetingView({ id }: { id: string }) {
   const [speakerMenu, setSpeakerMenu] = useState<number | null>(null);
   const [renaming, setRenaming] = useState<{ sid: number; name: string; you: boolean } | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
+  // Dictionary corrections: a selection inside a final turn offers "correct";
+  // the editor is a sheet so the selection can vanish without breaking it.
+  const [selection, setSelection] = useState<{ heard: string; x: number; y: number } | null>(null);
+  const [correcting, setCorrecting] = useState<{ heard: string; correct: string; fixEarlier: boolean } | null>(null);
   const notesTimer = useRef<number | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -130,6 +136,47 @@ export function MeetingView({ id }: { id: string }) {
   useEffect(() => { void load(); }, [load]);
 
   useTauriEvent(onTranscript, (ev) => { if (ev.meeting_id === id) setLines((prev) => applyEvent(prev, ev)); });
+  useTauriEvent(onTranscriptCorrected, (mid) => { if (mid === id) void load(); });
+
+  /** Snap the current selection to whole words inside one final turn, or clear. */
+  function readSelection() {
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed || sel.rangeCount === 0) { setSelection(null); return; }
+    const range = sel.getRangeAt(0);
+    const node = range.commonAncestorContainer;
+    const el = node instanceof Element ? node : node.parentElement;
+    const turnText = el?.closest(".turn-text");
+    if (!turnText || turnText.closest(".turn.interim")) { setSelection(null); return; }
+    const heard = sel.toString().replace(/\s+/g, " ").trim().replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}#+]+$/gu, "");
+    if (!heard || heard.length > 80) { setSelection(null); return; }
+    const rect = range.getBoundingClientRect();
+    setSelection({ heard, x: rect.left + rect.width / 2, y: rect.top });
+  }
+  function openCorrection(heard: string) {
+    setSelection(null);
+    setCorrecting({ heard, correct: "", fixEarlier: true });
+  }
+  async function saveCorrection() {
+    if (!correcting || !correcting.correct.trim()) return;
+    try {
+      await addCorrection(correcting.heard, correcting.correct, id, correcting.fixEarlier);
+      setNotice(`"${correcting.heard}" is now "${correcting.correct.trim()}" (also for the next meeting)`);
+      setCorrecting(null);
+      window.getSelection()?.removeAllRanges();
+    } catch (e) {
+      setError(errorMessage(e));
+    }
+  }
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.shiftKey && (e.key === "D" || e.key === "d")) {
+        const sel = window.getSelection()?.toString().trim();
+        if (sel && sel.length <= 80) { e.preventDefault(); openCorrection(sel.replace(/\s+/g, " ")); }
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
   useTauriEvent(onTranscriptionStatus, (st) => { if (live) setStatus(st); });
   useTauriEvent(onInsightsUpdated, (mid) => {
     if (mid === id) {
@@ -388,7 +435,7 @@ export function MeetingView({ id }: { id: string }) {
         <div className="split" ref={splitRef}>
           <section className="transcript-pane">
             <SectionHeader icon="¶" title="transcript" copied={copied === "transcript"} onCopy={() => copySection("transcript")} />
-            <div className="transcript" ref={scrollRef} onScroll={onScroll}>
+            <div className="transcript" ref={scrollRef} onScroll={() => { onScroll(); setSelection(null); }} onMouseUp={readSelection} onKeyUp={readSelection}>
               {lines.length === 0 ? (
                 <p className="muted pad">{live ? "listening…" : "no transcript."}</p>
               ) : (
@@ -406,6 +453,33 @@ export function MeetingView({ id }: { id: string }) {
         </div>
       </div>
 
+      {selection && (
+        <button className="correct-pill" style={{ left: selection.x, top: selection.y }} onMouseDown={(e) => e.preventDefault()} onClick={() => openCorrection(selection.heard)} title="Ctrl+Shift+D">
+          correct “{selection.heard.length > 24 ? selection.heard.slice(0, 24) + "…" : selection.heard}”
+        </button>
+      )}
+      {correcting && (
+        <Sheet title="correct a word" onClose={() => setCorrecting(null)}>
+          <div className="speaker-sheet">
+            <p className="muted small">the corrected spelling is applied to this transcript as it arrives, remembered for future meetings, and sent to deepgram on the next connect. insights are not affected.</p>
+            <label className="field"><span className="muted tiny">heard</span>
+              <input className="input" value={correcting.heard} onChange={(e) => setCorrecting({ ...correcting, heard: e.currentTarget.value })} />
+            </label>
+            <label className="field"><span className="muted tiny">correct to</span>
+              <input className="input" autoFocus value={correcting.correct} onChange={(e) => setCorrecting({ ...correcting, correct: e.currentTarget.value })}
+                onKeyDown={(e) => { if (e.key === "Enter") void saveCorrection(); if (e.key === "Escape") setCorrecting(null); }} />
+            </label>
+            <label className="toggle">
+              <input type="checkbox" checked={correcting.fixEarlier} onChange={(e) => setCorrecting({ ...correcting, fixEarlier: e.currentTarget.checked })} />
+              <span>fix earlier mentions in this meeting</span>
+            </label>
+            <div className="save-row">
+              <button className="control primary" disabled={!correcting.correct.trim()} onClick={saveCorrection}>save</button>
+              <button className="control" onClick={() => setCorrecting(null)}>cancel</button>
+            </div>
+          </div>
+        </Sheet>
+      )}
       {crmOpen && <CrmSheet meetingId={id} onClose={() => setCrmOpen(false)} />}
       {renaming && (
         <Sheet title="speaker" onClose={() => setRenaming(null)}>

@@ -39,6 +39,8 @@ pub struct DeepgramConfig {
     /// When true, stream `channels=2&multichannel=true` (mic ch0 + system ch1).
     pub multichannel: bool,
     pub keyterms: Vec<String>,
+    /// `find:replace` pairs (dictionary corrections), sent after the keyterms.
+    pub replacements: Vec<String>,
 }
 
 impl Default for DeepgramConfig {
@@ -47,6 +49,7 @@ impl Default for DeepgramConfig {
             language: "en".to_string(),
             multichannel: false,
             keyterms: Vec::new(),
+            replacements: Vec::new(),
         }
     }
 }
@@ -92,6 +95,9 @@ pub fn build_ws_url(cfg: &DeepgramConfig) -> String {
     }
     for term in cfg.keyterms.iter().take(KEYTERM_CAP) {
         params.push(("keyterm".into(), term.clone()));
+    }
+    for pair in cfg.replacements.iter().take(crate::corrections::CAP) {
+        params.push(("replace".into(), pair.clone()));
     }
 
     let query = params
@@ -742,6 +748,20 @@ mod tests {
         });
         assert!(url.contains("channels=2"));
         assert!(url.contains("multichannel=true"));
+    }
+
+    #[test]
+    fn url_puts_replacements_after_keyterms() {
+        let cfg = DeepgramConfig {
+            keyterms: vec!["Lightdash".into()],
+            replacements: vec!["light dash:Lightdash".into(), "sasha:Sascha".into()],
+            ..DeepgramConfig::default()
+        };
+        let url = build_ws_url(&cfg);
+        let k = url.find("keyterm=Lightdash").unwrap();
+        let r = url.find("replace=light%20dash%3ALightdash").unwrap();
+        assert!(k < r, "replace items follow the keyterms");
+        assert_eq!(url.matches("replace=").count(), 2);
     }
 
     #[test]

@@ -60,6 +60,8 @@ pub struct Prefs {
     /// Start miniti (tray only) when the desktop session starts; mirrored to
     /// `~/.config/autostart/miniti.desktop`.
     pub launch_at_login: bool,
+    /// Dictionary corrections (`heard` → `correct`), capped at 100.
+    pub dictionary_corrections: Vec<crate::corrections::Correction>,
 }
 
 impl Default for Prefs {
@@ -91,6 +93,7 @@ impl Default for Prefs {
             calendar_auto_start: false,
             calendar_auto_stop: false,
             launch_at_login: false,
+            dictionary_corrections: Vec::new(),
         }
     }
 }

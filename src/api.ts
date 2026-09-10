@@ -4,6 +4,7 @@ import type {
   CalendarView,
   CatchUp,
   CoachingOverview,
+  Correction,
   CrmProvider,
   CrmRecord,
   CrmTask,
@@ -124,6 +125,15 @@ export const setPinned = (id: string, pinned: boolean) =>
 export const setNotes = (id: string, notes: string) => invoke<void>("set_notes", { id, notes });
 export const setMeetingTitle = (id: string, title: string) =>
   invoke<void>("set_meeting_title", { id, title });
+/** Add or replace a dictionary correction; optionally rewrite one meeting's saved transcript. */
+export const addCorrection = (heard: string, correct: string, meetingId: string | null, fixEarlier: boolean) =>
+  invoke<Correction[]>("add_correction", { heard, correct, meetingId, fixEarlier });
+export const removeCorrection = (heard: string) => invoke<Correction[]>("remove_correction", { heard });
+/** A meeting's saved transcript was rewritten by a correction; reload it. */
+export function onTranscriptCorrected(handler: (meetingId: string) => void): Promise<UnlistenFn> {
+  return listen<string>("transcript_corrected", (e) => handler(e.payload));
+}
+
 export const setSpeakerName = (meetingId: string, speakerId: number, name: string) =>
   invoke<Record<string, string>>("set_speaker_name", { meetingId, speakerId, name });
 export const markAsYou = (meetingId: string, speakerId: number, isYou: boolean) =>

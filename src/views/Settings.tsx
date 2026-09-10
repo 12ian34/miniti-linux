@@ -33,8 +33,10 @@ import {
   restoreLicense,
   setPrefs,
   subscribeUrl,
+  addCorrection,
+  removeCorrection,
 } from "../api";
-import type { AppMode, AuthDevices, AuthStatus, CrmProvider, EnvHealth, Prefs, Usage } from "../types";
+import type { AppMode, AuthDevices, AuthStatus, Correction, CrmProvider, EnvHealth, Prefs, Usage } from "../types";
 import { Enroll } from "./Enroll";
 import { applyInterfaceScale } from "../scale";
 import { Sheet } from "./MeetingTools";
@@ -198,6 +200,7 @@ export function Settings() {
   const controls: Control[] = useMemo(() => [
     { id: "tray", dest: "general", label: "Tray icon", keywords: "tray menu bar timer icon" },
     { id: "presence", dest: "general", label: "Floating recording surface", keywords: "floating window indicator presence always on top" },
+    { id: "corrections", dest: "language", label: "Corrections", keywords: "correction replace dictionary heard misheard spelling" },
     { id: "autostart", dest: "general", label: "Launch at login", keywords: "autostart login startup boot session tray hidden" },
     { id: "scale", dest: "general", label: "Interface scale", keywords: "interface scale text size compact standard large zoom" },
     { id: "mode", dest: "account", label: "Mode", keywords: "managed byok mode api backend" },
@@ -403,6 +406,11 @@ export function Settings() {
             <C id="dict">
               <Field label="Personal dictionary (comma-separated terms sent to Deepgram as keyterms)">
                 <input className="input" value={prefs.personal_dictionary.join(", ")} onChange={(e) => update("personal_dictionary", e.currentTarget.value.split(",").map((s) => s.trim()).filter(Boolean))} placeholder="Lightdash, Ahuja, MEDDPICC" />
+              </Field>
+            </C>
+            <C id="corrections">
+              <Field label="Corrections (what was heard → what it should say; applied live and sent to Deepgram on the next meeting)">
+                <CorrectionsEditor list={prefs.dictionary_corrections ?? []} onChange={(list) => update("dictionary_corrections", list)} />
               </Field>
             </C>
             <C id="fillers">
@@ -737,5 +745,43 @@ function Toggle({ label, checked, onChange }: { label: string; checked: boolean;
       <input type="checkbox" checked={checked} onChange={(e) => onChange(e.currentTarget.checked)} />
       <span>{label}</span>
     </label>
+  );
+}
+
+/** Editable heard → correct pairs (macOS Settings → Language → corrections). */
+function CorrectionsEditor({ list, onChange }: { list: Correction[]; onChange: (list: Correction[]) => void }) {
+  const [heard, setHeard] = useState("");
+  const [correct, setCorrect] = useState("");
+  const [err, setErr] = useState<string | null>(null);
+  async function add() {
+    setErr(null);
+    try {
+      onChange(await addCorrection(heard, correct, null, false));
+      setHeard(""); setCorrect("");
+    } catch (e) { setErr(errorMessage(e)); }
+  }
+  async function remove(h: string) {
+    setErr(null);
+    try { onChange(await removeCorrection(h)); } catch (e) { setErr(errorMessage(e)); }
+  }
+  return (
+    <div className="corrections">
+      {list.length === 0 && <p className="muted tiny">none yet. select a misheard word in a transcript and choose correct, or add one here.</p>}
+      {list.map((c) => (
+        <div className="correction-row" key={c.heard}>
+          <span className="correction-heard">{c.heard}</span>
+          <span className="muted">→</span>
+          <span className="correction-correct">{c.correct}</span>
+          <button className="ghost tiny" title="remove" onClick={() => remove(c.heard)}>×</button>
+        </div>
+      ))}
+      <div className="correction-add">
+        <input className="input" placeholder="heard" value={heard} onChange={(e) => setHeard(e.currentTarget.value)} onKeyDown={(e) => { if (e.key === "Enter" && heard.trim() && correct.trim()) void add(); }} />
+        <span className="muted">→</span>
+        <input className="input" placeholder="correct" value={correct} onChange={(e) => setCorrect(e.currentTarget.value)} onKeyDown={(e) => { if (e.key === "Enter" && heard.trim() && correct.trim()) void add(); }} />
+        <button className="control" disabled={!heard.trim() || !correct.trim()} onClick={add}>add</button>
+      </div>
+      {err && <div className="banner error">{err}</div>}
+    </div>
   );
 }

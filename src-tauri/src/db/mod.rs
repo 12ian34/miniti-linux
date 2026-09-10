@@ -654,6 +654,16 @@ pub fn list_segments(conn: &Connection, meeting_id: &str) -> DbResult<Vec<Transc
     rows.collect()
 }
 
+/// Rewrite one segment's text in place (dictionary corrections); identity,
+/// speaker and timing are untouched.
+pub fn set_segment_text(conn: &Connection, segment_id: &str, text: &str) -> DbResult<()> {
+    conn.execute(
+        "UPDATE segments SET text = ?1 WHERE id = ?2",
+        rusqlite::params![text, segment_id],
+    )?;
+    Ok(())
+}
+
 pub fn delete_segment(conn: &Connection, meeting_id: &str, segment_id: &str) -> DbResult<usize> {
     conn.execute(
         "DELETE FROM transcript_segments WHERE meeting_id=?1 AND id=?2",

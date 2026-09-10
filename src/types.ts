@@ -41,6 +41,8 @@ export interface Prefs {
   calendar_auto_start: boolean;
   calendar_auto_stop: boolean;
   launch_at_login: boolean;
+  /** Dictionary corrections: what was heard → what it should say. */
+  dictionary_corrections: Correction[];
 }
 
 /** Smart-meeting decision shown on the floating surface / tray / in-app. */
@@ -58,6 +60,11 @@ export interface SmartPrompt {
 }
 
 export type NudgeKind = "question" | "monologue" | "filler" | "sales";
+
+export interface Correction {
+  heard: string;
+  correct: string;
+}
 
 export interface RecordingNudge {
   id: string;

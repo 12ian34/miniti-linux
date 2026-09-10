@@ -412,3 +412,13 @@ code { font-family: var(--mono); background: var(--surface-card); padding: 1px 5
 .nudge.question { border-left-color: var(--coach-questions); } .nudge.monologue { border-left-color: var(--coach-monologue); } .nudge.filler { border-left-color: var(--coach-fillers); } .nudge.sales { border-left-color: var(--insight-sales, var(--amber)); }
 
 @media (max-width: 900px) { .insights { width: 280px; } }
+
+/* Dictionary corrections (0.6.0) */
+.correct-pill { position: fixed; transform: translate(-50%, calc(-100% - 6px)); z-index: 30; background: var(--surface-card); color: var(--text); border: 1px solid var(--border-light); border-radius: var(--r-md); padding: 4px 10px; font-size: 11px; cursor: pointer; box-shadow: 0 4px 14px rgba(0,0,0,.4); }
+.correct-pill:hover { background: var(--bg-tertiary); }
+.corrections { display: flex; flex-direction: column; gap: 6px; }
+.correction-row, .correction-add { display: flex; align-items: center; gap: 8px; }
+.correction-heard { color: var(--text-secondary); text-decoration: line-through; }
+.correction-correct { color: var(--text); }
+.correction-add .input { flex: 1; min-width: 0; }
+.field { display: flex; flex-direction: column; gap: 4px; }

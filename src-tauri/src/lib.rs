@@ -19,6 +19,7 @@ pub mod auth;
 pub mod call_sensor;
 pub mod cli;
 pub mod coaching;
+pub mod corrections;
 pub mod db;
 pub mod deepgram;
 pub mod device_id;
@@ -37,7 +38,7 @@ pub mod webhook;
 use state::{
     accept_terms, auth_create_account, auth_delete_account, auth_devices, auth_recovery_key,
     auth_remove_device, auth_restore_account, auth_rotate_recovery_key, auth_sign_out, auth_start_over,
-    auth_status,
+    auth_status, add_correction, remove_correction,
     catch_up, coaching_overview, coaching_report, complete_onboarding, debug_log_clear,
     debug_log_export, debug_log_path, debug_log_reveal, debug_log_tail, delete_meeting,
     delete_segment, disable_nudge_kind, environment_health, export_markdown, frontend_ready,
@@ -131,6 +132,7 @@ fn build_state() -> AppState {
 
     AppState {
         db: Arc::new(Mutex::new(conn)),
+        corrector: std::sync::RwLock::new(corrections::Corrector::new(&prefs.dictionary_corrections)),
         prefs: Mutex::new(prefs),
         device_id: device,
         auth,
@@ -279,6 +281,8 @@ pub fn run() {
             auth_sign_out,
             auth_start_over,
             auth_delete_account,
+            add_correction,
+            remove_correction,
             get_prefs,
             set_prefs,
             get_device_id,

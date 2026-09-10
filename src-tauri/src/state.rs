@@ -292,6 +292,7 @@ impl RecordingSession {
             language: prefs.language.clone(),
             multichannel: dual,
             keyterms: deepgram_keyterms(prefs),
+            replacements: crate::corrections::deepgram_replace_items(&prefs.dictionary_corrections),
         };
         let processor = Processor::new(dual, SegmentSource::Microphone);
         let (pcm_tx, pcm_rx) = tokio::sync::mpsc::channel::<Vec<u8>>(256);
@@ -329,7 +330,26 @@ impl RecordingSession {
             let dominant = move |start: f64, end: f64| -> audio::dual::Source {
                 mixer_for_consumer.lock().map(|m| m.log.dominant_source(start, end)).unwrap_or(audio::dual::Source::Unknown)
             };
+            // Dictionary corrections apply to every final and interim as it
+            // arrives; a correction added mid-meeting takes effect on the
+            // next event without a reconnect.
+            let correct = |ev: &TranscriptEvent| -> TranscriptEvent {
+                let fixed = persist_app
+                    .state::<AppState>()
+                    .corrector
+                    .read()
+                    .ok()
+                    .and_then(|c| c.as_ref().map(|c| c.apply(&ev.text)))
+                    .filter(|(_, changed)| *changed)
+                    .map(|(text, _)| text);
+                match fixed {
+                    Some(text) => TranscriptEvent { text, ..ev.clone() },
+                    None => ev.clone(),
+                }
+            };
             let mut persist_final = |ev: &TranscriptEvent| -> Option<String> {
+                let corrected = correct(ev);
+                let ev = &corrected;
                 finals += 1;
                 activity_for_consumer.note_final(&ev.text);
                 if let Some(focus) = insights_engine::detect_investigation_moment(&ev.text) {
@@ -359,7 +379,7 @@ impl RecordingSession {
                 Some(seg.id)
             };
             let emit_interim = |ev: &TranscriptEvent| {
-                let _ = persist_app.emit("transcript", TranscriptPayload::new(&meeting_id, None, ev));
+                let _ = persist_app.emit("transcript", TranscriptPayload::new(&meeting_id, None, &correct(ev)));
             };
             if !dual {
                 while let Some(ev) = ev_rx.recv().await {
@@ -545,6 +565,9 @@ impl RecordingSession {
 
 pub struct AppState {
     pub db: Arc<Mutex<Connection>>,
+    /// Dictionary corrections compiled from prefs; `None` when there are none.
+    /// Read per final on the transcript path, rebuilt only when the list changes.
+    pub corrector: std::sync::RwLock<Option<crate::corrections::Corrector>>,
     pub prefs: Mutex<Prefs>,
     pub device_id: String,
     /// Device-bound backend credentials (managed mode needs an enrolled installation).
@@ -1174,6 +1197,9 @@ pub fn get_prefs(state: State<AppState>) -> Prefs {
 #[tauri::command]
 pub fn set_prefs(state: State<AppState>, prefs: Prefs) -> Result<(), String> {
     prefs.save().map_err(|e| e.to_string())?;
+    if let Ok(mut c) = state.corrector.write() {
+        *c = crate::corrections::Corrector::new(&prefs.dictionary_corrections);
+    }
     let mut current = state.prefs.lock().map_err(|_| "prefs poisoned")?;
     if current.launch_at_login != prefs.launch_at_login {
         // Keep the XDG autostart entry in step with the preference (and never
@@ -1184,6 +1210,84 @@ pub fn set_prefs(state: State<AppState>, prefs: Prefs) -> Result<(), String> {
     }
     *current = prefs;
     Ok(())
+}
+
+/// Add (or replace) a dictionary correction. With `meeting_id` and
+/// `fix_earlier`, rewrite that meeting's saved segments too; the UI reloads
+/// the transcript on `transcript_corrected`. Insights are never cleared.
+#[tauri::command]
+pub fn add_correction(
+    app: AppHandle,
+    state: State<AppState>,
+    heard: String,
+    correct: String,
+    meeting_id: Option<String>,
+    fix_earlier: bool,
+) -> Result<Vec<crate::corrections::Correction>, String> {
+    use crate::corrections::{Corrector, Upsert};
+    let list = {
+        let mut prefs = state.prefs.lock().map_err(|_| "prefs poisoned")?;
+        match crate::corrections::upsert(&mut prefs.dictionary_corrections, &heard, &correct) {
+            Upsert::Added | Upsert::Replaced => {}
+            Upsert::Invalid(why) => return Err(why.to_string()),
+            Upsert::Full => {
+                return Err(format!(
+                    "the dictionary holds {} corrections; remove one first",
+                    crate::corrections::CAP
+                ))
+            }
+        }
+        // The corrected spelling is also a keyterm for the next connect.
+        let term = crate::corrections::normalize_correct(&correct);
+        if !prefs.personal_dictionary.iter().any(|t| t.eq_ignore_ascii_case(&term)) {
+            prefs.personal_dictionary.push(term);
+        }
+        prefs.save().map_err(|e| e.to_string())?;
+        prefs.dictionary_corrections.clone()
+    };
+    if let Ok(mut c) = state.corrector.write() {
+        *c = Corrector::new(&list);
+    }
+    if let (Some(id), true) = (meeting_id, fix_earlier) {
+        let one = Corrector::new(&[crate::corrections::Correction {
+            heard: crate::corrections::normalize_heard(&heard),
+            correct: crate::corrections::normalize_correct(&correct),
+        }]);
+        if let Some(one) = one {
+            let conn = state.db.lock().map_err(|_| "db poisoned")?;
+            let segments = db::list_segments(&conn, &id).map_err(|e| e.to_string())?;
+            let mut changed = 0usize;
+            for s in &segments {
+                let (text, did) = one.apply(&s.text);
+                if did {
+                    db::set_segment_text(&conn, &s.id, &text).map_err(|e| e.to_string())?;
+                    changed += 1;
+                }
+            }
+            drop(conn);
+            if changed > 0 {
+                let _ = app.emit("transcript_corrected", &id);
+            }
+        }
+    }
+    Ok(list)
+}
+
+#[tauri::command]
+pub fn remove_correction(
+    state: State<AppState>,
+    heard: String,
+) -> Result<Vec<crate::corrections::Correction>, String> {
+    let list = {
+        let mut prefs = state.prefs.lock().map_err(|_| "prefs poisoned")?;
+        crate::corrections::remove(&mut prefs.dictionary_corrections, &heard);
+        prefs.save().map_err(|e| e.to_string())?;
+        prefs.dictionary_corrections.clone()
+    };
+    if let Ok(mut c) = state.corrector.write() {
+        *c = crate::corrections::Corrector::new(&list);
+    }
+    Ok(list)
 }
 
 #[tauri::command]
