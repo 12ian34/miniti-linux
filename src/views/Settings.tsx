@@ -254,9 +254,6 @@ export function Settings() {
     );
   }
 
-  const C = ({ id, children }: { id: string; children: ReactNode }) => (
-    <div id={`s-${id}`} className={`setting ${highlight === id ? "flash" : ""}`}>{children}</div>
-  );
 
   return (
     <div className="settings">
@@ -292,10 +289,10 @@ export function Settings() {
 
         {dest === "general" && (
           <>
-            <C id="tray"><Toggle label="Show tray icon with recording timer (takes effect after restart)" checked={prefs.show_tray} onChange={(v) => update("show_tray", v)} /></C>
-            <C id="presence"><Toggle label="Floating recording surface while recording (always on top; Wayland may ignore placement)" checked={prefs.show_floating_indicator} onChange={(v) => update("show_floating_indicator", v)} /></C>
-            <C id="autostart"><Toggle label="Launch at login, hidden in the tray (adds an entry to ~/.config/autostart)" checked={prefs.launch_at_login ?? false} onChange={(v) => update("launch_at_login", v)} /></C>
-            <C id="scale">
+            <C highlight={highlight} id="tray"><Toggle label="Show tray icon with recording timer (takes effect after restart)" checked={prefs.show_tray} onChange={(v) => update("show_tray", v)} /></C>
+            <C highlight={highlight} id="presence"><Toggle label="Floating recording surface while recording (always on top; Wayland may ignore placement)" checked={prefs.show_floating_indicator} onChange={(v) => update("show_floating_indicator", v)} /></C>
+            <C highlight={highlight} id="autostart"><Toggle label="Launch at login, hidden in the tray (adds an entry to ~/.config/autostart)" checked={prefs.launch_at_login ?? false} onChange={(v) => update("launch_at_login", v)} /></C>
+            <C highlight={highlight} id="scale">
               <Field label="Interface scale">
                 <select className="input" value={prefs.interface_scale ?? "standard"} onChange={(e) => { const v = e.currentTarget.value as Prefs["interface_scale"]; update("interface_scale", v); applyInterfaceScale(v); }}>
                   <option value="compact">Compact — original metrics</option>
@@ -310,7 +307,7 @@ export function Settings() {
 
         {dest === "account" && (
           <>
-            <C id="mode">
+            <C highlight={highlight} id="mode">
               <Field label="Mode">
                 <select className="input" value={prefs.app_mode} onChange={(e) => update("app_mode", e.currentTarget.value as AppMode)}>
                   <option value="managed">Managed (miniti backend)</option>
@@ -319,7 +316,7 @@ export function Settings() {
               </Field>
             </C>
             {prefs.app_mode === "managed" && notEnrolled && (
-              <C id="recovery">
+              <C highlight={highlight} id="recovery">
                 <section className="card">
                   <h2 className="card-title">Account</h2>
                   <Enroll inline onDone={() => { refreshAuth(); refreshPrefs(); getPrefs().then(setPrefsState); }} />
@@ -327,7 +324,7 @@ export function Settings() {
               </C>
             )}
             {prefs.app_mode === "managed" && backendKey === true && (
-              <C id="plan">
+              <C highlight={highlight} id="plan">
                 <section className="card">
                   <h2 className="card-title">Plan</h2>
                   {usage ? (
@@ -353,12 +350,12 @@ export function Settings() {
               </C>
             )}
             {prefs.app_mode === "managed" && backendKey === true && auth && (
-              <C id="recovery">
+              <C highlight={highlight} id="recovery">
                 <AccountCard auth={auth} onChanged={() => { refreshAuth(); setUsage(null); }} onError={setError} onNotice={setNotice} />
               </C>
             )}
             {prefs.app_mode === "byok" && (
-              <C id="keys">
+              <C highlight={highlight} id="keys">
                 <Field label="Deepgram API key">
                   <input className="input" type="password" value={prefs.byok_deepgram_key ?? ""} onChange={(e) => update("byok_deepgram_key", e.currentTarget.value || null)} placeholder="Deepgram key" />
                 </Field>
@@ -367,20 +364,20 @@ export function Settings() {
                 </Field>
               </C>
             )}
-            <C id="device"><Field label="Device ID"><input className="input" readOnly value={health?.device_id ?? "…"} /></Field></C>
+            <C highlight={highlight} id="device"><Field label="Device ID"><input className="input" readOnly value={health?.device_id ?? "…"} /></Field></C>
           </>
         )}
 
         {dest === "recording" && (
           <>
-            <C id="sources">
+            <C highlight={highlight} id="sources">
               <div className="rows">
                 <Row k="microphone" v={health ? (health.microphone_available ? "detected" : "not detected") : "…"} />
                 <Row k="system audio" v={health ? (health.system_audio_available ? "PipeWire monitor available" : "not detected (install pipewire-pulse)") : "…"} />
               </div>
               <Toggle label="Capture system audio (remote speakers via PipeWire monitor; doubles Deepgram minutes)" checked={prefs.capture_system_audio} onChange={(v) => update("capture_system_audio", v)} />
             </C>
-            <C id="autostop">
+            <C highlight={highlight} id="autostop">
               <Field label="Silence auto-stop">
                 <select className="input" value={prefs.auto_stop_minutes} onChange={(e) => update("auto_stop_minutes", Number(e.currentTarget.value))}>
                   <option value={0}>Off</option>
@@ -396,24 +393,24 @@ export function Settings() {
 
         {dest === "language" && (
           <>
-            <C id="lang">
+            <C highlight={highlight} id="lang">
               <Field label="Transcription language">
                 <select className="input" value={prefs.language} onChange={(e) => update("language", e.currentTarget.value)}>
                   {LANGUAGES.map(([code, name]) => <option key={code} value={code}>{name}</option>)}
                 </select>
               </Field>
             </C>
-            <C id="dict">
+            <C highlight={highlight} id="dict">
               <Field label="Personal dictionary (comma-separated terms sent to Deepgram as keyterms)">
                 <input className="input" value={prefs.personal_dictionary.join(", ")} onChange={(e) => update("personal_dictionary", e.currentTarget.value.split(",").map((s) => s.trim()).filter(Boolean))} placeholder="Lightdash, Ahuja, MEDDPICC" />
               </Field>
             </C>
-            <C id="corrections">
+            <C highlight={highlight} id="corrections">
               <Field label="Corrections (what was heard → what it should say; applied live and sent to Deepgram on the next meeting)">
                 <CorrectionsEditor list={prefs.dictionary_corrections ?? []} onChange={async () => { setPrefsState(await getPrefs()); await refreshPrefs(); }} />
               </Field>
             </C>
-            <C id="fillers">
+            <C highlight={highlight} id="fillers">
               <Field label="Coaching filler words (comma-separated; empty = language default)">
                 <input className="input" value={prefs.filler_overrides.join(", ")} onChange={(e) => update("filler_overrides", e.currentTarget.value.split(",").map((s) => s.trim()).filter(Boolean))} placeholder="um, uh, like" />
               </Field>
@@ -423,9 +420,9 @@ export function Settings() {
 
         {dest === "ai" && (
           <>
-            <C id="live"><Toggle label="Live insights while recording (summary, questions, speaker names)" checked={prefs.live_insights_enabled} onChange={(v) => update("live_insights_enabled", v)} /></C>
-            <C id="sales"><Toggle label="Start new meetings with Sales analysis (MEDDPICC) enabled" checked={prefs.sales_insights_default} onChange={(v) => update("sales_insights_default", v)} /></C>
-            <C id="models">
+            <C highlight={highlight} id="live"><Toggle label="Live insights while recording (summary, questions, speaker names)" checked={prefs.live_insights_enabled} onChange={(v) => update("live_insights_enabled", v)} /></C>
+            <C highlight={highlight} id="sales"><Toggle label="Start new meetings with Sales analysis (MEDDPICC) enabled" checked={prefs.sales_insights_default} onChange={(v) => update("sales_insights_default", v)} /></C>
+            <C highlight={highlight} id="models">
               <section className="card">
                 <h2 className="card-title">Models</h2>
                 <div className="rows">
@@ -435,7 +432,7 @@ export function Settings() {
                 </div>
               </section>
             </C>
-            <C id="codebase">
+            <C highlight={highlight} id="codebase">
               <Field label="Codebase folder for investigations">
                 <div className="rec-controls">
                   <input className="input" value={prefs.codebase_root ?? ""} readOnly placeholder="not set" />
@@ -450,8 +447,8 @@ export function Settings() {
         {dest === "notifications" && (
           <>
             <p className="muted small">Decisions and guidance show on the floating surface while miniti is in front, and as desktop notifications otherwise. The tray menu always carries the same decisions.</p>
-            <C id="notify"><Toggle label="Desktop notifications when miniti is not in front (Smart-meeting decisions, guidance)" checked={prefs.notifications_enabled} onChange={(v) => update("notifications_enabled", v)} /></C>
-            <C id="guidance">
+            <C highlight={highlight} id="notify"><Toggle label="Desktop notifications when miniti is not in front (Smart-meeting decisions, guidance)" checked={prefs.notifications_enabled} onChange={(v) => update("notifications_enabled", v)} /></C>
+            <C highlight={highlight} id="guidance">
               <Toggle label="Live guidance nudges (high-priority questions, long monologues, filler bursts)" checked={prefs.live_guidance_enabled} onChange={(v) => update("live_guidance_enabled", v)} />
               {prefs.live_guidance_enabled && (
                 <div className="rows">
@@ -472,8 +469,8 @@ export function Settings() {
 
         {dest === "calendar" && (
           <>
-            <C id="smart"><Toggle label="Smart meetings — notice when a meeting may have ended or another is approaching, then help finish, save, and start the right recording" checked={prefs.smart_meetings_enabled} onChange={(v) => update("smart_meetings_enabled", v)} /></C>
-            <C id="gcal">
+            <C highlight={highlight} id="smart"><Toggle label="Smart meetings — notice when a meeting may have ended or another is approaching, then help finish, save, and start the right recording" checked={prefs.smart_meetings_enabled} onChange={(v) => update("smart_meetings_enabled", v)} /></C>
+            <C highlight={highlight} id="gcal">
               <div className="row-line">
                 <span className="k">Google Calendar</span>
                 {notEnrolled ? <span className="muted">needs managed mode with an enrolled account (Account &amp; Plan)</span> : (
@@ -486,7 +483,7 @@ export function Settings() {
                 )}
               </div>
             </C>
-            <C id="calauto">
+            <C highlight={highlight} id="calauto">
               <Toggle label="Auto-start recording for upcoming calendar events (16 s countdown)" checked={prefs.calendar_auto_start} onChange={(v) => update("calendar_auto_start", v)} />
               <Toggle label="Auto-stop when a calendar event ends (enables automatic handoff with Smart meetings)" checked={prefs.calendar_auto_stop} onChange={(v) => update("calendar_auto_stop", v)} />
             </C>
@@ -497,7 +494,7 @@ export function Settings() {
           notEnrolled ? <p className="muted">Attio and Twenty connect through the miniti backend; set up managed mode under Account &amp; Plan first.</p> : (
             <>
               {(["attio", "twenty"] as CrmProvider[]).map((p) => (
-                <C id={p} key={p}>
+                <C highlight={highlight} id={p} key={p}>
                   <div className="row-line">
                     <span className="k">{p === "attio" ? "Attio" : "Twenty"}</span>
                     <span className="v">{crm[p] === null ? "…" : crm[p]!.connected ? `connected${crm[p]!.account_label ? ` (${crm[p]!.account_label})` : ""}` : "not connected"}</span>
@@ -511,7 +508,7 @@ export function Settings() {
         )}
 
         {dest === "webhooks" && (
-          <C id="webhook">
+          <C highlight={highlight} id="webhook">
             <Field label="Webhook URL (POST meeting.saved after each recording, meeting.updated after insights)">
               <input className="input" value={prefs.webhook_url ?? ""} onChange={(e) => update("webhook_url", e.currentTarget.value || null)} placeholder="https://…" />
             </Field>
@@ -520,7 +517,7 @@ export function Settings() {
         )}
 
         {dest === "docs" && (
-          <C id="mcp">
+          <C highlight={highlight} id="mcp">
             <Field label="Docs MCP URL (Playbook) — HTTPS Streamable HTTP server, e.g. https://docs.example.com/mcp">
               <div className="rec-controls">
                 <input className="input" value={prefs.docs_mcp_url ?? ""} onChange={(e) => update("docs_mcp_url", e.currentTarget.value || null)} placeholder="https://…/mcp" />
@@ -537,7 +534,7 @@ export function Settings() {
 
         {dest === "data" && (
           <>
-            <C id="granola">
+            <C highlight={highlight} id="granola">
               <Field label="Granola import">
                 <div className="rec-controls">
                   <button className="btn" onClick={importGranola}>Import Granola CSV…</button>
@@ -546,7 +543,7 @@ export function Settings() {
                 <p className="muted small">Duplicate protection: rows already imported are skipped. Imported meetings show their source in the sidebar.</p>
               </Field>
             </C>
-            <C id="export">
+            <C highlight={highlight} id="export">
               <Field label="Markdown export folder (remembered from the last export)">
                 <div className="rec-controls">
                   <input className="input" readOnly value={prefs.export_folder ?? ""} placeholder="not set — the save dialog asks" />
@@ -559,7 +556,7 @@ export function Settings() {
 
         {dest === "privacy" && (
           <>
-          <C id="about">
+          <C highlight={highlight} id="about">
             <section className="card">
               <h2 className="card-title">About</h2>
               <div className="rows">
@@ -577,7 +574,7 @@ export function Settings() {
               <p className="muted small">Transcripts and audio never leave the device except to Deepgram and, in managed mode, the miniti backend.</p>
             </section>
           </C>
-          <C id="log">
+          <C highlight={highlight} id="log">
             <DebugLogCard onError={setError} onNotice={setNotice} />
           </C>
           </>
@@ -785,4 +782,15 @@ function CorrectionsEditor({ list, onChange }: { list: Correction[]; onChange: (
       {err && <div className="banner error">{err}</div>}
     </div>
   );
+}
+
+/**
+ * One settings block. Defined at module level on purpose: as an inline
+ * component inside Settings it was a new type on every render, so React
+ * remounted every block each time the store ticked (once a second), and the
+ * account block refetched the device list on each mount until the backend
+ * rate-limited it ("rate limited; try again shortly" flashing on Linux).
+ */
+function C({ id, highlight, children }: { id: string; highlight: string | null; children: ReactNode }) {
+  return <div id={`s-${id}`} className={`setting ${highlight === id ? "flash" : ""}`}>{children}</div>;
 }

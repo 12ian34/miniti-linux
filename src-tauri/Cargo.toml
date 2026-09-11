@@ -1,6 +1,6 @@
 [package]
 name = "miniti"
-version = "0.6.1"
+version = "0.6.2"
 description = "miniti — native Linux desktop meeting assistant (Tauri 2 + Rust)"
 authors = ["miniti"]
 edition = "2021"

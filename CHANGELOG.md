@@ -4,6 +4,10 @@ public changelog for miniti for Linux. the changelog for every platform lives at
 
 ## releases
 
+### 2026-09-11 - v0.6.2
+
+- fix: Settings → Account showed "rate limited; try again shortly" flashing where the device list should be. The screen was asking the backend for the list about once a second; it now asks once
+
 ### 2026-09-10 - v0.6.1
 
 - new: Correct a misheard word from the transcript: select it, choose correct, and the fix applies to the rest of the meeting as it arrives, to earlier mentions if you want, and to future meetings. Corrections live in Settings → Language and never touch your insights
