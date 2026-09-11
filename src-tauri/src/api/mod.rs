@@ -95,6 +95,11 @@ pub struct Usage {
     pub tier: Option<String>,
     #[serde(default)]
     pub subscription_status: Option<String>,
+    /// Pro comes from another device on this account (the backend sends the
+    /// field only then). This device has no subscription of its own, so the
+    /// Polar portal would answer `404 no_subscription`.
+    #[serde(default)]
+    pub entitlement_via_account: bool,
     /// Only present on metered tiers; absent means unmetered (Pro).
     #[serde(default)]
     pub docs_lookups_used: Option<i64>,
@@ -199,6 +204,14 @@ pub enum ApiError {
     KeyMismatch,
     #[error("this device has been disabled")]
     DeviceDisabled,
+    #[error("that account is full{}. Remove a device from it first, then try again", cap_hint(.device_cap))]
+    DeviceCapReached { device_cap: Option<u32> },
+    #[error("both this device and that account hold a subscription. Cancel one of them before moving this device")]
+    SubscriptionConflict,
+    #[error("that account is busy with another change; try again in a moment")]
+    Busy,
+    #[error("no account uses that recovery key (check for typos; it starts with M1)")]
+    RecoveryKeyUnknown,
     #[error("monthly managed minutes used up{}", resets_hint(.resets_at))]
     LimitReached { resets_at: Option<String> },
     #[error("rate limited{}", retry_hint(.retry_after_s))]
@@ -218,6 +231,12 @@ pub enum ApiError {
     Network(String),
     #[error("decode error: {0}")]
     Decode(String),
+}
+
+fn cap_hint(device_cap: &Option<u32>) -> String {
+    device_cap
+        .map(|c| format!(" ({c} devices)"))
+        .unwrap_or_default()
 }
 
 /// "; try again in 12s" when the backend said how long, else a vague nudge.
@@ -251,6 +270,8 @@ struct ErrorBody {
     message: Option<String>,
     #[serde(default)]
     resets_at: Option<String>,
+    #[serde(default)]
+    device_cap: Option<u32>,
 }
 
 /// Map a non-2xx status + body to a domain error (contract §Error format).
@@ -288,7 +309,14 @@ pub fn map_error_with_retry(
             resets_at: parsed.resets_at,
         },
         (403, _) => ApiError::DeviceDisabled,
+        (400, "invalid_recovery_key") => ApiError::InvalidRecoveryKey,
+        (404, "recovery_key_unknown") => ApiError::RecoveryKeyUnknown,
         (409, "device_already_enrolled") => ApiError::EnrolledElsewhere,
+        (409, "device_cap_reached") => ApiError::DeviceCapReached {
+            device_cap: parsed.device_cap,
+        },
+        (409, "subscription_conflict") => ApiError::SubscriptionConflict,
+        (409, "busy") => ApiError::Busy,
         (429, _) => ApiError::RateLimited { retry_after_s },
         (s, code) => ApiError::Http {
             status: s,
@@ -336,6 +364,24 @@ pub struct AuthDevices {
     pub recovery_version: Option<u32>,
     #[serde(default)]
     pub devices: Vec<AuthDevice>,
+}
+
+/// `POST /api/auth/account/attach`: the usual token object plus `moved`.
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
+pub struct AttachResult {
+    #[serde(default)]
+    pub access_token: String,
+    #[serde(default)]
+    pub expires_in: Option<i64>,
+    #[serde(default)]
+    pub refresh_token: Option<String>,
+    #[serde(default)]
+    pub account_id: Option<String>,
+    #[serde(default)]
+    pub device_cap: Option<u32>,
+    /// False when the device was already on that account: nothing changed.
+    #[serde(default)]
+    pub moved: bool,
 }
 
 /// Live HTTP client. Construction is cheap; calls need network + an enrolled
@@ -722,6 +768,17 @@ impl ApiClient {
         .map(|_| ())
     }
 
+    /// Move this installation to the account that owns `recovery_key`, without
+    /// signing out: the device keeps its id, usage, integrations and local
+    /// meetings, and only account membership changes.
+    pub async fn auth_attach(&self, recovery_key: &str) -> Result<AttachResult, ApiError> {
+        self.post(
+            "api/auth/account/attach",
+            &serde_json::json!({ "recovery_key": recovery_key }),
+        )
+        .await
+    }
+
     /// Sign this installation out server-side.
     pub async fn auth_revoke(&self) -> Result<(), ApiError> {
         self.post::<serde_json::Value>("api/auth/revoke", &serde_json::json!({}))
@@ -880,6 +937,52 @@ mod tests {
     }
 
     #[test]
+    fn attach_errors_map_to_their_own_messages() {
+        assert!(matches!(
+            map_error(400, r#"{"error":"invalid_recovery_key"}"#),
+            Some(ApiError::InvalidRecoveryKey)
+        ));
+        assert!(matches!(
+            map_error(404, r#"{"error":"recovery_key_unknown"}"#),
+            Some(ApiError::RecoveryKeyUnknown)
+        ));
+        assert!(matches!(
+            map_error(409, r#"{"error":"device_cap_reached","device_cap":3}"#),
+            Some(ApiError::DeviceCapReached {
+                device_cap: Some(3)
+            })
+        ));
+        assert!(matches!(
+            map_error(409, r#"{"error":"subscription_conflict"}"#),
+            Some(ApiError::SubscriptionConflict)
+        ));
+        assert!(matches!(
+            map_error(409, r#"{"error":"busy"}"#),
+            Some(ApiError::Busy)
+        ));
+        // The existing enrollment conflict keeps its own meaning.
+        assert!(matches!(
+            map_error(409, r#"{"error":"device_already_enrolled"}"#),
+            Some(ApiError::EnrolledElsewhere)
+        ));
+    }
+
+    #[test]
+    fn attach_decodes_the_token_object_and_moved_flag() {
+        let r: AttachResult = serde_json::from_str(
+            r#"{"access_token":"eyJ.jwt","expires_in":3600,"refresh_token":"rt",
+                "account_id":"acct_2","device_cap":5,"moved":true}"#,
+        )
+        .unwrap();
+        assert_eq!(r.account_id.as_deref(), Some("acct_2"));
+        assert_eq!(r.device_cap, Some(5));
+        assert!(r.moved);
+        let already: AttachResult =
+            serde_json::from_str(r#"{"access_token":"eyJ.jwt","moved":false}"#).unwrap();
+        assert!(!already.moved, "already on that account");
+    }
+
+    #[test]
     fn session_decodes_real_backend_shape() {
         // Exactly what `POST /api/session` returns: expires_at is ISO 8601.
         let raw = r#"{
@@ -942,5 +1045,12 @@ mod tests {
         .unwrap();
         assert_eq!(u.minutes_limit, Some(500.0));
         assert_eq!(u.docs_lookups_limit, Some(10));
+        assert!(!u.entitlement_via_account, "absent means this device's own");
+        let sponsored: Usage = serde_json::from_str(
+            r#"{"minutes_used":10,"minutes_limit":5000,"tier":"pro","entitlement_via_account":true}"#,
+        )
+        .unwrap();
+        assert!(sponsored.entitlement_via_account);
+        assert_eq!(sponsored.tier.as_deref(), Some("pro"));
     }
 }

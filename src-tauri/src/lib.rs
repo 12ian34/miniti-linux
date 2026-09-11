@@ -38,8 +38,10 @@ pub mod state;
 pub mod webhook;
 
 use state::{
-    accept_terms, auth_create_account, auth_delete_account, auth_devices, auth_recovery_key,
-    auth_remove_device, auth_restore_account, auth_rotate_recovery_key, auth_sign_out, auth_start_over,
+    accept_terms, auth_attach_account, auth_create_account, auth_delete_account, auth_devices,
+    auth_recovery_key,
+    auth_remove_device, auth_restore_account, auth_rotate_recovery_key, auth_sign_out,
+    auth_start_over,
     auth_status, add_correction, remove_correction, join_and_start_from_event, open_meeting_join_link, mark_all_mic_as_you,
     omarchy_status, omarchy_install_widget, omarchy_remove_widget,
     catch_up, coaching_overview, coaching_report, complete_onboarding, debug_log_clear,
@@ -286,6 +288,7 @@ pub fn run() {
             auth_status,
             auth_create_account,
             auth_restore_account,
+            auth_attach_account,
             auth_recovery_key,
             auth_rotate_recovery_key,
             auth_devices,

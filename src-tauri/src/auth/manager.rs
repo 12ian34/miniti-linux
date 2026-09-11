@@ -641,6 +641,34 @@ impl AuthManager {
         Ok(())
     }
 
+    /// Apply a completed account move: the server issued fresh tokens bound to
+    /// the new account, so the stored recovery key, account id and tokens are
+    /// replaced in place. The installation key and device id never change —
+    /// this device keeps its usage, integrations and local meetings.
+    pub fn apply_attach(
+        &self,
+        recovery_key_canonical: &str,
+        access_token: String,
+        expires_in: Option<i64>,
+        refresh_token: Option<String>,
+        account_id: Option<String>,
+        device_cap: Option<u32>,
+    ) -> Result<(), ApiError> {
+        let recovery_key = recovery_key_canonical.to_string();
+        self.update(move |c| {
+            c.recovery_key = recovery_key;
+            c.access_token = Some(access_token);
+            c.access_expires_at = Some(now() + expires_in.unwrap_or(3600));
+            if refresh_token.is_some() {
+                c.refresh_token = refresh_token;
+            }
+            if let Some(id) = account_id {
+                c.account_id = id;
+            }
+            c.device_cap = device_cap.or(c.device_cap);
+        })
+    }
+
     /// Record a rotated recovery key after the server accepted it.
     pub fn set_recovery_key(&self, canonical: &str) -> Result<(), ApiError> {
         let canonical = canonical.to_string();

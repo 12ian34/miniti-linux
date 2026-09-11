@@ -35,6 +35,7 @@ import {
   validateWebhookUrl,
   subscribeUrl,
   addCorrection,
+  authAttachAccount,
   removeCorrection,
   omarchyInstallWidget,
   omarchyRemoveWidget,
@@ -365,15 +366,19 @@ export function Settings() {
                   <h2 className="card-title">Plan</h2>
                   {usage ? (
                     <div className="rows">
-                      <Row k="tier" v={usage.tier ?? "free"} />
+                      <Row k="tier" v={usage.entitlement_via_account ? "Pro — 5,000 min/month" : usage.tier ?? "free"} />
                       <Row k="minutes" v={`${Math.round(usage.minutes_used)} / ${usage.minutes_limit ?? "∞"}`} />
                       {usage.resets_at && <Row k="resets" v={new Date(usage.resets_at).toLocaleDateString()} />}
                       {usage.docs_lookups_limit != null && <Row k="docs lookups" v={`${usage.docs_lookups_used ?? 0} / ${usage.docs_lookups_limit}`} />}
                     </div>
                   ) : <p className="muted">{usageError ?? "Loading usage…"}</p>}
+                  {usage?.entitlement_via_account && (
+                    <p className="muted small">Pro comes from another device on your account. Manage the subscription from that device.</p>
+                  )}
                   <div className="save-row">
                     {usage?.tier === "pro"
-                      ? <button className="btn" onClick={() => openExternal(portalUrl)}>Manage subscription</button>
+                      ? (!usage.entitlement_via_account &&
+                          <button className="btn" onClick={() => openExternal(portalUrl)}>Manage subscription</button>)
                       : <button className="btn primary" onClick={() => openExternal(subscribeUrl)}>Upgrade to Pro</button>}
                   </div>
                   <Field label="Restore Pro with a license key">
@@ -677,6 +682,8 @@ function AccountCard({ auth, onChanged, onError, onNotice }: { auth: AuthStatus;
   const [devices, setDevices] = useState<AuthDevices | null>(null);
   const [devicesError, setDevicesError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [moveOpen, setMoveOpen] = useState(false);
+  const [moveKey, setMoveKey] = useState("");
 
   const loadDevices = () => authDevices().then((d) => { setDevices(d); setDevicesError(null); }).catch((e) => setDevicesError(errorMessage(e)));
   useEffect(() => { void loadDevices(); }, []);
@@ -693,6 +700,20 @@ function AccountCard({ auth, onChanged, onError, onNotice }: { auth: AuthStatus;
     if (!(await confirm("Generate a new recovery key? The current key stops working immediately; your devices stay signed in.", { title: "Rotate recovery key", kind: "warning" }))) return;
     setBusy(true);
     try { setRevealed(await authRotateRecoveryKey()); onNotice("Recovery key rotated. Save the new key."); } catch (e) { onError(errorMessage(e)); } finally { setBusy(false); }
+  }
+  async function move() {
+    setBusy(true);
+    onError(null);
+    try {
+      const moved = await authAttachAccount(moveKey);
+      onNotice(moved
+        ? "This device is now on that account. Its meetings, usage and connections came with it."
+        : "This device was already on that account; nothing changed.");
+      setMoveOpen(false);
+      setMoveKey("");
+      onChanged();
+      await loadDevices();
+    } catch (e) { onError(errorMessage(e)); } finally { setBusy(false); }
   }
   async function remove(id: string, current: boolean) {
     const msg = current ? "Sign this computer out of the account?" : "Remove this device from the account? It will need the recovery key to sign back in.";
@@ -749,9 +770,31 @@ function AccountCard({ auth, onChanged, onError, onNotice }: { auth: AuthStatus;
         ) : <p className="muted">{devicesError ?? "Loading devices…"}</p>}
       </Field>
       <div className="save-row">
+        <button className="btn" onClick={() => { onError(null); setMoveOpen(true); }} disabled={busy}>Move this device to another account…</button>
         <button className="btn" onClick={signOut} disabled={busy}>Sign out</button>
         <button className="btn danger" onClick={deleteAccount} disabled={busy}>Delete account</button>
       </div>
+      {moveOpen && (
+        <Sheet title="move this device" onClose={() => setMoveOpen(false)}>
+          <p className="muted small">
+            Enter the recovery key of the account to join. This device keeps its meetings, usage,
+            calendar, and CRM connections. If that account has a Pro plan, this device gets it too.
+            It leaves its current account; if that account is then empty, it is closed.
+          </p>
+          <input
+            className="input"
+            value={moveKey}
+            onChange={(e) => setMoveKey(e.currentTarget.value)}
+            onKeyDown={(e) => { if (e.key === "Enter" && moveKey.trim() && !busy) void move(); }}
+            placeholder="M1-XXXX-XXXX-XXXX-XXXX"
+            autoFocus
+          />
+          <div className="save-row">
+            <button className="btn primary" onClick={move} disabled={busy || !moveKey.trim()}>Move this device</button>
+            <button className="btn" onClick={() => setMoveOpen(false)} disabled={busy}>Cancel</button>
+          </div>
+        </Sheet>
+      )}
     </section>
   );
 }

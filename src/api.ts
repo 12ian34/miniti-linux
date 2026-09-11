@@ -83,6 +83,8 @@ export const getDeviceId = () => invoke<string>("get_device_id");
 export const authStatus = () => invoke<AuthStatus>("auth_status");
 export const authCreateAccount = () => invoke<string>("auth_create_account");
 export const authRestoreAccount = (recoveryKey: string) => invoke<void>("auth_restore_account", { recoveryKey });
+/** Move this device to the account that owns the key; true when it moved. */
+export const authAttachAccount = (recoveryKey: string) => invoke<boolean>("auth_attach_account", { recoveryKey });
 export const authRecoveryKey = () => invoke<string>("auth_recovery_key");
 export const authRotateRecoveryKey = () => invoke<string>("auth_rotate_recovery_key");
 export const authDevices = () => invoke<AuthDevices>("auth_devices");

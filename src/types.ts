@@ -229,6 +229,8 @@ export interface Usage {
   resets_at: string | null;
   tier: string | null;
   subscription_status: string | null;
+  /** Pro comes from another device on the account; this one has no subscription to manage. */
+  entitlement_via_account: boolean;
   docs_lookups_used: number | null;
   docs_lookups_limit: number | null;
 }

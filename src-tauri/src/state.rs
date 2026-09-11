@@ -3129,6 +3129,39 @@ pub async fn auth_restore_account(
     .await
 }
 
+/// Move this device to the account that owns `recovery_key`, without signing
+/// out. Returns true when it moved, false when it was already on that account.
+#[tauri::command]
+pub async fn auth_attach_account(
+    state: State<'_, AppState>,
+    recovery_key: String,
+) -> Result<bool, String> {
+    let prefs = state.prefs_snapshot()?;
+    let client = state.api_client(&prefs).map_err(|e| e.to_string())?;
+    let auth = state.auth.clone();
+    guarded(async move {
+        let canonical = crate::auth::parse_recovery_key(&recovery_key)
+            .ok_or_else(|| ApiError::InvalidRecoveryKey.to_string())?;
+        // A refused move must change nothing locally, so the server answers first.
+        let result = client
+            .auth_attach(&canonical)
+            .await
+            .map_err(|e| e.to_string())?;
+        auth.apply_attach(
+            &canonical,
+            result.access_token,
+            result.expires_in,
+            result.refresh_token,
+            result.account_id,
+            result.device_cap,
+        )
+        .map_err(|e| e.to_string())?;
+        tracing::info!("device auth: account move applied (moved={})", result.moved);
+        Ok(result.moved)
+    })
+    .await
+}
+
 /// Reveal the stored recovery key (the UI asks for confirmation first).
 #[tauri::command]
 pub fn auth_recovery_key(state: State<AppState>) -> Result<String, String> {
