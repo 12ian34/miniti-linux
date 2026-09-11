@@ -144,6 +144,8 @@ pub enum Choice {
     Primary,
     Secondary,
     Tertiary,
+    /// End the current meeting without starting the next one (calendar handoff).
+    End,
 }
 
 #[derive(ValueEnum, Clone, Copy, Debug)]
@@ -470,6 +472,7 @@ fn execute(command: Command, out: &Output) -> Result<(), i32> {
                 Choice::Primary => "primary",
                 Choice::Secondary => "secondary",
                 Choice::Tertiary => "tertiary",
+                Choice::End => "end",
             };
             call(&mut c, Request::Decide { choice: choice.into() }, out)?;
             Ok(())
@@ -535,10 +538,15 @@ fn status(out: &Output, waybar: bool) -> Result<(), i32> {
         }
         if let Some(p) = v["prompt"].as_object() {
             out.line(format!(
-                "  prompt: {} — {} / {}  (miniti decide primary|secondary)",
+                "  prompt: {} — {} / {}{}  (miniti decide primary|secondary{})",
                 p.get("message").and_then(Value::as_str).unwrap_or_default(),
                 p.get("primary").and_then(Value::as_str).unwrap_or_default(),
                 p.get("secondary").and_then(Value::as_str).unwrap_or_default(),
+                p.get("end")
+                    .and_then(Value::as_str)
+                    .map(|e| format!(" / {e}"))
+                    .unwrap_or_default(),
+                if p.get("end").is_some() { "|end" } else { "" },
             ));
         }
     }

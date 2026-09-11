@@ -193,7 +193,7 @@ export const trimTranscript = (meetingId: string, beforeS: number | null, afterS
 
 export const notify = (title: string, body: string) => invoke<void>("notify", { title, body });
 export const showMainWindow = () => invoke<void>("show_main_window");
-export const smartDecision = (promptId: string, choice: "primary" | "secondary" | "tertiary" | "join") =>
+export const smartDecision = (promptId: string, choice: "primary" | "secondary" | "tertiary" | "join" | "end") =>
   invoke<void>("smart_decision", { promptId, choice });
 
 export const googleStatus = () => invoke<{ connected: boolean; email: string | null }>("google_status");

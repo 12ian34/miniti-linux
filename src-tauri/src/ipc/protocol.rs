@@ -48,7 +48,7 @@ pub enum Request {
     Export {
         id: String,
     },
-    /// Answer the pending Smart-meeting prompt: primary | secondary | tertiary.
+    /// Answer the pending Smart-meeting prompt: primary | secondary | tertiary | join | end.
     Decide {
         choice: String,
     },

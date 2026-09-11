@@ -13,6 +13,9 @@ export function SmartPromptBanner() {
     <div className={`banner ${tone} smart-banner`}>
       <span className="ellipsis">{prompt.message}</span>
       <button className="btn primary small" onClick={() => smartDecision(prompt.id, "primary")}>{prompt.primary}</button>
+      {prompt.end && (
+        <button className="btn small" onClick={() => smartDecision(prompt.id, "end")}>{prompt.end}</button>
+      )}
       <button className="btn secondary small" onClick={() => smartDecision(prompt.id, "secondary")}>{prompt.secondary}</button>
       {prompt.tertiary && (
         <button className="ghost" onClick={() => smartDecision(prompt.id, "tertiary")}>{prompt.tertiary}</button>

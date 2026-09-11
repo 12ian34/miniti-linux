@@ -20,7 +20,7 @@ miniti show | open [ID]       raise the window, optionally on a meeting (`last`)
 miniti questions              questions worth asking right now
 miniti meetings [-n N]        recent meetings
 miniti export [ID] [-o FILE]  Markdown export (`last` by default)
-miniti decide primary|secondary|tertiary
+miniti decide primary|secondary|tertiary|end
 miniti watch                  stream state changes (JSON lines with --json)
 miniti quit
 miniti autostart [on|off]     launch at login
@@ -107,7 +107,9 @@ Snapshot shape (`schema` 1):
 ```
 
 `prompt` is the Smart-meeting decision currently shown in the tray and on the
-floating surface (null when none); answer it with `decide`. `nudge` is the
+floating surface (null when none); answer it with `decide`. A prompt that
+carries an `end` label also accepts `decide end`, which ends the current
+meeting without starting the next one. `nudge` is the
 latest live-guidance hint and clears when the meeting stops.
 
 ## D-Bus

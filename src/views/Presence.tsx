@@ -213,6 +213,9 @@ export function Presence() {
                     {prompt.kind === "calendar" ? "join next" : "join & take notes"}
                   </button>
                 )}
+                {prompt.end && (
+                  <button className="control recording" disabled={busy} onClick={() => run(() => smartDecision(prompt.id, "end"))}>{prompt.end}</button>
+                )}
                 <button className="control" disabled={busy} onClick={() => run(() => smartDecision(prompt.id, "secondary"))}>{prompt.secondary}</button>
                 {prompt.tertiary && <button className="ghost" disabled={busy} onClick={() => run(() => smartDecision(prompt.id, "tertiary"))}>{prompt.tertiary}</button>}
               </div>

@@ -54,6 +54,8 @@ export interface SmartPrompt {
   primary: string;
   secondary: string;
   tertiary?: string | null;
+  /** "End meeting": end the current one without starting the next. */
+  end?: string | null;
   meeting_id?: string | null;
   /** Seconds remaining for a countdown (ending grace / handoff). */
   countdown?: number | null;

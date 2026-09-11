@@ -2260,8 +2260,10 @@ pub async fn smart_decision(
 /// Answer the pending Smart-meeting prompt from outside the webview (CLI,
 /// D-Bus, bar widgets): same path as the surface buttons.
 pub async fn decide_from_shell(app: &AppHandle, choice: &str) -> Result<(), String> {
-    if !matches!(choice, "primary" | "secondary" | "tertiary" | "join") {
-        return Err(format!("choice must be primary, secondary, tertiary or join (got {choice:?})"));
+    if !matches!(choice, "primary" | "secondary" | "tertiary" | "join" | "end") {
+        return Err(format!(
+            "choice must be primary, secondary, tertiary, join or end (got {choice:?})"
+        ));
     }
     let actions = {
         let slot = crate::smart::slot(app).ok_or("smart monitor unavailable")?;

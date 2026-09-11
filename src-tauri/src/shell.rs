@@ -23,6 +23,8 @@ pub struct TrayHandles {
     pub decision: MenuItem<Wry>,
     pub decision_primary: MenuItem<Wry>,
     pub decision_secondary: MenuItem<Wry>,
+    /// "End meeting" on prompts that offer a plain end (calendar handoff).
+    pub decision_end: MenuItem<Wry>,
 }
 
 pub type TraySlot = Mutex<Option<TrayHandles>>;
@@ -38,6 +40,7 @@ fn build_menu(app: &AppHandle) -> Result<(Menu<Wry>, TrayHandles, TrayIcon<Wry>)
         .build(app)?;
     let decision_primary = MenuItemBuilder::with_id("decision_primary", "").build(app)?;
     let decision_secondary = MenuItemBuilder::with_id("decision_secondary", "").build(app)?;
+    let decision_end = MenuItemBuilder::with_id("decision_end", "").build(app)?;
     let quit = MenuItemBuilder::with_id("quit", "Quit miniti").build(app)?;
     let menu = MenuBuilder::new(app)
         .item(&status)
@@ -47,6 +50,7 @@ fn build_menu(app: &AppHandle) -> Result<(Menu<Wry>, TrayHandles, TrayIcon<Wry>)
         .item(&decision)
         .item(&decision_primary)
         .item(&decision_secondary)
+        .item(&decision_end)
         .separator()
         .item(&quit)
         .build()?;
@@ -71,6 +75,9 @@ fn build_menu(app: &AppHandle) -> Result<(Menu<Wry>, TrayHandles, TrayIcon<Wry>)
             "decision_secondary" => {
                 let _ = app.emit("smart_decision", "secondary");
             }
+            "decision_end" => {
+                let _ = app.emit("smart_decision", "end");
+            }
             "quit" => app.exit(0),
             _ => {}
         })
@@ -84,6 +91,7 @@ fn build_menu(app: &AppHandle) -> Result<(Menu<Wry>, TrayHandles, TrayIcon<Wry>)
     let _ = decision.set_enabled(false);
     let _ = decision_primary.set_enabled(false);
     let _ = decision_secondary.set_enabled(false);
+    let _ = decision_end.set_enabled(false);
     let handles = TrayHandles {
         tray: tray.clone(),
         status,
@@ -91,6 +99,7 @@ fn build_menu(app: &AppHandle) -> Result<(Menu<Wry>, TrayHandles, TrayIcon<Wry>)
         decision,
         decision_primary,
         decision_secondary,
+        decision_end,
     };
     Ok((menu, handles, tray))
 }
@@ -168,20 +177,23 @@ pub fn update_tray(
     }
 }
 
-/// Show or clear a Smart-meeting decision in the tray menu.
-pub fn set_tray_decision(app: &AppHandle, decision: Option<(&str, &str, &str)>) {
+/// Show or clear a Smart-meeting decision in the tray menu. `end` is the
+/// plain "End meeting" row, shown only on a prompt that offers one.
+pub fn set_tray_decision(app: &AppHandle, decision: Option<(&str, &str, &str, Option<&str>)>) {
     let Some(slot) = app.try_state::<TraySlot>() else {
         return;
     };
     let Ok(guard) = slot.lock() else { return };
     let Some(h) = guard.as_ref() else { return };
     match decision {
-        Some((title, primary, secondary)) => {
+        Some((title, primary, secondary, end)) => {
             let _ = h.decision.set_text(title);
             let _ = h.decision_primary.set_text(primary);
             let _ = h.decision_secondary.set_text(secondary);
             let _ = h.decision_primary.set_enabled(true);
             let _ = h.decision_secondary.set_enabled(true);
+            let _ = h.decision_end.set_text(end.unwrap_or_default());
+            let _ = h.decision_end.set_enabled(end.is_some());
         }
         None => {
             let _ = h.decision.set_text("");
@@ -189,6 +201,8 @@ pub fn set_tray_decision(app: &AppHandle, decision: Option<(&str, &str, &str)>) 
             let _ = h.decision_secondary.set_text("");
             let _ = h.decision_primary.set_enabled(false);
             let _ = h.decision_secondary.set_enabled(false);
+            let _ = h.decision_end.set_text("");
+            let _ = h.decision_end.set_enabled(false);
         }
     }
 }
@@ -483,7 +497,11 @@ pub fn notify_prompt(app: &AppHandle, prompt: &crate::smart::SmartPrompt) {
                 if prompt.join_url.is_some() {
                     n.action("join", "Join and take notes");
                 }
-                n.action("primary", &prompt.primary).action("secondary", &prompt.secondary);
+                n.action("primary", &prompt.primary);
+                if let Some(e) = &prompt.end {
+                    n.action("end", e);
+                }
+                n.action("secondary", &prompt.secondary);
                 if let Some(t) = &prompt.tertiary {
                     n.action("tertiary", t);
                 }
@@ -498,6 +516,7 @@ pub fn notify_prompt(app: &AppHandle, prompt: &crate::smart::SmartPrompt) {
                 handle.wait_for_action(|action| {
                     let choice = match action {
                         "join" => "join",
+                        "end" => "end",
                         "default" | "primary" => "primary",
                         "tertiary" => "tertiary",
                         "secondary" => "secondary",

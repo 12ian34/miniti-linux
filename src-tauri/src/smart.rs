@@ -418,6 +418,11 @@ pub struct SmartPrompt {
     pub secondary: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tertiary: Option<String>,
+    /// "End meeting": end the current meeting without starting the next one.
+    /// Present on the calendar handoff prompt, where ending and starting the
+    /// next meeting used to be the only way to end at all.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub end: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub event_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -436,6 +441,7 @@ impl SmartPrompt {
             primary: String::new(),
             secondary: String::new(),
             tertiary: None,
+            end: None,
             event_id: None,
             countdown: None,
             join_url: None,
@@ -658,7 +664,12 @@ fn emit_prompt(app: &AppHandle, prompt: &SmartPrompt, surface_enabled: bool, not
     }
     crate::shell::set_tray_decision(
         app,
-        Some((&prompt.message, &prompt.primary, &prompt.secondary)),
+        Some((
+            &prompt.message,
+            &prompt.primary,
+            &prompt.secondary,
+            prompt.end.as_deref(),
+        )),
     );
     if surface_enabled {
         crate::shell::raise_presence(app);
@@ -781,6 +792,7 @@ impl MonitorState {
                             primary: "End now".into(),
                             secondary: "Keep recording".into(),
                             tertiary: None,
+                            end: None,
                             event_id: None,
                             countdown: Some(left),
                             join_url: None,
@@ -813,6 +825,7 @@ impl MonitorState {
                             primary: "End & start next".into(),
                             secondary: "Keep recording".into(),
                             tertiary: Some("Remind in 2 min".into()),
+                            end: Some("End meeting".into()),
                             event_id: Some(event.id.clone()),
                             countdown: Some(left),
                             join_url: event.join_url(),
@@ -840,6 +853,7 @@ impl MonitorState {
                             primary: "Start now".into(),
                             secondary: "Don't start".into(),
                             tertiary: None,
+                            end: None,
                             event_id: Some(event.id.clone()),
                             countdown: Some(left),
                             join_url: event.join_url(),
@@ -886,6 +900,7 @@ impl MonitorState {
                                     primary: "Start recording".into(),
                                     secondary: "Not now".into(),
                                     tertiary: None,
+                                    end: None,
                                     event_id: None,
                                     countdown: None,
                                     join_url: None,
@@ -923,6 +938,7 @@ impl MonitorState {
                                     primary: "End meeting".into(),
                                     secondary: "Keep recording".into(),
                                     tertiary: None,
+                                    end: None,
                                     event_id: None,
                                     countdown: None,
                                     join_url: None,
@@ -947,6 +963,7 @@ impl MonitorState {
                                     primary: "End now".into(),
                                     secondary: "Keep recording".into(),
                                     tertiary: None,
+                                    end: None,
                                     event_id: None,
                                     countdown: Some(ENDING_GRACE.as_secs()),
                                     join_url: None,
@@ -981,6 +998,7 @@ impl MonitorState {
                                     primary: "End & start new".into(),
                                     secondary: "Keep recording".into(),
                                     tertiary: None,
+                                    end: None,
                                     event_id: None,
                                     countdown: None,
                                     join_url: None,
@@ -1045,6 +1063,7 @@ impl MonitorState {
                             primary: "End meeting".into(),
                             secondary: "Keep recording 5 min".into(),
                             tertiary: None,
+                            end: None,
                             event_id: None,
                             countdown: None,
                             join_url: None,
@@ -1100,6 +1119,7 @@ impl MonitorState {
                                 primary: "End & start next".into(),
                                 secondary: "Keep recording".into(),
                                 tertiary: Some("Remind in 2 min".into()),
+                                end: Some("End meeting".into()),
                                 event_id: Some(event.id.clone()),
                                 countdown: None,
                                 join_url: event.join_url(),
@@ -1169,6 +1189,7 @@ impl MonitorState {
                                 primary: "Start now".into(),
                                 secondary: "Don't start".into(),
                                 tertiary: None,
+                                end: None,
                                 event_id: Some(e.id.clone()),
                                 countdown: Some(d as u64),
                                 join_url: e.join_url(),
@@ -1198,6 +1219,7 @@ impl MonitorState {
                                 primary: "Start recording".into(),
                                 secondary: "Not this one".into(),
                                 tertiary: None,
+                                end: None,
                                 event_id: Some(e.id.clone()),
                                 countdown: None,
                                 join_url: e.join_url(),
@@ -1308,6 +1330,15 @@ impl MonitorState {
         now: Instant,
     ) -> Vec<Action> {
         let _ = prompt_id;
+        let actions = self.resolve_choice(choice, now);
+        self.clear_prompt(app);
+        actions
+    }
+
+    /// The choice → actions mapping, without the shell side effects, so every
+    /// surface's answer (surface, tray, notification, CLI, D-Bus) is the same
+    /// decision and can be tested on its own.
+    fn resolve_choice(&mut self, choice: &str, now: Instant) -> Vec<Action> {
         let mut actions = Vec::new();
         let Some(pending) = self.pending.clone() else {
             return actions;
@@ -1319,8 +1350,11 @@ impl MonitorState {
             }
             (Pending::CallStart(appc), _) => self.engine.note_start_prompt_dismissed(&appc.id),
             (Pending::Quiet, "primary")
+            | (Pending::Quiet, "end")
             | (Pending::CallEndAsk(_), "primary")
-            | (Pending::EndingGrace { .. }, "primary") => {
+            | (Pending::CallEndAsk(_), "end")
+            | (Pending::EndingGrace { .. }, "primary")
+            | (Pending::EndingGrace { .. }, "end") => {
                 actions.push(Action::Stop { reason: "user" });
             }
             (Pending::Quiet, _) => self.suppress_until = Some(now + KEEP_RECORDING_SUPPRESSION),
@@ -1332,6 +1366,13 @@ impl MonitorState {
             }
             (Pending::CalendarTransition { event, .. }, "join") => {
                 actions.push(Action::EndAndJoinEvent(event))
+            }
+            // End the current meeting without starting the next one. The plain
+            // end path: finalize and go home. With calendar auto-start on, the
+            // next event still follows its own countdown rather than being
+            // forced, so the event is not dismissed here.
+            (Pending::CalendarTransition { .. }, "end") => {
+                actions.push(Action::Stop { reason: "user" })
             }
             (Pending::CalendarTransition { event, .. }, "tertiary") => {
                 self.snoozed_events
@@ -1352,7 +1393,6 @@ impl MonitorState {
                 self.dismissed_events.insert(event.id.clone());
             }
         }
-        self.clear_prompt(app);
         actions
     }
 
@@ -1436,6 +1476,90 @@ mod tests {
             transcript_gap: Duration::from_secs_f64(gap),
             audio_gap: Duration::from_secs_f64(gap),
             in_ending_grace: false,
+        }
+    }
+
+    fn event(id: &str) -> CalendarEvent {
+        CalendarEvent {
+            id: id.into(),
+            title: "Next up".into(),
+            ..Default::default()
+        }
+    }
+
+    /// The calendar handoff prompt used to offer only "End & start next" and
+    /// "Keep recording", so there was no way to end without starting the next.
+    #[test]
+    fn the_calendar_handoff_prompt_can_end_without_starting_the_next() {
+        let now = Instant::now();
+        let mut m = MonitorState {
+            pending: Some(Pending::CalendarTransition {
+                event: event("e1"),
+                handoff_deadline: None,
+            }),
+            ..Default::default()
+        };
+        assert_eq!(
+            m.resolve_choice("end", now),
+            vec![Action::Stop { reason: "user" }],
+            "the plain end path: finalize and go home"
+        );
+        assert!(
+            !m.dismissed_events.contains("e1"),
+            "the next event keeps its own countdown rather than being forced or dropped"
+        );
+
+        // The other answers are unchanged.
+        let mut m = MonitorState {
+            pending: Some(Pending::CalendarTransition {
+                event: event("e1"),
+                handoff_deadline: None,
+            }),
+            ..Default::default()
+        };
+        assert_eq!(
+            m.resolve_choice("primary", now),
+            vec![Action::EndAndStartEvent(event("e1"))]
+        );
+        let mut m = MonitorState {
+            pending: Some(Pending::CalendarTransition {
+                event: event("e1"),
+                handoff_deadline: None,
+            }),
+            ..Default::default()
+        };
+        assert_eq!(
+            m.resolve_choice("join", now),
+            vec![Action::EndAndJoinEvent(event("e1"))]
+        );
+        let mut m = MonitorState {
+            pending: Some(Pending::CalendarTransition {
+                event: event("e1"),
+                handoff_deadline: None,
+            }),
+            ..Default::default()
+        };
+        assert!(m.resolve_choice("secondary", now).is_empty(), "keep recording");
+        assert!(m.dismissed_events.contains("e1"));
+    }
+
+    #[test]
+    fn end_on_the_other_prompts_is_the_same_plain_end() {
+        let now = Instant::now();
+        for pending in [
+            Pending::Quiet,
+            Pending::EndingGrace {
+                deadline: now + Duration::from_secs(10),
+            },
+        ] {
+            let mut m = MonitorState {
+                pending: Some(pending),
+                ..Default::default()
+            };
+            assert_eq!(
+                m.resolve_choice("end", now),
+                vec![Action::Stop { reason: "user" }]
+            );
         }
     }
 

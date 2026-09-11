@@ -78,9 +78,12 @@ Markdown export of a meeting (transcript, notes, insights, coaching) to
 standard output or
 .IR FILE .
 .TP
-.BR decide " " primary | secondary | tertiary
+.BR decide " " primary | secondary | tertiary | end
 Answer the pending Smart\-meeting prompt (the buttons shown in the tray and on
 the floating surface).
+.B end
+ends the current meeting without starting the next one, on a prompt that
+offers it (the calendar handoff).
 .TP
 .B watch
 Stream state changes as JSON lines until interrupted.
