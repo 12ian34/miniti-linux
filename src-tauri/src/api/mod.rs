@@ -3,8 +3,9 @@
 //! are pure + tested; the reqwest methods perform live calls. Authentication is
 //! device-bound (`crate::auth`): no shared secret is compiled into the binary.
 
-use std::sync::Arc;
-use std::time::Duration;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 
@@ -18,6 +19,10 @@ pub const REFRESH_MARGIN_SECS: i64 = 60;
 pub const HTTP_TIMEOUT: Duration = Duration::from_secs(30);
 /// `/api/insights` runs on the node runtime with a 60 s budget.
 pub const INSIGHTS_TIMEOUT: Duration = Duration::from_secs(75);
+/// Back off at least this long after a 429 that carried no usable `Retry-After`.
+pub const MIN_RATE_LIMIT_BACKOFF: Duration = Duration::from_secs(5);
+/// Never hold an endpoint back longer than this, whatever the header said.
+pub const MAX_RATE_LIMIT_BACKOFF: Duration = Duration::from_secs(600);
 
 /// Values needed to identify every request. Authentication itself comes from
 /// the device-bound `auth::manager::AuthManager` (bearer token + request proof).
@@ -196,8 +201,11 @@ pub enum ApiError {
     DeviceDisabled,
     #[error("monthly managed minutes used up{}", resets_hint(.resets_at))]
     LimitReached { resets_at: Option<String> },
-    #[error("rate limited; try again shortly")]
-    RateLimited,
+    #[error("rate limited{}", retry_hint(.retry_after_s))]
+    RateLimited {
+        /// Whole seconds from the backend's `Retry-After`, when it sent one.
+        retry_after_s: Option<u64>,
+    },
     #[error("backend rejected this device's credentials (unauthorized)")]
     Unauthorized,
     #[error("backend error {status}: {code}{}", message_hint(.message))]
@@ -210,6 +218,14 @@ pub enum ApiError {
     Network(String),
     #[error("decode error: {0}")]
     Decode(String),
+}
+
+/// "; try again in 12s" when the backend said how long, else a vague nudge.
+fn retry_hint(retry_after_s: &Option<u64>) -> String {
+    match retry_after_s {
+        Some(s) if *s > 0 => format!("; try again in {s}s"),
+        _ => "; try again shortly".to_string(),
+    }
 }
 
 fn resets_hint(resets_at: &Option<String>) -> String {
@@ -239,6 +255,22 @@ struct ErrorBody {
 
 /// Map a non-2xx status + body to a domain error (contract §Error format).
 pub fn map_error(status: u16, body: &str) -> Option<ApiError> {
+    map_error_with_retry(status, body, None)
+}
+
+/// `Retry-After` in whole seconds, as every 429 from miniti-api carries.
+/// A date form (RFC 7231 allows one) is not parsed; the caller falls back to
+/// the client's own minimum backoff.
+pub fn parse_retry_after(raw: &str) -> Option<u64> {
+    raw.trim().parse::<u64>().ok()
+}
+
+/// [`map_error`] plus the `Retry-After` header, which only 429 carries.
+pub fn map_error_with_retry(
+    status: u16,
+    body: &str,
+    retry_after_s: Option<u64>,
+) -> Option<ApiError> {
     if (200..=299).contains(&status) {
         return None;
     }
@@ -257,7 +289,7 @@ pub fn map_error(status: u16, body: &str) -> Option<ApiError> {
         },
         (403, _) => ApiError::DeviceDisabled,
         (409, "device_already_enrolled") => ApiError::EnrolledElsewhere,
-        (429, _) => ApiError::RateLimited,
+        (429, _) => ApiError::RateLimited { retry_after_s },
         (s, code) => ApiError::Http {
             status: s,
             code: if code.is_empty() {
@@ -308,12 +340,65 @@ pub struct AuthDevices {
 
 /// Live HTTP client. Construction is cheap; calls need network + an enrolled
 /// installation (except `get_version`, which is public metadata).
+/// Per-endpoint "do not call before" clock, shared by every clone of the
+/// client. A 429 parks its endpoint for at least the backend's `Retry-After`,
+/// so a UI that remounts in a loop costs one request instead of hundreds
+/// (0.4.1 sent 974 device-list requests in three hours, 814 of them refused).
+#[derive(Debug, Default)]
+pub struct RateLimitGate {
+    until: Mutex<HashMap<String, Instant>>,
+}
+
+impl RateLimitGate {
+    /// Seconds still to wait before `key` may be called again.
+    pub fn remaining_secs(&self, key: &str, now: Instant) -> Option<u64> {
+        let map = self.until.lock().ok()?;
+        let until = map.get(key)?;
+        let left = until.saturating_duration_since(now);
+        (!left.is_zero()).then(|| left.as_secs().max(1))
+    }
+
+    /// Park `key` for the backend's `Retry-After`, clamped to sane bounds.
+    pub fn park(&self, key: &str, retry_after_s: Option<u64>, now: Instant) -> u64 {
+        let wait = retry_after_s
+            .map(Duration::from_secs)
+            .unwrap_or(MIN_RATE_LIMIT_BACKOFF)
+            .clamp(MIN_RATE_LIMIT_BACKOFF, MAX_RATE_LIMIT_BACKOFF);
+        if let Ok(mut map) = self.until.lock() {
+            let until = now + wait;
+            // A later deadline wins; a retry must never shorten an active park.
+            let entry = map.entry(key.to_string()).or_insert(until);
+            if until > *entry {
+                *entry = until;
+            }
+        }
+        wait.as_secs()
+    }
+
+    /// Forget an endpoint's park (used after a success and in tests).
+    pub fn clear(&self, key: &str) {
+        if let Ok(mut map) = self.until.lock() {
+            map.remove(key);
+        }
+    }
+}
+
+/// The gate key for a request: method + path, so `/api/usage` and
+/// `/api/auth/account/devices` back off independently.
+pub fn gate_key(method: &str, url: &str) -> String {
+    let path = url::Url::parse(url)
+        .map(|u| u.path().to_string())
+        .unwrap_or_else(|_| url.to_string());
+    format!("{method} {path}")
+}
+
 #[derive(Clone)]
 pub struct ApiClient {
     base: String,
     http: reqwest::Client,
     ctx: HeaderContext,
     auth: Arc<AuthManager>,
+    gate: Arc<RateLimitGate>,
 }
 
 impl ApiClient {
@@ -328,7 +413,12 @@ impl ApiClient {
             http,
             ctx,
             auth,
+            gate: Arc::new(RateLimitGate::default()),
         }
+    }
+
+    pub fn rate_limit_gate(&self) -> &Arc<RateLimitGate> {
+        &self.gate
     }
 
     pub fn context(&self) -> &HeaderContext {
@@ -375,6 +465,7 @@ impl ApiClient {
     }
 
     /// One authenticated attempt: bearer token + request proof (non-GET).
+    /// Returns the status, the body, and `Retry-After` in seconds when sent.
     async fn attempt(
         &self,
         method: &reqwest::Method,
@@ -382,7 +473,7 @@ impl ApiClient {
         body: &Option<Vec<u8>>,
         timeout: Option<Duration>,
         token: Option<&str>,
-    ) -> Result<(u16, String), ApiError> {
+    ) -> Result<(u16, String, Option<u64>), ApiError> {
         let mut req = self.identity_headers(self.http.request(method.clone(), url));
         if let Some(t) = timeout {
             req = req.timeout(t);
@@ -409,11 +500,16 @@ impl ApiClient {
             .await
             .map_err(|e| ApiError::Network(e.to_string()))?;
         let status = resp.status().as_u16();
+        let retry_after = resp
+            .headers()
+            .get(reqwest::header::RETRY_AFTER)
+            .and_then(|v| v.to_str().ok())
+            .and_then(parse_retry_after);
         let text = resp
             .text()
             .await
             .map_err(|e| ApiError::Network(e.to_string()))?;
-        Ok((status, text))
+        Ok((status, text, retry_after))
     }
 
     /// Authenticated request with one retry after a token rejection.
@@ -428,11 +524,26 @@ impl ApiClient {
             .map(serde_json::to_vec)
             .transpose()
             .map_err(|e| ApiError::Decode(e.to_string()))?;
+        // A parked endpoint is refused here, without a request: the backend
+        // asked for the wait, and a caller in a loop must not spend it anyway.
+        let key = gate_key(method.as_str(), url);
+        if let Some(left) = self.gate.remaining_secs(&key, Instant::now()) {
+            return Err(ApiError::RateLimited {
+                retry_after_s: Some(left),
+            });
+        }
         let mut token = self.auth.access_token().await?;
         for attempt in 0..2 {
-            let (status, text) = self
+            let (status, text, retry_after) = self
                 .attempt(&method, url, &bytes, timeout, Some(&token))
                 .await?;
+            if status == 429 {
+                let waited = self.gate.park(&key, retry_after, Instant::now());
+                tracing::warn!("{key} rate limited; backing off {waited}s");
+                return Err(ApiError::RateLimited {
+                    retry_after_s: Some(waited),
+                });
+            }
             if status == 401 && attempt == 0 {
                 let code = error_code(&text);
                 if code == "token_expired" || code == "invalid_token" {
@@ -444,9 +555,10 @@ impl ApiClient {
                     return Err(ApiError::Revoked);
                 }
             }
-            if let Some(err) = map_error(status, &text) {
+            if let Some(err) = map_error_with_retry(status, &text, retry_after) {
                 return Err(err);
             }
+            self.gate.clear(&key);
             return Ok(text);
         }
         Err(ApiError::Unauthorized)
@@ -496,10 +608,10 @@ impl ApiClient {
                 return Ok(v);
             }
         }
-        let (status, text) = self
+        let (status, text, retry_after) = self
             .attempt(&reqwest::Method::GET, &url, &None, None, None)
             .await?;
-        if let Some(err) = map_error(status, &text) {
+        if let Some(err) = map_error_with_retry(status, &text, retry_after) {
             return Err(err);
         }
         serde_json::from_str(&text).map_err(|e| ApiError::Decode(e.to_string()))
@@ -682,7 +794,12 @@ mod tests {
             map_error(403, r#"{"error":"device_disabled"}"#),
             Some(ApiError::DeviceDisabled)
         ));
-        assert!(matches!(map_error(429, ""), Some(ApiError::RateLimited)));
+        assert!(matches!(
+            map_error(429, ""),
+            Some(ApiError::RateLimited {
+                retry_after_s: None
+            })
+        ));
         assert!(matches!(
             map_error(401, r#"{"error":"unauthorized"}"#),
             Some(ApiError::Unauthorized)
@@ -711,6 +828,55 @@ mod tests {
             map_status(500),
             Some(ApiError::Http { status: 500, .. })
         ));
+    }
+
+    #[test]
+    fn retry_after_is_parsed_and_surfaced_in_the_message() {
+        assert_eq!(parse_retry_after(" 12 "), Some(12));
+        assert_eq!(parse_retry_after("Wed, 21 Oct 2026 07:28:00 GMT"), None);
+        let err = map_error_with_retry(429, r#"{"error":"rate_limited"}"#, Some(12)).unwrap();
+        assert!(matches!(
+            err,
+            ApiError::RateLimited {
+                retry_after_s: Some(12)
+            }
+        ));
+        assert!(
+            err.to_string().contains("try again in 12s"),
+            "the wait is shown where a user action triggered it: {err}"
+        );
+        let vague = map_error_with_retry(429, "", None).unwrap();
+        assert!(vague.to_string().contains("try again shortly"));
+    }
+
+    #[test]
+    fn a_parked_endpoint_is_refused_without_a_request() {
+        let gate = RateLimitGate::default();
+        let key = gate_key("GET", "https://api.miniti.app/api/auth/account/devices?x=1");
+        assert_eq!(key, "GET /api/auth/account/devices");
+        let t0 = Instant::now();
+        assert_eq!(gate.remaining_secs(&key, t0), None, "clear by default");
+
+        assert_eq!(gate.park(&key, Some(30), t0), 30);
+        assert_eq!(gate.remaining_secs(&key, t0), Some(30));
+        // Another endpoint is unaffected.
+        assert_eq!(gate.remaining_secs(&gate_key("GET", "/api/usage"), t0), None);
+        // A later 429 never shortens an active park.
+        gate.park(&key, Some(5), t0);
+        assert_eq!(gate.remaining_secs(&key, t0), Some(30));
+        // The park expires on its own.
+        assert_eq!(gate.remaining_secs(&key, t0 + Duration::from_secs(31)), None);
+
+        // No header: the client's own minimum, and a silly value is clamped.
+        let other = gate_key("POST", "https://api.miniti.app/api/session");
+        assert_eq!(gate.park(&other, None, t0), MIN_RATE_LIMIT_BACKOFF.as_secs());
+        gate.clear(&other);
+        assert_eq!(
+            gate.park(&other, Some(86_400), t0),
+            MAX_RATE_LIMIT_BACKOFF.as_secs()
+        );
+        gate.clear(&other);
+        assert_eq!(gate.remaining_secs(&other, t0), None);
     }
 
     #[test]

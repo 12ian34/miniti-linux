@@ -24,7 +24,7 @@ use super::{
     format_recovery_key, generate_recovery_key, new_jti, parse_recovery_key, request_target,
     InstallationKey,
 };
-use crate::api::{endpoint_url, map_error, ApiError, HTTP_TIMEOUT, PLATFORM};
+use crate::api::{endpoint_url, ApiError, HTTP_TIMEOUT, PLATFORM};
 use crate::device_id::data_dir;
 use crate::prefs::AppMode;
 
@@ -499,11 +499,16 @@ impl AuthManager {
             .await
             .map_err(|e| ApiError::Network(e.to_string()))?;
         let status = resp.status().as_u16();
+        let retry_after = resp
+            .headers()
+            .get(reqwest::header::RETRY_AFTER)
+            .and_then(|v| v.to_str().ok())
+            .and_then(crate::api::parse_retry_after);
         let text = resp
             .text()
             .await
             .map_err(|e| ApiError::Network(e.to_string()))?;
-        if let Some(err) = map_error(status, &text) {
+        if let Some(err) = crate::api::map_error_with_retry(status, &text, retry_after) {
             return Err(err);
         }
         serde_json::from_str(&text).map_err(|e| ApiError::Decode(e.to_string()))
