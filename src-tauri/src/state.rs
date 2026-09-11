@@ -441,12 +441,36 @@ impl RecordingSession {
             }
         }));
 
-        // ---- Connection status → UI
+        // ---- Connection status → UI (and, opted in, to diagnostics)
         let status_app = app.clone();
         let status_slot = last_status.clone();
+        let status_meeting = meeting.id.clone();
         self.consumer_tasks
             .push(tauri::async_runtime::spawn(async move {
+                use crate::diagnostics::{self, Category, Level};
                 while let Some(st) = st_rx.recv().await {
+                    match &st {
+                        StreamStatus::Reconnecting { attempt, reason } => diagnostics::record(
+                            &status_app,
+                            "deepgram_reconnect_attempt",
+                            Level::Warn,
+                            Category::Transcription,
+                            Some(status_meeting.clone()),
+                            vec![
+                                ("attempt", attempt.to_string()),
+                                ("reason", diagnostics::reason_code(reason)),
+                            ],
+                        ),
+                        StreamStatus::Failed { reason } => diagnostics::record(
+                            &status_app,
+                            "deepgram_stream_failed",
+                            Level::Error,
+                            Category::Transcription,
+                            Some(status_meeting.clone()),
+                            vec![("reason", diagnostics::reason_code(reason))],
+                        ),
+                        _ => {}
+                    }
                     if let Ok(mut s) = status_slot.lock() {
                         *s = Some(st.clone());
                     }
@@ -504,7 +528,10 @@ impl RecordingSession {
             let mixer_for_sys = mixer.clone();
             let health = audio_health.clone();
             let stop_flag = self.reader_stop.clone();
+            let audio_app = app.clone();
+            let audio_meeting = meeting.id.clone();
             self.readers.push(std::thread::spawn(move || {
+                use crate::diagnostics::{self, Category, Level};
                 let mut handle = Some(handle);
                 let mut rx = sys_rx;
                 let mut failures = 0u32;
@@ -526,6 +553,14 @@ impl RecordingSession {
                             failures += 1;
                             if failures > SYSTEM_STALL_MAX_RESTARTS {
                                 set_health(&health, AudioHealth::Degraded);
+                                diagnostics::record(
+                                    &audio_app,
+                                    "audio_recovery_degraded",
+                                    Level::Error,
+                                    Category::Audio,
+                                    Some(audio_meeting.clone()),
+                                    vec![("attempts", failures.to_string())],
+                                );
                                 tracing::warn!("system audio stalled and could not be recovered; continuing with the microphone only");
                                 // Keep draining so the sender never blocks; no more restarts.
                                 match rx.recv() {
@@ -534,6 +569,14 @@ impl RecordingSession {
                                 }
                             }
                             set_health(&health, AudioHealth::Recovering);
+                            diagnostics::record(
+                                &audio_app,
+                                "audio_recovery_attempt",
+                                Level::Warn,
+                                Category::Audio,
+                                Some(audio_meeting.clone()),
+                                vec![("attempt", failures.to_string())],
+                            );
                             tracing::warn!("system audio stalled for {SYSTEM_STALL_TIMEOUT:?}; restarting capture (attempt {failures})");
                             if let Some(h) = handle.take() {
                                 h.stop();
@@ -544,6 +587,14 @@ impl RecordingSession {
                                     handle = Some(h);
                                     rx = new_rx;
                                     set_health(&health, AudioHealth::Healthy);
+                                    diagnostics::record(
+                                        &audio_app,
+                                        "audio_recovery_succeeded",
+                                        Level::Info,
+                                        Category::Audio,
+                                        Some(audio_meeting.clone()),
+                                        vec![("attempt", failures.to_string())],
+                                    );
                                     tracing::info!("system audio capture restarted");
                                 }
                                 Err(e) => {
@@ -915,7 +966,7 @@ impl AppState {
 
     /// Backend client. Construction never fails; authenticated calls return
     /// `ApiError::NotEnrolled` until the device has an account.
-    fn api_client(&self, prefs: &Prefs) -> Result<ApiClient, ApiError> {
+    pub(crate) fn api_client(&self, prefs: &Prefs) -> Result<ApiClient, ApiError> {
         Ok(ApiClient::new(
             api::DEFAULT_BASE_URL,
             HeaderContext {
@@ -927,11 +978,11 @@ impl AppState {
         ))
     }
 
-    fn enrolled(&self) -> bool {
+    pub(crate) fn enrolled(&self) -> bool {
         self.auth.is_enrolled()
     }
 
-    fn prefs_snapshot(&self) -> Result<Prefs, String> {
+    pub(crate) fn prefs_snapshot(&self) -> Result<Prefs, String> {
         Ok(self.prefs.lock().map_err(|_| "prefs poisoned")?.clone())
     }
 
@@ -1546,7 +1597,20 @@ pub async fn start_meeting(
     {
         return Err("already recording".into());
     }
-    let credential = resolve_credential(&state, &prefs).await?;
+    let credential = match resolve_credential(&state, &prefs).await {
+        Ok(c) => c,
+        Err(e) => {
+            crate::diagnostics::record(
+                &app,
+                "session_start_failed",
+                crate::diagnostics::Level::Error,
+                crate::diagnostics::Category::Auth,
+                None,
+                vec![("reason", crate::diagnostics::reason_code(&e))],
+            );
+            return Err(e);
+        }
+    };
     let engine_cfg = state.engine_config(&app, &prefs, "pending", true).await;
     let db = state.db.clone();
     let levels = state.levels.clone();
@@ -3211,6 +3275,7 @@ pub async fn auth_restore_account(
 /// out. Returns true when it moved, false when it was already on that account.
 #[tauri::command]
 pub async fn auth_attach_account(
+    app: AppHandle,
     state: State<'_, AppState>,
     recovery_key: String,
 ) -> Result<bool, String> {
@@ -3221,10 +3286,26 @@ pub async fn auth_attach_account(
         let canonical = crate::auth::parse_recovery_key(&recovery_key)
             .ok_or_else(|| ApiError::InvalidRecoveryKey.to_string())?;
         // A refused move must change nothing locally, so the server answers first.
-        let result = client
-            .auth_attach(&canonical)
-            .await
-            .map_err(|e| e.to_string())?;
+        let result = match client.auth_attach(&canonical).await {
+            Ok(r) => r,
+            Err(e) => {
+                // A device with no account cannot authenticate a report at
+                // all, so enrollment reporting covers the enrolled cases:
+                // moving this device, and a rotation that was refused.
+                crate::diagnostics::record(
+                    &app,
+                    "enrollment_failed",
+                    crate::diagnostics::Level::Error,
+                    crate::diagnostics::Category::Auth,
+                    None,
+                    vec![
+                        ("operation", "attach".into()),
+                        ("reason", crate::diagnostics::reason_code(&e.to_string())),
+                    ],
+                );
+                return Err(e.to_string());
+            }
+        };
         auth.apply_attach(
             &canonical,
             result.access_token,

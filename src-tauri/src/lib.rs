@@ -23,6 +23,7 @@ pub mod corrections;
 pub mod db;
 pub mod deepgram;
 pub mod device_id;
+pub mod diagnostics;
 pub mod export;
 pub mod gates;
 pub mod import;
@@ -252,6 +253,7 @@ pub fn run() {
             }
             state::spawn_signal_handler(app.handle().clone());
             state::spawn_keyring_retry(app.handle().clone());
+            diagnostics::spawn_flusher(app.handle().clone());
             Ok(())
         })
         .on_window_event(|window, event| {

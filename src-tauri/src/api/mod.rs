@@ -742,6 +742,14 @@ impl ApiClient {
         .await
     }
 
+    /// Structured client reliability events (never transcript or audio).
+    /// Batched by the caller; the backend rate limits to 30/min per device.
+    pub async fn post_client_events(&self, body: &serde_json::Value) -> Result<(), ApiError> {
+        self.post::<serde_json::Value>("api/client-events", body)
+            .await
+            .map(|_| ())
+    }
+
     // ---- Account (device-bound auth) ------------------------------------------
 
     pub async fn auth_devices(&self) -> Result<AuthDevices, ApiError> {

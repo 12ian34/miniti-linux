@@ -43,6 +43,8 @@ export interface Prefs {
   launch_at_login: boolean;
   /** Dictionary corrections: what was heard → what it should say. */
   dictionary_corrections: Correction[];
+  /** null = never chosen: on in managed mode, never in BYOK. */
+  share_diagnostics: boolean | null;
 }
 
 /** Smart-meeting decision shown on the floating surface / tray / in-app. */

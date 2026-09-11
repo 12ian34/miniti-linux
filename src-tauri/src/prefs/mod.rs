@@ -62,6 +62,10 @@ pub struct Prefs {
     pub launch_at_login: bool,
     /// Dictionary corrections (`heard` → `correct`), capped at 100.
     pub dictionary_corrections: Vec<crate::corrections::Correction>,
+    /// Share structured reliability events (`POST /api/client-events`).
+    /// `None` means the user never chose: on in managed mode, and never in
+    /// BYOK. An explicit `false` stays off.
+    pub share_diagnostics: Option<bool>,
 }
 
 impl Default for Prefs {
@@ -94,6 +98,7 @@ impl Default for Prefs {
             calendar_auto_stop: false,
             launch_at_login: false,
             dictionary_corrections: Vec::new(),
+            share_diagnostics: None,
         }
     }
 }
@@ -204,6 +209,18 @@ mod tests {
             Some("https://example.com/hook")
         );
         assert_eq!(loaded.accepted_terms_version.as_deref(), Some("1.0"));
+        assert_eq!(
+            loaded.share_diagnostics, None,
+            "a pref the user never chose stays unset, so the default can change"
+        );
+
+        // An explicit choice survives the round trip, including "off".
+        let off = Prefs {
+            share_diagnostics: Some(false),
+            ..Prefs::default()
+        };
+        off.save_to(&path).unwrap();
+        assert_eq!(Prefs::load_from(&path).share_diagnostics, Some(false));
 
         #[cfg(unix)]
         {

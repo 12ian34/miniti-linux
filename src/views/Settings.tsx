@@ -253,7 +253,7 @@ export function Settings() {
     { id: "mcp", dest: "docs", label: "Docs MCP URL", keywords: "docs mcp playbook documentation" },
     { id: "granola", dest: "data", label: "Granola import", keywords: "granola import csv" },
     { id: "export", dest: "data", label: "Markdown export folder", keywords: "export markdown folder" },
-    { id: "about", dest: "privacy", label: "Version & diagnostics", keywords: "version about diagnostics privacy terms support" },
+    { id: "about", dest: "privacy", label: "Version & diagnostics", keywords: "version about diagnostics privacy terms support share reliability events" },
     { id: "log", dest: "privacy", label: "Debug log", keywords: "debug log logs diagnostics report issue save copy" },
   ], []);
 
@@ -615,6 +615,16 @@ export function Settings() {
                 <button className="ghost" onClick={() => openUrl("https://github.com/12ian34/miniti-linux/issues")}>report an issue</button>
               </div>
               <p className="muted small">Transcripts and audio never leave the device except to Deepgram and, in managed mode, the miniti backend.</p>
+              <Toggle
+                label="Share diagnostics"
+                checked={prefs.app_mode === "managed" && (prefs.share_diagnostics ?? true)}
+                onChange={(v) => update("share_diagnostics", v)}
+              />
+              <p className="muted small">
+                Sends structured reliability events (errors, reconnects, health states) so problems
+                can be fixed. Never includes transcript or audio content.
+                {prefs.app_mode === "byok" && " Nothing is sent in BYOK mode."}
+              </p>
             </section>
           </C>
           <C highlight={highlight} id="log">
