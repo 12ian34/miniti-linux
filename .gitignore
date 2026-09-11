@@ -38,6 +38,11 @@ pnpm-debug.log*
 *.snap
 packaging/*.pkg.tar*
 packaging/*.tar.zst
+# makepkg leftovers next to the PKGBUILD
+packaging/omarchy-pkgs/*/pkg/
+packaging/omarchy-pkgs/*/src/
+packaging/omarchy-pkgs/*/*.pkg.tar*
+packaging/omarchy-pkgs/*/*.tar.gz
 *.deb
 *.rpm
 
