@@ -49,7 +49,7 @@ function metricValue(metric: CoachingMetric, s: CoachingSnapshot): number | null
 }
 
 const METRIC_LABEL: Record<CoachingMetric, string> = {
-  fillers: "fillers",
+  fillers: "detected fillers",
   pace: "pace",
   clarity: "clarity",
   questions: "questions",
@@ -58,7 +58,7 @@ const METRIC_LABEL: Record<CoachingMetric, string> = {
 };
 
 const METRIC_HELP: Record<CoachingMetric, string> = {
-  fillers: "Filler words per minute you spoke. Deepgram under-reports hesitations, so treat this as a floor.",
+  fillers: "Filler words detected per minute you spoke. Overlapping phrases count once (\u201Cuh huh\u201D is one filler, not an \u201Cuh\u201D as well), and Deepgram under-transcribes hesitations, so treat the number as a floor.",
   pace: "Your words per minute. 110–180 is a conversational range.",
   clarity: "Average words per turn. 5–20 keeps a point per turn.",
   questions: "Questions you asked per 30 minutes.",
@@ -115,7 +115,7 @@ export function Coaching() {
             <div className="table-wrap">
               <table className="table">
                 <thead>
-                  <tr><th>meeting</th><th>date</th><th>fillers</th><th>pace</th><th>questions</th><th>talk</th></tr>
+                  <tr><th>meeting</th><th>date</th><th>detected fillers</th><th>pace</th><th>questions</th><th>talk</th></tr>
                 </thead>
                 <tbody>
                   {overview.snapshots.map((s) => (
@@ -348,14 +348,14 @@ function MeetingStats({ metrics }: { metrics: TrainingMetrics }) {
           <div className="metric-grid">
             <Metric label="words" value={`${sp.word_count}`} />
             <Metric label="pace" value={`${Math.round(sp.words_per_minute)} wpm`} />
-            <Metric label="fillers" value={`${fmt1(sp.fillers_per_minute)} / min`} />
+            <Metric label="detected fillers" value={`${fmt1(sp.fillers_per_minute)} / min`} />
             <Metric label="questions" value={`${sp.questions_asked}`} />
             <Metric label="longest monologue" value={`${sp.longest_monologue_words} words`} />
             <Metric label="words / turn" value={fmt1(sp.avg_words_per_turn)} />
           </div>
           {sp.fillers.length > 0 && (
             <p className="muted">
-              top fillers: {sp.fillers.slice(0, 5).map((f) => `${f.word} ×${f.count}`).join(", ")}
+              most detected: {sp.fillers.slice(0, 5).map((f) => `${f.word} ×${f.count}`).join(", ")}
             </p>
           )}
         </section>

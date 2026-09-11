@@ -239,6 +239,10 @@ pub fn tokenize(text: &str) -> Vec<String> {
 }
 
 /// Count (possibly overlapping) occurrences of `phrase` in `tokens`.
+///
+/// Counting one phrase at a time double counts an overlap ("uh huh" is also an
+/// "uh"), so metrics use [`count_filler_occurrences`] instead; this stays for
+/// single-phrase questions where overlap cannot arise.
 pub fn count_phrase_occurrences(phrase: &[String], tokens: &[String]) -> usize {
     if phrase.is_empty() || tokens.len() < phrase.len() {
         return 0;
@@ -246,6 +250,79 @@ pub fn count_phrase_occurrences(phrase: &[String], tokens: &[String]) -> usize {
     (0..=tokens.len() - phrase.len())
         .filter(|&i| tokens[i..i + phrase.len()] == phrase[..])
         .count()
+}
+
+/// A configured filler phrase, tokenized once (port of the Swift phrase list).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FillerPhrase {
+    /// Tokens to match, in order.
+    pub tokens: Vec<String>,
+    /// The phrase as configured, used as the reported label.
+    pub label: String,
+}
+
+/// Tokenize the configured filler phrases, dropping any that tokenize to nothing.
+pub fn filler_phrases(fillers: &[String]) -> Vec<FillerPhrase> {
+    fillers
+        .iter()
+        .map(|p| FillerPhrase {
+            tokens: tokenize(p),
+            label: p.clone(),
+        })
+        .filter(|p| !p.tokens.is_empty())
+        .collect()
+}
+
+/// One longest-match, non-overlapping pass over `tokens` across every phrase
+/// (port of `TrainingMetrics.countFillerOccurrences`).
+///
+/// At each position the longest phrase that matches wins and the scan resumes
+/// after it, so "uh huh" counts once as "uh huh" and never also as "uh". The
+/// result is independent of the order phrases were configured in.
+pub fn count_filler_occurrences(
+    phrases: &[FillerPhrase],
+    tokens: &[String],
+) -> HashMap<String, usize> {
+    let mut counts: HashMap<String, usize> = HashMap::new();
+    if phrases.is_empty() || tokens.is_empty() {
+        return counts;
+    }
+    let mut i = 0usize;
+    while i < tokens.len() {
+        // Longest match at this position; ties (identical token runs configured
+        // under two labels) go to the label that sorts first, so the count does
+        // not depend on configuration order.
+        let mut best: Option<&FillerPhrase> = None;
+        for phrase in phrases {
+            if i + phrase.tokens.len() > tokens.len() {
+                continue;
+            }
+            if tokens[i..i + phrase.tokens.len()] != phrase.tokens[..] {
+                continue;
+            }
+            let better = match best {
+                None => true,
+                Some(b) => (phrase.tokens.len(), std::cmp::Reverse(&phrase.label))
+                    > (b.tokens.len(), std::cmp::Reverse(&b.label)),
+            };
+            if better {
+                best = Some(phrase);
+            }
+        }
+        match best {
+            Some(phrase) => {
+                *counts.entry(phrase.label.clone()).or_insert(0) += 1;
+                i += phrase.tokens.len();
+            }
+            None => i += 1,
+        }
+    }
+    counts
+}
+
+/// Total detected fillers in `tokens` under the non-overlapping rule.
+pub fn total_filler_occurrences(phrases: &[FillerPhrase], tokens: &[String]) -> usize {
+    count_filler_occurrences(phrases, tokens).values().sum()
 }
 
 /// Longest run of words by any speaker in `speakers` without interruption.
@@ -310,11 +387,7 @@ pub fn compute(
     };
     let duration_minutes = (effective_seconds / 60.0).max(0.01);
 
-    let filler_phrases: Vec<(Vec<String>, String)> = fillers
-        .iter()
-        .map(|p| (tokenize(p), p.clone()))
-        .filter(|(t, _)| !t.is_empty())
-        .collect();
+    let phrases = filler_phrases(fillers);
 
     let mut grouped: BTreeMap<Group, Vec<&Segment>> = BTreeMap::new();
     for seg in &finals {
@@ -344,11 +417,8 @@ pub fn compute(
             let tokens = tokenize(&seg.text);
             word_count += tokens.len();
             questions += seg.text.chars().filter(|c| *c == '?').count();
-            for (phrase, label) in &filler_phrases {
-                let n = count_phrase_occurrences(phrase, &tokens);
-                if n > 0 {
-                    *filler_map.entry(label.clone()).or_insert(0) += n;
-                }
+            for (label, n) in count_filler_occurrences(&phrases, &tokens) {
+                *filler_map.entry(label).or_insert(0) += n;
             }
         }
         total_words_all += word_count;
@@ -605,11 +675,11 @@ fn copy_for(metric: CoachingMetric, value: f64) -> (&'static str, &'static str, 
         CoachingMetric::Fillers => {
             if value <= 3.0 {
                 ("Your pauses are working",
-                 "Filler use is low enough that your ideas can carry the emphasis.",
+                 "Detected filler use is low enough that your ideas can carry the emphasis. The count is a floor: transcription misses some hesitations.",
                  "Keep using a quiet beat before an important answer instead of rushing to fill it.")
             } else {
                 ("Make pauses do the work",
-                 "Fillers are softening otherwise clear delivery.",
+                 "Detected fillers are softening otherwise clear delivery, and the count is a floor: transcription misses some hesitations.",
                  "Choose one filler to notice next meeting. When it arrives, replace only that word with one silent breath.")
             }
         }
@@ -851,10 +921,78 @@ mod tests {
         assert_eq!(count_phrase_occurrences(&tokenize("you know"), &t), 2);
         assert_eq!(count_phrase_occurrences(&tokenize("i mean"), &t), 1);
         assert_eq!(count_phrase_occurrences(&tokenize("nope"), &t), 0);
-        // Overlap is counted independently, as in the Swift implementation.
+        // Per-phrase counting sees the overlap; the metric pass below does not.
         let t2 = tokenize("uh huh");
         assert_eq!(count_phrase_occurrences(&tokenize("uh"), &t2), 1);
         assert_eq!(count_phrase_occurrences(&tokenize("uh huh"), &t2), 1);
+    }
+
+    fn phrases(list: &[&str]) -> Vec<FillerPhrase> {
+        filler_phrases(&list.iter().map(|s| s.to_string()).collect::<Vec<_>>())
+    }
+
+    #[test]
+    fn filler_pass_prefers_the_longest_phrase_and_never_double_counts() {
+        let p = phrases(&["uh", "uh huh"]);
+        let counts = count_filler_occurrences(&p, &tokenize("uh huh"));
+        assert_eq!(counts.get("uh huh"), Some(&1));
+        assert_eq!(counts.get("uh"), None, "the overlap is not also an 'uh'");
+        assert_eq!(total_filler_occurrences(&p, &tokenize("uh huh")), 1);
+    }
+
+    #[test]
+    fn filler_pass_is_independent_of_phrase_order() {
+        let text = tokenize("uh huh, uh, you know, you know what I mean");
+        let a = count_filler_occurrences(&phrases(&["uh", "uh huh", "you know"]), &text);
+        let b = count_filler_occurrences(&phrases(&["you know", "uh huh", "uh"]), &text);
+        assert_eq!(a, b);
+        assert_eq!(a.get("uh huh"), Some(&1));
+        assert_eq!(a.get("uh"), Some(&1));
+        assert_eq!(a.get("you know"), Some(&2));
+    }
+
+    #[test]
+    fn filler_pass_counts_repeated_adjacent_fillers() {
+        let p = phrases(&["um", "uh"]);
+        assert_eq!(total_filler_occurrences(&p, &tokenize("um um um uh")), 4);
+        // A longer phrase consumes its tokens; the scan resumes after it.
+        let p2 = phrases(&["uh", "uh huh"]);
+        let counts = count_filler_occurrences(&p2, &tokenize("uh uh huh uh"));
+        assert_eq!(counts.get("uh"), Some(&2));
+        assert_eq!(counts.get("uh huh"), Some(&1));
+    }
+
+    #[test]
+    fn filler_pass_shares_the_tokenizer_for_hyphenated_and_spanish_phrases() {
+        // The tokenizer turns a hyphen into a break, so a hyphenated phrase
+        // matches the hyphenated and the spaced spelling alike.
+        let p = phrases(&["you-know"]);
+        assert_eq!(p[0].tokens, vec!["you", "know"]);
+        assert_eq!(total_filler_occurrences(&p, &tokenize("well, you know…")), 1);
+        assert_eq!(total_filler_occurrences(&p, &tokenize("you-know")), 1);
+
+        let es = phrases(&default_fillers("es").iter().copied().collect::<Vec<_>>());
+        assert!(
+            total_filler_occurrences(&es, &tokenize("este, o sea, bueno")) >= 2,
+            "Spanish defaults match through the shared tokenizer"
+        );
+    }
+
+    #[test]
+    fn filler_pass_handles_empty_inputs() {
+        assert!(count_filler_occurrences(&[], &tokenize("um uh")).is_empty());
+        assert!(count_filler_occurrences(&phrases(&["um"]), &[]).is_empty());
+        // A phrase that tokenizes to nothing is dropped rather than matched.
+        assert!(phrases(&["   ", "!!"]).is_empty());
+    }
+
+    #[test]
+    fn metrics_use_the_non_overlapping_pass() {
+        let segs = vec![seg(1000, "uh huh, uh, right", 0.0), seg(0, "ok", 60.0)];
+        let fillers: Vec<String> = ["uh", "uh huh"].iter().map(|s| s.to_string()).collect();
+        let m = compute(&segs, 60.0, &fillers, None, None);
+        let you = &m.speakers[0];
+        assert_eq!(you.total_fillers, 2, "uh huh + uh, not three");
     }
 
     #[test]

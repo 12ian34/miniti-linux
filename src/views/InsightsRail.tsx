@@ -442,7 +442,7 @@ function SpeakerCard({ s }: { s: TrainingMetrics["speakers"][number] }) {
     <div className="panel">
       <div className="panel-title">{s.speaker_label}</div>
       <div className="metric-rows">
-        <MetricRow k="fillers" v={`${fmt1(s.fillers_per_minute)} / min`} color="var(--coach-fillers)" />
+        <MetricRow k="detected fillers" v={`${fmt1(s.fillers_per_minute)} / min`} color="var(--coach-fillers)" />
         <MetricRow k="pace" v={`${Math.round(s.words_per_minute)} wpm`} color="var(--coach-pace)" />
         <MetricRow k="clarity" v={`${fmt1(s.avg_words_per_turn)} words / turn`} color="var(--coach-clarity)" />
         <MetricRow k="questions" v={`${s.questions_asked}`} color="var(--coach-questions)" />

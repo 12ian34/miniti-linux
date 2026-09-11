@@ -2122,11 +2122,7 @@ fn evaluate_live_guidance(app: &AppHandle, prefs: &Prefs, meeting_id: &str, elap
     use crate::smart::YouSegment;
     let state = app.state::<AppState>();
     let fillers = state.fillers(prefs);
-    let filler_tokens: Vec<Vec<String>> = fillers
-        .iter()
-        .map(|f| coaching::tokenize(f))
-        .filter(|t| !t.is_empty())
-        .collect();
+    let filler_phrases = coaching::filler_phrases(&fillers);
     let (meeting, segments) = {
         let Ok(conn) = state.db.lock() else { return };
         let Ok(Some(meeting)) = db::get_meeting(&conn, meeting_id) else {
@@ -2147,10 +2143,7 @@ fn evaluate_live_guidance(app: &AppHandle, prefs: &Prefs, meeting_id: &str, elap
         .filter(|(_, s)| self_ids.contains(&s.speaker))
         .map(|(i, s)| {
             let toks = coaching::tokenize(&s.text);
-            let fillers = filler_tokens
-                .iter()
-                .map(|p| coaching::count_phrase_occurrences(p, &toks))
-                .sum();
+            let fillers = coaching::total_filler_occurrences(&filler_phrases, &toks);
             (
                 i,
                 YouSegment {
