@@ -124,11 +124,11 @@ it.
 | Live insights: Summary, Questions, Coaching, Sales (MEDDPICC), Playbook (Docs MCP) | Yes | Same cadence and prompts as macOS |
 | Catch me up, Investigate (web and codebase), automatic speaker naming | Yes | |
 | History: search, pin, rename speakers, mark as you, trim, delete, notes | Yes | |
-| Export: Markdown, copy transcript, webhooks, Granola CSV import | Yes | |
-| Google Calendar, Attio, Twenty | Yes | OAuth completes in the browser and returns through a `miniti-*` URL scheme |
+| Export: Markdown, copy transcript, webhooks, Granola CSV import | Yes | A webhook URL must be https (or a loopback host for a hook on this machine) |
+| Google Calendar, Attio, Twenty | Yes | OAuth completes in the browser and returns through a `miniti-*` URL scheme; which calendar entries count as meetings is adjustable, with a preview |
 | Smart meetings (quiet prompts, calendar handoff, call detection) | Yes | Call detection is PipeWire-client based; browsers are a weaker signal than native apps |
 | Tray icon with timer, floating recording surface, desktop notifications | Yes | Surface never takes focus; on Wayland it pins itself via layer-shell where supported (Hyprland, Sway, KDE), GNOME decides placement |
-| Pro via Polar, license-key restore, BYOK, usage banner and limit view | Yes | |
+| Pro via Polar, license-key restore, BYOK, usage banner and limit view | Yes | Pro follows the account: a subscription on any device covers the rest |
 | Interface scale (compact / standard / large), debug log viewer | Yes | |
 | Coaching charts and grounded examples | Yes | Trend chart per metric; clickable passages from recent meetings |
 | Templates view (BANT, SPIN, interview, check-in, stand-up, 1:1) | Yes | Live, on demand, on saved meetings; in exports and webhooks |
