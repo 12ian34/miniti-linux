@@ -27,6 +27,9 @@ pub const SHORT_SESSION_MIN_DURATION: Duration = Duration::from_secs(60);
 pub const ENDING_GRACE: Duration = Duration::from_secs(10);
 pub const KEEP_RECORDING_SUPPRESSION: Duration = Duration::from_secs(300);
 pub const CALENDAR_SNOOZE: Duration = Duration::from_secs(120);
+/// How long a start that expects its own call waits for that call to appear
+/// before a new call is treated as a different meeting again.
+pub const EXPECTED_CALL_WINDOW: Duration = Duration::from_secs(300);
 pub const HANDOFF_COUNTDOWN: u64 = 15;
 pub const QUESTION_NUDGE_MIN_INTERVAL: Duration = Duration::from_secs(120);
 pub const MONOLOGUE_NUDGE_MIN_INTERVAL: Duration = Duration::from_secs(180);
@@ -210,6 +213,14 @@ pub struct LifecycleContext {
 
 #[derive(Debug, Default)]
 pub struct CallLifecycleEngine {
+    /// A start that expects its own call (a calendar event with a conference
+    /// link, or a join link the user opened) arms this window. The first
+    /// recognised call to appear inside it is adopted as the recording's own
+    /// call instead of prompting "New meeting detected".
+    expected_call_until: Option<Instant>,
+    /// Calls already running when the recording started: those follow the old
+    /// rules, since they were not the call this start was waiting for.
+    calls_active_at_start: HashSet<String>,
     start_candidate: Option<(ActiveCall, Instant)>,
     prompted_start_id: Option<String>,
     suppressed_start_id: Option<String>,
@@ -238,11 +249,20 @@ impl CallLifecycleEngine {
         }
     }
 
+    /// Arm the expected-call window: this start is for a call that has not
+    /// appeared yet. Called before the recording registers with the engine,
+    /// because a managed start is asynchronous and the link opens first, so
+    /// `note_recording_started` deliberately leaves the window alone.
+    pub fn expect_call(&mut self, now: Instant) {
+        self.expected_call_until = Some(now + EXPECTED_CALL_WINDOW);
+    }
+
     pub fn note_recording_started(
         &mut self,
         active: &[ActiveCall],
         from_prompt: Option<ActiveCall>,
     ) {
+        self.calls_active_at_start = active.iter().map(|a| a.id.clone()).collect();
         self.end_candidate_since = None;
         self.has_observed_associated_active = false;
         self.transition_candidates.clear();
@@ -259,6 +279,8 @@ impl CallLifecycleEngine {
     }
 
     pub fn note_recording_ended(&mut self) {
+        self.expected_call_until = None;
+        self.calls_active_at_start.clear();
         self.associated_app = None;
         self.has_observed_associated_active = false;
         self.end_candidate_since = None;
@@ -350,9 +372,22 @@ impl CallLifecycleEngine {
         {
             match self.transition_candidates.get(&app.id) {
                 Some(since) => {
-                    if now.duration_since(*since) >= START_DEBOUNCE
-                        && !self.offered_transition_ids.contains(&app.id)
-                    {
+                    if now.duration_since(*since) < START_DEBOUNCE {
+                        continue;
+                    }
+                    // The call this start was waiting for: adopt it as the
+                    // recording's own rather than asking whether this is a new
+                    // meeting. From here it behaves like any association, so
+                    // hanging up runs the normal ending grace.
+                    if self.adopts_expected_call(&app.id, now) {
+                        tracing::info!("call lifecycle: adopted {} as the expected call", app.id);
+                        self.expected_call_until = None;
+                        self.has_observed_associated_active = true;
+                        self.associated_app = Some(app.clone());
+                        self.transition_candidates.remove(&app.id);
+                        continue;
+                    }
+                    if !self.offered_transition_ids.contains(&app.id) {
                         self.offered_transition_ids.insert(app.id.clone());
                         events.push(LifecycleEvent::OfferTransition(app.clone()));
                     }
@@ -363,6 +398,15 @@ impl CallLifecycleEngine {
             }
         }
         events
+    }
+
+    /// True when `id` is the call the current start was waiting for: the
+    /// window is still open, nothing is associated yet, and the call was not
+    /// already running when the recording started.
+    fn adopts_expected_call(&self, id: &str, now: Instant) -> bool {
+        self.associated_app.is_none()
+            && self.expected_call_until.is_some_and(|until| now < until)
+            && !self.calls_active_at_start.contains(id)
     }
 
     fn ingest_idle(&mut self, snapshot: &CallSnapshot) -> Vec<LifecycleEvent> {
@@ -705,6 +749,13 @@ impl MonitorState {
     /// A new meeting starts: links may be opened again for its event.
     pub fn reset_join_guard(&mut self) {
         self.opened_join_event_ids.clear();
+    }
+
+    /// This start expects its own call (a calendar event with a conference
+    /// link, or a join link the user opened): the first call to appear within
+    /// the window is the recording's own, not a new meeting.
+    pub fn expect_call(&mut self, now: Instant) {
+        self.engine.expect_call(now);
     }
 
     pub fn clear_prompt(&mut self, app: &AppHandle) {
@@ -1831,6 +1882,154 @@ mod tests {
                 ctx(true, 0.0)
             )
             .is_empty());
+    }
+
+    // Pressing Join starts notes first and opens the browser afterwards, so
+    // the call appears a few seconds into the recording. Without an
+    // expectation it was treated as a different meeting ("New meeting
+    // detected. End the current meeting and start a new one?").
+    #[test]
+    fn an_expected_call_is_adopted_instead_of_prompting() {
+        let mut e = CallLifecycleEngine::default();
+        let t0 = Instant::now();
+        e.expect_call(t0);
+        e.note_recording_started(&[], None);
+        assert!(e.associated_app.is_none(), "nothing to associate yet");
+        // The browser joins five seconds later; the first tick starts the debounce.
+        assert!(e
+            .ingest(
+                &snap(vec![call("firefox", true)], t0 + Duration::from_secs(5)),
+                ctx(true, 0.0)
+            )
+            .is_empty());
+        let evs = e.ingest(
+            &snap(vec![call("firefox", true)], t0 + Duration::from_secs(8)),
+            ctx(true, 0.0),
+        );
+        assert!(evs.is_empty(), "adopted, not offered as a transition");
+        assert_eq!(
+            e.associated_app.as_ref().map(|a| a.id.as_str()),
+            Some("firefox")
+        );
+        // From here it is an ordinary association: hanging up runs the grace.
+        e.ingest(
+            &snap(vec![], t0 + Duration::from_secs(9)),
+            ctx(true, 1.0),
+        );
+        let evs = e.ingest(
+            &snap(vec![], t0 + Duration::from_secs(20)),
+            ctx(true, 15.0),
+        );
+        assert_eq!(
+            evs,
+            vec![LifecycleEvent::BeginEndingGrace {
+                app: call("firefox", true),
+                ask_only: false
+            }]
+        );
+    }
+
+    #[test]
+    fn the_expectation_survives_an_asynchronous_start() {
+        // The link opens before the recording registers with the engine.
+        let mut e = CallLifecycleEngine::default();
+        let t0 = Instant::now();
+        e.expect_call(t0);
+        e.note_recording_started(&[], None);
+        e.ingest(
+            &snap(vec![call("zoom", false)], t0 + Duration::from_secs(30)),
+            ctx(true, 0.0),
+        );
+        let evs = e.ingest(
+            &snap(vec![call("zoom", false)], t0 + Duration::from_secs(33)),
+            ctx(true, 0.0),
+        );
+        assert!(evs.is_empty());
+        assert_eq!(e.associated_app.as_ref().map(|a| a.id.as_str()), Some("zoom"));
+    }
+
+    #[test]
+    fn a_call_after_the_window_is_a_transition_again() {
+        let mut e = CallLifecycleEngine::default();
+        let t0 = Instant::now();
+        e.expect_call(t0);
+        e.note_recording_started(&[], None);
+        let late = t0 + EXPECTED_CALL_WINDOW + Duration::from_secs(10);
+        e.ingest(&snap(vec![call("zoom", false)], late), ctx(true, 0.0));
+        let evs = e.ingest(
+            &snap(vec![call("zoom", false)], late + Duration::from_secs(3)),
+            ctx(true, 0.0),
+        );
+        assert_eq!(
+            evs,
+            vec![LifecycleEvent::OfferTransition(call("zoom", false))]
+        );
+        assert!(e.associated_app.is_none());
+    }
+
+    #[test]
+    fn no_adoption_when_an_association_already_exists() {
+        let mut e = CallLifecycleEngine::default();
+        let t0 = Instant::now();
+        e.expect_call(t0);
+        // A call already running at start is associated the usual way, and a
+        // second call is still a transition even inside the window.
+        e.note_recording_started(&[call("zoom", false)], None);
+        assert_eq!(e.associated_app.as_ref().map(|a| a.id.as_str()), Some("zoom"));
+        e.ingest(
+            &snap(vec![call("zoom", false), call("teams", false)], t0),
+            ctx(true, 0.0),
+        );
+        let evs = e.ingest(
+            &snap(
+                vec![call("zoom", false), call("teams", false)],
+                t0 + Duration::from_secs(3),
+            ),
+            ctx(true, 0.0),
+        );
+        assert_eq!(
+            evs,
+            vec![LifecycleEvent::OfferTransition(call("teams", false))]
+        );
+
+        // Two calls already running at start: neither is the expected one, so
+        // they keep the old behaviour even though nothing is associated.
+        let mut e = CallLifecycleEngine::default();
+        e.expect_call(t0);
+        e.note_recording_started(&[call("zoom", false), call("teams", false)], None);
+        assert!(e.associated_app.is_none(), "ambiguous: nothing associated");
+        e.ingest(
+            &snap(vec![call("zoom", false), call("teams", false)], t0),
+            ctx(true, 0.0),
+        );
+        let evs = e.ingest(
+            &snap(
+                vec![call("zoom", false), call("teams", false)],
+                t0 + Duration::from_secs(3),
+            ),
+            ctx(true, 0.0),
+        );
+        assert_eq!(evs.len(), 2, "both are offered as transitions");
+        assert!(e.associated_app.is_none());
+    }
+
+    #[test]
+    fn a_start_that_expects_nothing_still_prompts() {
+        let mut e = CallLifecycleEngine::default();
+        let t0 = Instant::now();
+        e.note_recording_started(&[], None);
+        e.ingest(
+            &snap(vec![call("zoom", false)], t0 + Duration::from_secs(5)),
+            ctx(true, 0.0),
+        );
+        let evs = e.ingest(
+            &snap(vec![call("zoom", false)], t0 + Duration::from_secs(8)),
+            ctx(true, 0.0),
+        );
+        assert_eq!(
+            evs,
+            vec![LifecycleEvent::OfferTransition(call("zoom", false))]
+        );
     }
 
     #[test]

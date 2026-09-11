@@ -971,7 +971,7 @@ mod tests {
         assert_eq!(total_filler_occurrences(&p, &tokenize("well, you know…")), 1);
         assert_eq!(total_filler_occurrences(&p, &tokenize("you-know")), 1);
 
-        let es = phrases(&default_fillers("es").iter().copied().collect::<Vec<_>>());
+        let es = phrases(&default_fillers("es"));
         assert!(
             total_filler_occurrences(&es, &tokenize("este, o sea, bueno")) >= 2,
             "Spanish defaults match through the shared tokenizer"

@@ -1962,6 +1962,13 @@ async fn start_from_event(
     state: &State<'_, AppState>,
     event: &crate::integrations::CalendarEvent,
 ) -> Result<String, String> {
+    // An event with a conference link expects its call: the browser or the
+    // call app joins a few seconds after the notes start, and that call is
+    // this meeting's, not a new one. Armed before the start because a managed
+    // start is asynchronous and the call can appear before it completes.
+    if event.join_url().is_some() {
+        expect_call(app);
+    }
     let notes = {
         let conn = state.db.lock().map_err(|_| "db poisoned")?;
         db::get_prep_notes(&conn, &event.id).unwrap_or_default()
@@ -1980,6 +1987,16 @@ async fn start_from_event(
     .await
 }
 
+/// Arm the call-lifecycle expectation for a start that opens (or follows) a
+/// call link.
+fn expect_call(app: &AppHandle) {
+    if let Some(slot) = crate::smart::slot(app) {
+        if let Ok(mut m) = slot.lock() {
+            m.expect_call(Instant::now());
+        }
+    }
+}
+
 /// Open the call link for an event, once per event per meeting start, and
 /// never from a timer: only an explicit "join" reaches here.
 fn open_join_link(app: &AppHandle, event: &crate::integrations::CalendarEvent) {
@@ -1992,7 +2009,11 @@ fn open_join_link(app: &AppHandle, event: &crate::integrations::CalendarEvent) {
         return;
     }
     match tauri_plugin_opener::open_url(&url, None::<&str>) {
-        Ok(()) => tracing::info!("opened join link for {}", event.id),
+        Ok(()) => {
+            // The call the user is joining belongs to this recording.
+            expect_call(app);
+            tracing::info!("opened join link for {}", event.id)
+        }
         Err(e) => {
             tracing::warn!("could not open the join link: {e}");
             crate::shell::notify(app, "miniti", &format!("Could not open the call link: {e}"));
@@ -2024,7 +2045,11 @@ pub async fn join_and_start_from_event(
 /// Live header "join call": open the link of the meeting's event again (a
 /// dropped call); starts nothing.
 #[tauri::command]
-pub fn open_meeting_join_link(state: State<AppState>, meeting_id: String) -> Result<(), String> {
+pub fn open_meeting_join_link(
+    app: AppHandle,
+    state: State<AppState>,
+    meeting_id: String,
+) -> Result<(), String> {
     let url = {
         let conn = state.db.lock().map_err(|_| "db poisoned")?;
         db::get_meeting(&conn, &meeting_id)
@@ -2035,7 +2060,10 @@ pub fn open_meeting_join_link(state: State<AppState>, meeting_id: String) -> Res
     if !url.starts_with("https://") {
         return Err("only https links are opened".into());
     }
-    tauri_plugin_opener::open_url(&url, None::<&str>).map_err(|e| e.to_string())
+    tauri_plugin_opener::open_url(&url, None::<&str>).map_err(|e| e.to_string())?;
+    // Rejoining a dropped call: when it comes back it is this meeting's call.
+    expect_call(&app);
+    Ok(())
 }
 
 /// Once a second while recording: what kind of meeting is this? A call app on
