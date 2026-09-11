@@ -5,6 +5,7 @@ import type {
   CatchUp,
   CoachingOverview,
   Correction,
+  CorrectionOutcome,
   OmarchyStatus,
   CrmProvider,
   CrmRecord,
@@ -130,9 +131,13 @@ export const setPinned = (id: string, pinned: boolean) =>
 export const setNotes = (id: string, notes: string) => invoke<void>("set_notes", { id, notes });
 export const setMeetingTitle = (id: string, title: string) =>
   invoke<void>("set_meeting_title", { id, title });
-/** Add or replace a dictionary correction; optionally rewrite one meeting's saved transcript. */
+/**
+ * Add or replace a dictionary correction; optionally rewrite one meeting's
+ * saved transcript. A refused save comes back as `saved: false` with the
+ * reason, not as an error: the editor stays open and shows it.
+ */
 export const addCorrection = (heard: string, correct: string, meetingId: string | null, fixEarlier: boolean) =>
-  invoke<Correction[]>("add_correction", { heard, correct, meetingId, fixEarlier });
+  invoke<CorrectionOutcome>("add_correction", { heard, correct, meetingId, fixEarlier });
 export const removeCorrection = (heard: string) => invoke<Correction[]>("remove_correction", { heard });
 /** A meeting's saved transcript was rewritten by a correction; reload it. */
 export function onTranscriptCorrected(handler: (meetingId: string) => void): Promise<UnlistenFn> {

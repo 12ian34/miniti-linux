@@ -73,6 +73,16 @@ export interface Correction {
   correct: string;
 }
 
+/** What the correction editor should say after a save attempt. */
+export interface CorrectionOutcome {
+  saved: boolean;
+  corrections: Correction[];
+  /** Earlier mentions rewritten in this meeting; null when not asked for. */
+  earlier_matches: number | null;
+  /** Why the editor is still open, if it is. */
+  message: string | null;
+}
+
 export interface RecordingNudge {
   id: string;
   kind: NudgeKind;

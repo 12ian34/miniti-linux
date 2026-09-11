@@ -1275,6 +1275,9 @@ pub fn set_prefs(state: State<AppState>, prefs: Prefs) -> Result<(), String> {
 /// Add (or replace) a dictionary correction. With `meeting_id` and
 /// `fix_earlier`, rewrite that meeting's saved segments too; the UI reloads
 /// the transcript on `transcript_corrected`. Insights are never cleared.
+///
+/// A refused save is an outcome, not an error: the editor stays open and says
+/// why, instead of closing as though the fix had been applied.
 #[tauri::command]
 pub fn add_correction(
     app: AppHandle,
@@ -1283,18 +1286,30 @@ pub fn add_correction(
     correct: String,
     meeting_id: Option<String>,
     fix_earlier: bool,
-) -> Result<Vec<crate::corrections::Correction>, String> {
-    use crate::corrections::{Corrector, Upsert};
+) -> Result<crate::corrections::CorrectionOutcome, String> {
+    use crate::corrections::{CorrectionOutcome, Corrector, Upsert};
     let list = {
         let mut prefs = state.prefs.lock().map_err(|_| "prefs poisoned")?;
         match crate::corrections::upsert(&mut prefs.dictionary_corrections, &heard, &correct) {
             Upsert::Added | Upsert::Replaced => {}
-            Upsert::Invalid(why) => return Err(why.to_string()),
+            Upsert::Invalid(why) => {
+                return Ok(CorrectionOutcome {
+                    saved: false,
+                    corrections: prefs.dictionary_corrections.clone(),
+                    earlier_matches: None,
+                    message: Some(why.to_string()),
+                })
+            }
             Upsert::Full => {
-                return Err(format!(
-                    "the dictionary holds {} corrections; remove one first",
-                    crate::corrections::CAP
-                ))
+                return Ok(CorrectionOutcome {
+                    saved: false,
+                    corrections: prefs.dictionary_corrections.clone(),
+                    earlier_matches: None,
+                    message: Some(format!(
+                        "the dictionary already holds {} corrections. remove one first",
+                        crate::corrections::CAP
+                    )),
+                })
             }
         }
         // The corrected spelling is also a keyterm for the next connect.
@@ -1308,6 +1323,7 @@ pub fn add_correction(
     if let Ok(mut c) = state.corrector.write() {
         *c = Corrector::new(&list);
     }
+    let mut earlier_matches = None;
     if let (Some(id), true) = (meeting_id, fix_earlier) {
         let one = Corrector::new(&[crate::corrections::Correction {
             heard: crate::corrections::normalize_heard(&heard),
@@ -1320,6 +1336,9 @@ pub fn add_correction(
             for s in &segments {
                 let (text, did) = one.apply(&s.text);
                 if did {
+                    // Written through at once, so a meeting corrected from the
+                    // stopped screen carries the fix into its export, its
+                    // Markdown and any webhook resend even if the app quits here.
                     db::set_segment_text(&conn, &s.id, &text).map_err(|e| e.to_string())?;
                     changed += 1;
                 }
@@ -1328,9 +1347,22 @@ pub fn add_correction(
             if changed > 0 {
                 let _ = app.emit("transcript_corrected", &id);
             }
+            earlier_matches = Some(changed);
         }
     }
-    Ok(list)
+    let message = match earlier_matches {
+        Some(0) => Some(format!(
+            "saved for new mentions. no earlier \u{201c}{}\u{201d} matched in this transcript",
+            crate::corrections::normalize_heard(&heard)
+        )),
+        _ => None,
+    };
+    Ok(CorrectionOutcome {
+        saved: true,
+        corrections: list,
+        earlier_matches,
+        message,
+    })
 }
 
 #[tauri::command]

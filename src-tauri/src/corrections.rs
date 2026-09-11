@@ -50,6 +50,9 @@ fn collapse(s: &str) -> String {
 
 /// Add or replace a pair, deduplicated by the heard side.
 pub fn upsert(list: &mut Vec<Correction>, heard: &str, correct: &str) -> Upsert {
+    // The heard side as typed, for the identity test only; it is stored
+    // lowercased because Deepgram lowercases the find term.
+    let typed = collapse(heard);
     let heard = normalize_heard(heard);
     let correct = normalize_correct(correct);
     if heard.is_empty() || correct.is_empty() {
@@ -58,10 +61,14 @@ pub fn upsert(list: &mut Vec<Correction>, heard: &str, correct: &str) -> Upsert 
     if heard.chars().count() > MAX_HEARD_CHARS {
         return Upsert::Invalid("that is too long for a dictionary term");
     }
-    // A case-only change ("lightdash" → "Lightdash") is a real correction:
-    // Deepgram lowercases the find term, and brand casing is what people fix.
-    if heard == correct {
-        return Upsert::Invalid("heard and corrected are the same word");
+    // Only an exactly identical pair is rejected. A capitals-only fix
+    // ("lightdash" → "Lightdash", or "Lightdash" → "lightdash") is a real
+    // correction: the matcher is case-insensitive and both the local rewrite
+    // and Deepgram's `replace` keep the replacement's case.
+    if typed == correct {
+        return Upsert::Invalid(
+            "that is the same word. type the spelling you want, capitals included",
+        );
     }
     if let Some(existing) = list.iter_mut().find(|c| c.heard == heard) {
         existing.correct = correct;
@@ -72,6 +79,22 @@ pub fn upsert(list: &mut Vec<Correction>, heard: &str, correct: &str) -> Upsert 
     }
     list.push(Correction { heard, correct });
     Upsert::Added
+}
+
+/// What the editor should say after a save (port of Apple's
+/// `AppState.DictionaryCorrectionOutcome`). A save that is refused, or that
+/// matched nothing earlier in the transcript, leaves the editor open with
+/// `message` rather than closing silently.
+#[derive(Debug, Clone, Serialize)]
+pub struct CorrectionOutcome {
+    /// True when the pair is now in the dictionary.
+    pub saved: bool,
+    /// The dictionary after the attempt (unchanged when `saved` is false).
+    pub corrections: Vec<Correction>,
+    /// Earlier mentions rewritten in this meeting; `None` when not asked for.
+    pub earlier_matches: Option<usize>,
+    /// Why the editor is still open, if it is.
+    pub message: Option<String>,
 }
 
 pub fn remove(list: &mut Vec<Correction>, heard: &str) -> bool {
@@ -182,16 +205,21 @@ mod tests {
         assert_eq!(v[0].correct, "LightDash");
         assert!(matches!(upsert(&mut v, "", "x"), Upsert::Invalid(_)));
         assert!(matches!(upsert(&mut v, "same", "same"), Upsert::Invalid(_)));
+        assert!(matches!(upsert(&mut v, " Same  ", "Same"), Upsert::Invalid(_)), "whitespace only");
+        // Capitals-only fixes are real corrections, in both directions.
         assert!(matches!(upsert(&mut v, "lightdash", "Lightdash"), Upsert::Added));
+        assert!(matches!(upsert(&mut v, "Datadog", "datadog"), Upsert::Added));
+        assert_eq!(v.last().unwrap().heard, "datadog");
+        assert_eq!(v.last().unwrap().correct, "datadog");
         assert!(matches!(upsert(&mut v, "a:b", "c:d"), Upsert::Added));
-        assert_eq!(v[2].heard, "ab");
-        assert_eq!(v[2].correct, "cd");
+        let colons = v.iter().find(|c| c.heard == "ab").expect("colons are dropped");
+        assert_eq!(colons.correct, "cd");
         for i in 0..CAP {
             let _ = upsert(&mut v, &format!("w{i}"), "x");
         }
         assert_eq!(v.len(), CAP);
         assert_eq!(upsert(&mut v, "one more", "x"), Upsert::Full);
-        assert!(remove(&mut v, "AB"));
+        assert!(remove(&mut v, "AB"), "remove is case-insensitive");
         assert!(!remove(&mut v, "ab"));
         assert_eq!(deepgram_replace_items(&list(&[("acme corp", "Acme")]))[0], "acme corp:Acme");
     }

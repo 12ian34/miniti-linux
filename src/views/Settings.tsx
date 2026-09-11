@@ -834,8 +834,10 @@ function CorrectionsEditor({ list, onChange }: { list: Correction[]; onChange: (
   async function add() {
     setErr(null);
     try {
-      await addCorrection(heard, correct, null, false);
+      const outcome = await addCorrection(heard, correct, null, false);
       await onChange();
+      // A refused pair keeps what was typed, with the reason under the field.
+      if (!outcome.saved) { setErr(outcome.message ?? "that correction was not saved"); return; }
       setHeard(""); setCorrect("");
     } catch (e) { setErr(errorMessage(e)); }
   }

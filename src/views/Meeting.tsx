@@ -90,6 +90,8 @@ export function MeetingView({ id }: { id: string }) {
   // the editor is a sheet so the selection can vanish without breaking it.
   const [selection, setSelection] = useState<{ heard: string; x: number; y: number } | null>(null);
   const [correcting, setCorrecting] = useState<{ heard: string; correct: string; fixEarlier: boolean } | null>(null);
+  /** Why the correction sheet is still open after a save attempt. */
+  const [correctionOutcome, setCorrectionOutcome] = useState<string | null>(null);
   const notesTimer = useRef<number | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -156,15 +158,22 @@ export function MeetingView({ id }: { id: string }) {
   }
   function openCorrection(heard: string) {
     setSelection(null);
+    setCorrectionOutcome(null);
     setCorrecting({ heard, correct: "", fixEarlier: true });
   }
   async function saveCorrection() {
     if (!correcting || !correcting.correct.trim()) return;
+    setCorrectionOutcome(null);
     try {
-      await addCorrection(correcting.heard, correcting.correct, id, correcting.fixEarlier);
+      const outcome = await addCorrection(correcting.heard, correcting.correct, id, correcting.fixEarlier);
       // The backend changed prefs (corrections + a new keyterm); any later
       // whole-object save must start from the new copy.
       await refreshPrefs();
+      if (!outcome.saved || outcome.message) {
+        // Say why rather than closing as though the fix had been applied.
+        setCorrectionOutcome(outcome.message ?? "that correction was not saved");
+        return;
+      }
       setNotice(`"${correcting.heard}" is now "${correcting.correct.trim()}" (also for the next meeting)`);
       setCorrecting(null);
       window.getSelection()?.removeAllRanges();
@@ -475,7 +484,7 @@ export function MeetingView({ id }: { id: string }) {
         </button>
       )}
       {correcting && (
-        <Sheet title="correct a word" onClose={() => setCorrecting(null)}>
+        <Sheet title="correct a word" onClose={() => { setCorrecting(null); setCorrectionOutcome(null); }}>
           <div className="speaker-sheet">
             <p className="muted small">the corrected spelling is applied to this transcript as it arrives, remembered for future meetings, and sent to deepgram on the next connect. insights are not affected.</p>
             <label className="field"><span className="muted tiny">heard</span>
@@ -489,9 +498,10 @@ export function MeetingView({ id }: { id: string }) {
               <input type="checkbox" checked={correcting.fixEarlier} onChange={(e) => setCorrecting({ ...correcting, fixEarlier: e.currentTarget.checked })} />
               <span>fix earlier mentions in this meeting</span>
             </label>
+            {correctionOutcome && <p className="muted small correction-outcome">{correctionOutcome}</p>}
             <div className="save-row">
               <button className="control primary" disabled={!correcting.correct.trim()} onClick={saveCorrection}>save</button>
-              <button className="control" onClick={() => setCorrecting(null)}>cancel</button>
+              <button className="control" onClick={() => { setCorrecting(null); setCorrectionOutcome(null); }}>{correctionOutcome ? "close" : "cancel"}</button>
             </div>
           </div>
         </Sheet>

@@ -421,6 +421,8 @@ code { font-family: var(--mono); background: var(--surface-card); padding: 1px 5
 .correction-heard { color: var(--text-secondary); text-decoration: line-through; }
 .correction-correct { color: var(--text); }
 .correction-add .input { flex: 1; min-width: 0; }
+/* Why the correction editor is still open (rejected pair, full dictionary, nothing matched). */
+.correction-outcome { border-left: 2px solid var(--border-light); padding-left: 8px; }
 .field { display: flex; flex-direction: column; gap: 4px; }
 
 /* Join links (0.6.0) */
