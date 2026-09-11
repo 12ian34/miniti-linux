@@ -1334,6 +1334,34 @@ pub fn remove_correction(
 }
 
 #[tauri::command]
+pub fn omarchy_status() -> crate::omarchy::OmarchyStatus {
+    crate::omarchy::status()
+}
+
+/// One click on Omarchy: clone the bar widget with Omarchy's own plugin
+/// command and enable it; the tray icon goes away since the widget replaces it.
+#[tauri::command]
+pub async fn omarchy_install_widget(app: AppHandle) -> Result<crate::omarchy::OmarchyStatus, String> {
+    tauri::async_runtime::spawn_blocking(crate::omarchy::install_widget)
+        .await
+        .map_err(|e| e.to_string())??;
+    crate::shell::remove_tray(&app);
+    Ok(crate::omarchy::status())
+}
+
+#[tauri::command]
+pub async fn omarchy_remove_widget(app: AppHandle, state: State<'_, AppState>) -> Result<crate::omarchy::OmarchyStatus, String> {
+    tauri::async_runtime::spawn_blocking(crate::omarchy::remove_widget)
+        .await
+        .map_err(|e| e.to_string())??;
+    let show_tray = state.prefs.lock().map(|p| p.show_tray).unwrap_or(true);
+    if show_tray {
+        crate::shell::setup_tray(&app, true);
+    }
+    Ok(crate::omarchy::status())
+}
+
+#[tauri::command]
 pub fn get_device_id(state: State<AppState>) -> String {
     state.device_id.clone()
 }

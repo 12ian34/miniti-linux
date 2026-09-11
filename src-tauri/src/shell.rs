@@ -103,6 +103,17 @@ pub fn show_main(app: &AppHandle) {
     }
 }
 
+/// Drop the tray icon (the Omarchy widget took over during this run).
+pub fn remove_tray(app: &AppHandle) {
+    if let Some(slot) = app.try_state::<TraySlot>() {
+        if let Ok(mut s) = slot.lock() {
+            if let Some(h) = s.take() {
+                let _ = h.tray.set_visible(false);
+            }
+        }
+    }
+}
+
 /// Build the tray if enabled in prefs. Safe to call once at setup.
 pub fn setup_tray(app: &AppHandle, enabled: bool) {
     if !enabled {

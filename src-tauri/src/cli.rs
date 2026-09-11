@@ -116,6 +116,11 @@ pub enum Command {
     },
     /// Where miniti keeps its files on this machine
     Paths,
+    /// The Omarchy bar widget: show, add to the bar, or remove
+    OmarchyWidget {
+        #[arg(value_enum, default_value = "status")]
+        action: WidgetAction,
+    },
     /// Forget this computer's account credentials and device identity (offline)
     ///
     /// For a computer the backend still lists as enrolled while its
@@ -139,6 +144,13 @@ pub enum Choice {
     Primary,
     Secondary,
     Tertiary,
+}
+
+#[derive(ValueEnum, Clone, Copy, Debug)]
+pub enum WidgetAction {
+    Status,
+    Install,
+    Remove,
 }
 
 #[derive(ValueEnum, Clone, Copy, Debug)]
@@ -261,6 +273,26 @@ fn execute(command: Command, out: &Output) -> Result<(), i32> {
                 out.value(&json!({ "device_id": id }));
             } else {
                 out.line(format!("credentials cleared; new device id {id}. Start miniti to enroll again."));
+            }
+            Ok(())
+        }
+        Command::OmarchyWidget { action } => {
+            let result = match action {
+                WidgetAction::Status => Ok(()),
+                WidgetAction::Install => crate::omarchy::install_widget(),
+                WidgetAction::Remove => crate::omarchy::remove_widget(),
+            };
+            if let Err(e) = result {
+                out.error(&e);
+                return Err(EXIT_FAILED);
+            }
+            let st = crate::omarchy::status();
+            if out.json {
+                out.value(&serde_json::to_value(&st).unwrap_or(Value::Null));
+            } else if !st.is_omarchy {
+                out.line("this is not an Omarchy desktop");
+            } else {
+                out.line(if st.widget_installed { "widget: in the bar (miniti omarchy-widget remove takes it out)" } else { "widget: not installed (miniti omarchy-widget install adds it)" });
             }
             Ok(())
         }

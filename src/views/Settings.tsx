@@ -35,8 +35,11 @@ import {
   subscribeUrl,
   addCorrection,
   removeCorrection,
+  omarchyInstallWidget,
+  omarchyRemoveWidget,
+  omarchyStatus,
 } from "../api";
-import type { AppMode, AuthDevices, AuthStatus, Correction, CrmProvider, EnvHealth, Prefs, Usage } from "../types";
+import type { AppMode, AuthDevices, AuthStatus, Correction, CrmProvider, EnvHealth, OmarchyStatus, Prefs, Usage } from "../types";
 import { Enroll } from "./Enroll";
 import { applyInterfaceScale } from "../scale";
 import { Sheet } from "./MeetingTools";
@@ -101,6 +104,14 @@ export function Settings() {
   const backendKey = auth?.enrolled ?? null;
   const notEnrolled = backendKey === false;
   const refreshAuth = () => { if (hasBridge) authStatus().then(setAuth).catch(() => setAuth(null)); };
+  const [omarchy, setOmarchy] = useState<OmarchyStatus | null>(null);
+  const [widgetBusy, setWidgetBusy] = useState(false);
+  useEffect(() => { if (hasBridge) omarchyStatus().then(setOmarchy).catch(() => setOmarchy(null)); }, []);
+  async function widgetAction(run: () => Promise<OmarchyStatus>) {
+    setWidgetBusy(true);
+    setError(null);
+    try { setOmarchy(await run()); } catch (e) { setError(errorMessage(e)); } finally { setWidgetBusy(false); }
+  }
 
   function setDest(d: DestId) {
     setDestState(d);
@@ -202,6 +213,7 @@ export function Settings() {
     { id: "presence", dest: "general", label: "Floating recording surface", keywords: "floating window indicator presence always on top" },
     { id: "corrections", dest: "language", label: "Corrections", keywords: "correction replace dictionary heard misheard spelling" },
     { id: "autostart", dest: "general", label: "Launch at login", keywords: "autostart login startup boot session tray hidden" },
+    { id: "omarchy", dest: "general", label: "Omarchy bar widget", keywords: "omarchy bar widget hyprland waybar plugin" },
     { id: "scale", dest: "general", label: "Interface scale", keywords: "interface scale text size compact standard large zoom" },
     { id: "mode", dest: "account", label: "Mode", keywords: "managed byok mode api backend" },
     { id: "plan", dest: "account", label: "Plan & usage", keywords: "pro upgrade subscription minutes usage polar portal restore license" },
@@ -289,7 +301,19 @@ export function Settings() {
 
         {dest === "general" && (
           <>
-            <C highlight={highlight} id="tray"><Toggle label="Show tray icon with recording timer (takes effect after restart)" checked={prefs.show_tray} onChange={(v) => update("show_tray", v)} /></C>
+            {omarchy?.is_omarchy && (
+              <C highlight={highlight} id="omarchy">
+                <Field label="Omarchy bar widget (recording timer in the bar, a panel with the questions worth asking, start and stop; replaces the tray icon)">
+                  <div className="rec-controls">
+                    <span className="muted small">{omarchy.widget_installed ? "in your bar" : "not installed"}</span>
+                    {omarchy.widget_installed
+                      ? <button className="btn" disabled={widgetBusy} onClick={() => widgetAction(omarchyRemoveWidget)}>remove</button>
+                      : <button className="btn primary" disabled={widgetBusy} onClick={() => widgetAction(omarchyInstallWidget)}>{widgetBusy ? "adding…" : "add to my bar"}</button>}
+                  </div>
+                </Field>
+              </C>
+            )}
+            <C highlight={highlight} id="tray"><Toggle label={omarchy?.widget_installed ? "Show tray icon (hidden while the Omarchy widget is in the bar)" : "Show tray icon with recording timer (takes effect after restart)"} checked={prefs.show_tray} onChange={(v) => update("show_tray", v)} /></C>
             <C highlight={highlight} id="presence"><Toggle label="Floating recording surface while recording (always on top; Wayland may ignore placement)" checked={prefs.show_floating_indicator} onChange={(v) => update("show_floating_indicator", v)} /></C>
             <C highlight={highlight} id="autostart"><Toggle label="Launch at login, hidden in the tray (adds an entry to ~/.config/autostart)" checked={prefs.launch_at_login ?? false} onChange={(v) => update("launch_at_login", v)} /></C>
             <C highlight={highlight} id="scale">

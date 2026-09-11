@@ -184,7 +184,12 @@ The app installs from the Omarchy package repository (`sudo pacman -S
 miniti-bin`). A bar widget with a live panel (timer, questions worth asking,
 the pending prompt, start/stop) lives in its own repository, `miniti-omarchy`,
 because the Omarchy marketplace indexes one plugin per repository. It reads the
-state file above and drives the app through the CLI.
+state file above and drives the app through the CLI. The app offers to install
+it on first launch and in Settings → General (it runs `omarchy plugin add
+… --enable`, so `omarchy plugin update` keeps it current); `miniti
+omarchy-widget install|remove|status` does the same from a terminal. While the
+widget is in the bar the tray icon is hidden and closing the window keeps the
+app running.
 
 ## desktop files installed by the packages
 

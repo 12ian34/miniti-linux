@@ -5,6 +5,7 @@ import type {
   CatchUp,
   CoachingOverview,
   Correction,
+  OmarchyStatus,
   CrmProvider,
   CrmRecord,
   CrmTask,
@@ -138,6 +139,10 @@ export function onTranscriptCorrected(handler: (meetingId: string) => void): Pro
 export const joinAndStartFromEvent = (eventId: string) => invoke<string>("join_and_start_from_event", { eventId });
 /** Re-open the live meeting's call link (a dropped call); starts nothing. */
 export const openMeetingJoinLink = (meetingId: string) => invoke<void>("open_meeting_join_link", { meetingId });
+
+export const omarchyStatus = () => invoke<OmarchyStatus>("omarchy_status");
+export const omarchyInstallWidget = () => invoke<OmarchyStatus>("omarchy_install_widget");
+export const omarchyRemoveWidget = () => invoke<OmarchyStatus>("omarchy_remove_widget");
 
 export const setSpeakerName = (meetingId: string, speakerId: number, name: string) =>
   invoke<Record<string, string>>("set_speaker_name", { meetingId, speakerId, name });

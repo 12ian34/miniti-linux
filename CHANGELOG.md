@@ -4,6 +4,11 @@ public changelog for miniti for Linux. the changelog for every platform lives at
 
 ## releases
 
+### unreleased - v0.7.0
+
+- new: On Omarchy, miniti offers to add its bar widget on first launch (and in Settings → General): the recording timer in the bar, a panel with the questions worth asking, start and stop. One click, no second repository to find. `miniti omarchy-widget install` does the same from a terminal
+- improvement: With the Omarchy widget in the bar the tray icon is hidden, since the widget does the same job, and closing the window keeps miniti running in the background
+
 ### 2026-09-11 - v0.6.2
 
 - fix: Settings → Account showed "rate limited; try again shortly" flashing where the device list should be. The screen was asking the backend for the list about once a second; it now asks once

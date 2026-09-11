@@ -51,10 +51,11 @@ sudo pacman -S miniti-bin
 ```
 
 PipeWire is already there, and the floating recording surface pins itself to
-the corner through layer-shell on Hyprland. A bar widget with a live panel
-(timer, questions worth asking, start/stop) is a separate plugin,
-[miniti-omarchy](https://github.com/12ian34/miniti-omarchy). If you see
-anything Omarchy-specific,
+the corner through layer-shell on Hyprland. On first launch miniti offers to
+add its bar widget (timer in the bar, a panel with the questions worth asking,
+start and stop); it replaces the tray icon and lives in its own repository,
+[miniti-omarchy](https://github.com/12ian34/miniti-omarchy), which the
+marketplace can also install. If you see anything Omarchy-specific,
 [open an issue](https://github.com/12ian34/miniti-linux/issues).
 
 **Other Arch systems.** The same package builds anywhere with `makepkg`.

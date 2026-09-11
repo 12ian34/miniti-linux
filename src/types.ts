@@ -63,6 +63,11 @@ export interface SmartPrompt {
 
 export type NudgeKind = "question" | "monologue" | "filler" | "sales";
 
+export interface OmarchyStatus {
+  is_omarchy: boolean;
+  widget_installed: boolean;
+}
+
 export interface Correction {
   heard: string;
   correct: string;

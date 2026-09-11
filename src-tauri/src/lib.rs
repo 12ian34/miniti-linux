@@ -29,6 +29,7 @@ pub mod import;
 pub mod insights;
 pub mod integrations;
 pub mod ipc;
+pub mod omarchy;
 pub mod prefs;
 pub mod shell;
 pub mod smart;
@@ -39,6 +40,7 @@ use state::{
     accept_terms, auth_create_account, auth_delete_account, auth_devices, auth_recovery_key,
     auth_remove_device, auth_restore_account, auth_rotate_recovery_key, auth_sign_out, auth_start_over,
     auth_status, add_correction, remove_correction, join_and_start_from_event, open_meeting_join_link, mark_all_mic_as_you,
+    omarchy_status, omarchy_install_widget, omarchy_remove_widget,
     catch_up, coaching_overview, coaching_report, complete_onboarding, debug_log_clear,
     debug_log_export, debug_log_path, debug_log_reveal, debug_log_tail, delete_meeting,
     delete_segment, disable_nudge_kind, environment_health, export_markdown, frontend_ready,
@@ -220,7 +222,9 @@ pub fn run() {
                 .lock()
                 .map(|p| p.show_tray)
                 .unwrap_or(true);
-            shell::setup_tray(&handle, show_tray);
+            // With the Omarchy bar widget in place the tray icon is redundant.
+            let widget = omarchy::widget_installed();
+            shell::setup_tray(&handle, show_tray && !widget);
             shell::setup_deep_links(&handle);
             ipc::snapshot::listen(&handle);
             ipc::server::spawn(handle.clone());
@@ -232,7 +236,7 @@ pub fn run() {
             // hidden and shown later came up without a usable close button
             // under Hyprland until it was resized); `--hidden` at login hides
             // it again at once, which is a brief flash at most.
-            if launch.hidden && show_tray {
+            if launch.hidden && (show_tray || widget) {
                 if let Some(w) = handle.get_webview_window(shell::MAIN_LABEL) {
                     let _ = w.hide();
                 }
@@ -251,11 +255,14 @@ pub fn run() {
             // Close-to-tray: miniti stays reachable after the main window closes.
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 if window.label() == shell::MAIN_LABEL {
+                    // Stay alive behind a tray icon or behind the Omarchy
+                    // widget, which can raise the window again.
                     let keep_alive = window
                         .app_handle()
                         .try_state::<shell::TraySlot>()
                         .and_then(|s| s.lock().ok().map(|g| g.is_some()))
-                        .unwrap_or(false);
+                        .unwrap_or(false)
+                        || omarchy::widget_installed();
                     if keep_alive {
                         let _ = window.hide();
                         api.prevent_close();
@@ -290,6 +297,9 @@ pub fn run() {
             join_and_start_from_event,
             open_meeting_join_link,
             mark_all_mic_as_you,
+            omarchy_status,
+            omarchy_install_widget,
+            omarchy_remove_widget,
             get_prefs,
             set_prefs,
             get_device_id,

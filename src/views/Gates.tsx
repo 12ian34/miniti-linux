@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { acceptTerms, completeOnboarding, errorMessage } from "../api";
-import type { LaunchGate } from "../types";
+import { acceptTerms, completeOnboarding, errorMessage, omarchyInstallWidget, omarchyStatus } from "../api";
+import type { LaunchGate, OmarchyStatus } from "../types";
 
 interface GateProps {
   gate: LaunchGate;
@@ -65,6 +65,14 @@ export function Terms({ gate, onDone }: GateProps) {
 
 export function Onboarding({ onDone }: GateProps) {
   const [error, setError] = useState<string | null>(null);
+  const [omarchy, setOmarchy] = useState<OmarchyStatus | null>(null);
+  const [widgetBusy, setWidgetBusy] = useState(false);
+  useEffect(() => { omarchyStatus().then(setOmarchy).catch(() => setOmarchy(null)); }, []);
+  async function addWidget() {
+    setWidgetBusy(true);
+    setError(null);
+    try { setOmarchy(await omarchyInstallWidget()); } catch (e) { setError(errorMessage(e)); } finally { setWidgetBusy(false); }
+  }
   async function finish() {
     try {
       await completeOnboarding();
@@ -90,6 +98,15 @@ export function Onboarding({ onDone }: GateProps) {
           Coaching.
         </li>
       </ol>
+      {omarchy?.is_omarchy && (
+        <div className="omarchy-offer">
+          <strong>You are on Omarchy.</strong> miniti has a bar widget: the recording timer in the bar, a panel
+          with the questions worth asking, start and stop. It replaces the tray icon.
+          {omarchy.widget_installed
+            ? <p className="muted small">The widget is in your bar.</p>
+            : <button className="btn" disabled={widgetBusy} onClick={addWidget}>{widgetBusy ? "adding…" : "Add the miniti widget to my bar"}</button>}
+        </div>
+      )}
       {error && <div className="banner error">{error}</div>}
       <button className="btn primary" onClick={finish}>
         Get started

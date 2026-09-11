@@ -427,3 +427,6 @@ code { font-family: var(--mono); background: var(--surface-card); padding: 1px 5
 .event-row-wrap { display: flex; align-items: center; gap: 6px; }
 .event-row-wrap .event-row { flex: 1; min-width: 0; }
 .join-btn { white-space: nowrap; }
+
+/* Omarchy widget offer (0.7.0) */
+.omarchy-offer { border: 1px solid var(--border-light); border-radius: var(--r-md); padding: 12px 14px; margin: 12px 0; display: flex; flex-direction: column; gap: 8px; }
