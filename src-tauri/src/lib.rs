@@ -31,6 +31,7 @@ pub mod integrations;
 pub mod ipc;
 pub mod omarchy;
 pub mod prefs;
+pub mod redact;
 pub mod shell;
 pub mod smart;
 pub mod state;
@@ -50,7 +51,7 @@ use state::{
     probe_docs_mcp, recording_presence, recording_status, regenerate_insights, restore_license,
     search_meetings, set_meeting_title, set_notes, set_pinned, set_prefs, set_sales_enabled,
     set_speaker_name, set_template, start_recording, stop_recording, subscribe_url,
-    trim_transcript, AppState, Levels, RecordingSession,
+    trim_transcript, validate_webhook_url, AppState, Levels, RecordingSession,
 };
 
 /// Keeps the non-blocking log writer alive for the life of the process.
@@ -302,6 +303,7 @@ pub fn run() {
             omarchy_remove_widget,
             get_prefs,
             set_prefs,
+            validate_webhook_url,
             get_device_id,
             launch_gate,
             accept_terms,

@@ -13,6 +13,84 @@ use crate::db::{Meeting, TranscriptSegment};
 
 pub const WEBHOOK_TIMEOUT: Duration = Duration::from_secs(10);
 
+// ---- URL policy -----------------------------------------------------------
+
+/// Why a webhook URL was refused (port of `WebhookService.validate`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UrlRefusal {
+    NotAUrl,
+    /// `http://` to anything but this machine, or a scheme that is neither.
+    Insecure,
+    NoHost,
+}
+
+impl UrlRefusal {
+    /// One sentence for Settings; the payload reason is the same everywhere.
+    pub fn message(self) -> &'static str {
+        match self {
+            UrlRefusal::NotAUrl => "That is not a URL. Paste the full hook URL, starting with https://",
+            UrlRefusal::Insecure => {
+                "The payload includes the full transcript and attendee names, so it is only ever sent over https. Use an https:// URL (http:// is allowed only to localhost)"
+            }
+            UrlRefusal::NoHost => "That URL has no host. Paste the full hook URL, starting with https://",
+        }
+    }
+}
+
+fn is_loopback_host(host: &str) -> bool {
+    let host = host.trim_start_matches('[').trim_end_matches(']');
+    matches!(host, "localhost" | "127.0.0.1" | "::1") || host.ends_with(".localhost")
+}
+
+/// Accept the URL only if the payload cannot travel in plaintext off this
+/// machine: https with a host, or http to a loopback host for a local hook.
+pub fn validate(raw: &str) -> Result<url::Url, UrlRefusal> {
+    let parsed = url::Url::parse(raw.trim()).map_err(|_| UrlRefusal::NotAUrl)?;
+    let host = parsed.host_str().unwrap_or_default().to_string();
+    if host.is_empty() {
+        return Err(UrlRefusal::NoHost);
+    }
+    match parsed.scheme() {
+        "https" => Ok(parsed),
+        "http" if is_loopback_host(&host) => Ok(parsed),
+        _ => Err(UrlRefusal::Insecure),
+    }
+}
+
+/// Scheme and host only (`https://hooks.zapier.com`) — never the path or query,
+/// which is where Zapier, Make and n8n keep the hook's secret. This is the only
+/// form of a webhook URL that may reach the log or an exported diagnostic.
+pub fn redacted(raw: &str) -> String {
+    match url::Url::parse(raw.trim()) {
+        Ok(u) => match u.host_str() {
+            Some(host) => match u.port() {
+                Some(port) => format!("{}://{host}:{port}", u.scheme()),
+                None => format!("{}://{host}", u.scheme()),
+            },
+            None => format!("{}://", u.scheme()),
+        },
+        Err(_) => "(unparseable url)".into(),
+    }
+}
+
+/// A transport failure as its cause alone: the error's own text quotes the URL
+/// it was given, which would put the hook secret in the log.
+fn transport_reason(e: &reqwest::Error) -> &'static str {
+    if e.is_timeout() {
+        "timed out"
+    } else if e.is_connect() {
+        "could not connect"
+    } else if e.is_redirect() {
+        "too many redirects"
+    } else if e.is_body() || e.is_decode() {
+        "bad response body"
+    } else if e.is_request() {
+        "request rejected"
+    } else {
+        "transport error"
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct WebhookPayload {
     pub event: String,
@@ -259,23 +337,45 @@ pub fn payload_from_meeting(
 
 /// Send the payload, ignoring the result beyond logging (fire-and-forget).
 /// Any transport error is swallowed so a bad webhook never blocks a save.
+///
+/// The URL is validated here as well as in Settings, so a plaintext URL saved
+/// by an older version stops being used rather than leaking a transcript.
 pub async fn send(url: &str, payload: &WebhookPayload) {
-    if url.trim().is_empty() || url::Url::parse(url).is_err() {
-        return;
-    }
-    let client = match reqwest::Client::builder().timeout(WEBHOOK_TIMEOUT).build() {
-        Ok(c) => c,
-        Err(e) => {
-            tracing::warn!("webhook client build failed: {e}");
+    let target = match validate(url) {
+        Ok(u) => u,
+        Err(refusal) => {
+            tracing::warn!(
+                "webhook not sent to {}: {}",
+                redacted(url),
+                match refusal {
+                    UrlRefusal::Insecure => "the payload is only ever sent over https",
+                    UrlRefusal::NoHost => "no host",
+                    UrlRefusal::NotAUrl => "not a URL",
+                }
+            );
             return;
         }
     };
-    match client.post(url).json(payload).send().await {
-        Ok(resp) if resp.status().is_success() => {
-            tracing::info!("webhook sent ({}): {}", resp.status(), payload.event)
+    // Whatever else ends up quoting it, the full URL never reaches the log.
+    crate::redact::register(url.trim());
+    let host = redacted(url);
+    let client = match reqwest::Client::builder().timeout(WEBHOOK_TIMEOUT).build() {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::warn!("webhook client build failed: {}", transport_reason(&e));
+            return;
         }
-        Ok(resp) => tracing::warn!("webhook non-2xx ({}): {}", resp.status(), payload.event),
-        Err(e) => tracing::warn!("webhook failed: {e}"),
+    };
+    match client.post(target).json(payload).send().await {
+        Ok(resp) if resp.status().is_success() => {
+            tracing::info!("webhook sent to {host} ({}): {}", resp.status(), payload.event)
+        }
+        Ok(resp) => tracing::warn!(
+            "webhook non-2xx from {host} ({}): {}",
+            resp.status(),
+            payload.event
+        ),
+        Err(e) => tracing::warn!("webhook to {host} failed: {}", transport_reason(&e)),
     }
 }
 
@@ -353,6 +453,58 @@ mod tests {
         );
         assert!(mt.get("attendees").is_none());
         assert!(mt.get("calendar_event_id").is_none());
+    }
+
+    #[test]
+    fn only_https_or_a_loopback_http_url_is_accepted() {
+        assert!(validate("https://hooks.zapier.com/hooks/catch/1/abc").is_ok());
+        assert!(validate("  https://example.com/hook  ").is_ok(), "trimmed");
+        assert!(validate("http://localhost:5678/webhook/abc").is_ok());
+        assert!(validate("http://127.0.0.1:5678/hook").is_ok());
+        assert!(validate("http://[::1]:5678/hook").is_ok());
+        assert_eq!(
+            validate("http://hooks.zapier.com/hooks/catch/1/abc"),
+            Err(UrlRefusal::Insecure),
+            "plaintext off this machine is refused"
+        );
+        assert_eq!(
+            validate("http://192.168.1.10/hook"),
+            Err(UrlRefusal::Insecure),
+            "the LAN is not this machine"
+        );
+        assert_eq!(validate("ftp://example.com/hook"), Err(UrlRefusal::Insecure));
+        assert_eq!(validate("not a url"), Err(UrlRefusal::NotAUrl));
+        assert_eq!(validate(""), Err(UrlRefusal::NotAUrl));
+        assert_eq!(validate("data:text/plain,hi"), Err(UrlRefusal::NoHost));
+        assert_eq!(validate("file:///tmp/hook"), Err(UrlRefusal::NoHost));
+    }
+
+    #[test]
+    fn redaction_keeps_scheme_and_host_only() {
+        assert_eq!(
+            redacted("https://hooks.zapier.com/hooks/catch/123/abcdef?key=secret"),
+            "https://hooks.zapier.com"
+        );
+        assert_eq!(
+            redacted("http://localhost:5678/webhook/secret-id"),
+            "http://localhost:5678"
+        );
+        assert_eq!(redacted("nonsense"), "(unparseable url)");
+    }
+
+    #[tokio::test]
+    async fn send_refuses_a_plaintext_url_saved_by_an_older_version() {
+        // No network: an accepted URL would fail at connect, a refused one
+        // never leaves. Both return; the assertion is that neither panics and
+        // the refusal path is taken before any request is built.
+        let m = meeting();
+        let payload = payload_from_meeting("meeting.saved", &m, &[], &[]);
+        send("http://hooks.zapier.com/hooks/catch/1/abc", &payload).await;
+        send("", &payload).await;
+        assert_eq!(
+            validate("http://hooks.zapier.com/hooks/catch/1/abc"),
+            Err(UrlRefusal::Insecure)
+        );
     }
 
     #[test]

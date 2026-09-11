@@ -32,6 +32,7 @@ import {
   probeDocsMcp,
   restoreLicense,
   setPrefs,
+  validateWebhookUrl,
   subscribeUrl,
   addCorrection,
   removeCorrection,
@@ -100,6 +101,7 @@ export function Settings() {
   const [google, setGoogle] = useState<{ connected: boolean; email: string | null } | null>(null);
   const [crm, setCrm] = useState<Record<CrmProvider, { connected: boolean; account_label: string | null } | null>>({ attio: null, twenty: null });
   const [highlight, setHighlight] = useState<string | null>(null);
+  const [webhookError, setWebhookError] = useState<string | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const backendKey = auth?.enrolled ?? null;
   const notEnrolled = backendKey === false;
@@ -162,9 +164,19 @@ export function Settings() {
     setPrefsState((p) => (p ? { ...p, [key]: value } : p));
     setSaved(false);
   }
+  // The rule lives in Rust and runs again at send time; this is the same
+  // answer, shown while the field is being typed into.
+  const webhookUrl = prefs?.webhook_url ?? "";
+  useEffect(() => {
+    if (!hasBridge) return;
+    let stale = false;
+    validateWebhookUrl(webhookUrl).then((m) => { if (!stale) setWebhookError(m); }).catch(() => {});
+    return () => { stale = true; };
+  }, [webhookUrl]);
   async function save() {
     if (!prefs) return;
     setError(null);
+    if (webhookError) { setError(webhookError); return; }
     try {
       await setPrefs(prefs);
       await refreshPrefs();
@@ -536,7 +548,9 @@ export function Settings() {
             <Field label="Webhook URL (POST meeting.saved after each recording, meeting.updated after insights)">
               <input className="input" value={prefs.webhook_url ?? ""} onChange={(e) => update("webhook_url", e.currentTarget.value || null)} placeholder="https://…" />
             </Field>
-            <p className="muted small">Same JSON shape as the macOS app: a <code>meeting</code> envelope with insights, a <code>training</code> coaching blob and the transcript with resolved speaker labels. 10 s timeout, fire-and-forget.</p>
+            {webhookError && <div className="banner error">{webhookError}</div>}
+            <p className="muted small">The payload includes the full transcript and attendee names, so it is only ever sent over https. A hook on this machine may use <code>http://localhost</code>.</p>
+            <p className="muted small">Same JSON shape as the macOS app: a <code>meeting</code> envelope with insights, a <code>training</code> coaching blob and the transcript with resolved speaker labels. 10 s timeout, fire-and-forget. The log records the hook's host, never its full URL.</p>
           </C>
         )}
 

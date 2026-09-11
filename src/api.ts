@@ -75,6 +75,8 @@ export const frontendReady = () =>
   invoke<void>("frontend_ready", { userAgent: navigator.userAgent, viewport: `${window.innerWidth}x${window.innerHeight}` });
 export const getPrefs = () => invoke<Prefs>("get_prefs");
 export const setPrefs = (prefs: Prefs) => invoke<void>("set_prefs", { prefs });
+/** null when the webhook URL is usable; otherwise the sentence to show under the field. */
+export const validateWebhookUrl = (url: string) => invoke<string | null>("validate_webhook_url", { url });
 export const getDeviceId = () => invoke<string>("get_device_id");
 
 // Device-bound account (managed mode).

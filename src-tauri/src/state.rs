@@ -1237,9 +1237,26 @@ pub fn get_prefs(state: State<AppState>) -> Prefs {
     state.prefs.lock().map(|p| p.clone()).unwrap_or_default()
 }
 
+/// Settings-side check for the webhook field: `None` when the URL is usable,
+/// otherwise the sentence to show under it. The same rule runs again at send
+/// time, so a plaintext URL saved by an older version stops being used.
+#[tauri::command]
+pub fn validate_webhook_url(url: String) -> Option<String> {
+    if url.trim().is_empty() {
+        return None;
+    }
+    crate::webhook::validate(&url)
+        .err()
+        .map(|r| r.message().to_string())
+}
+
 #[tauri::command]
 pub fn set_prefs(state: State<AppState>, prefs: Prefs) -> Result<(), String> {
     prefs.save().map_err(|e| e.to_string())?;
+    if let Some(url) = prefs.webhook_url.as_deref() {
+        // The hook secret lives in the path; keep it out of the log for good.
+        crate::redact::register(url.trim());
+    }
     if let Ok(mut c) = state.corrector.write() {
         *c = crate::corrections::Corrector::new(&prefs.dictionary_corrections);
     }
@@ -3264,7 +3281,8 @@ pub fn log_tail(max_lines: usize) -> String {
     };
     let lines: Vec<&str> = text.lines().collect();
     let start = lines.len().saturating_sub(max_lines);
-    lines[start..].join("\n")
+    // Anything registered as a secret (a webhook URL, say) never leaves here.
+    crate::redact::scrub(&lines[start..].join("\n"))
 }
 
 #[tauri::command]
