@@ -2299,10 +2299,26 @@ async fn refresh_calendar(app: &AppHandle) {
                 .to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
             match client.google_events(&min, &max, 50).await {
                 Ok(ev) => {
+                    // The backend drops out-of-office, focus time, working
+                    // location, birthdays and titles that say as much; this
+                    // repeats the test so an older backend cannot make one of
+                    // them raise a reminder, auto-start or a handoff prompt.
+                    let total = ev.events.len();
+                    let events: Vec<_> = ev
+                        .events
+                        .into_iter()
+                        .filter(|e| e.is_recordable_meeting())
+                        .collect();
+                    if events.len() != total {
+                        tracing::info!(
+                            "calendar: {} of {total} events are not meetings; skipped",
+                            total - events.len()
+                        );
+                    }
                     if let Ok(mut c) = slot.lock() {
                         c.connected = true;
                         c.email = st.email;
-                        c.events = ev.events;
+                        c.events = events;
                         c.fetched_at = Some(Instant::now());
                         c.last_error = None;
                     }

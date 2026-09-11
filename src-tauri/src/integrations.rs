@@ -99,6 +99,10 @@ pub struct CalendarEvent {
     pub is_all_day: bool,
     #[serde(default)]
     pub status: Option<String>,
+    /// Google's `eventType`, passed through by the backend: `default`,
+    /// `outOfOffice`, `focusTime`, `workingLocation`, `birthday`.
+    #[serde(default, rename = "eventType")]
+    pub event_type: Option<String>,
     #[serde(default, rename = "meetLink")]
     pub meet_link: Option<String>,
     #[serde(default, rename = "conferenceUrl")]
@@ -107,7 +111,56 @@ pub struct CalendarEvent {
     pub attendees: Vec<CalendarAttendee>,
 }
 
+/// Google event types that are never a meeting to record.
+const NON_MEETING_EVENT_TYPES: [&str; 4] =
+    ["outofoffice", "focustime", "workinglocation", "birthday"];
+
+/// Title prefixes that mean the entry blocks time rather than books a call.
+const NON_MEETING_TITLE_PREFIXES: [&str; 12] = [
+    "ooo",
+    "out of office",
+    "out-of-office",
+    "pto",
+    "holiday",
+    "vacation",
+    "annual leave",
+    "sick",
+    "focus time",
+    "focus:",
+    "no meetings",
+    "do not book",
+];
+
+/// True when the title opens with an out-of-office / PTO / focus-time label
+/// (port of the backend's `isNonMeetingTitle`).
+pub fn is_non_meeting_title(title: &str) -> bool {
+    let t = title.trim().to_lowercase();
+    NON_MEETING_TITLE_PREFIXES.iter().any(|p| {
+        t.strip_prefix(p).is_some_and(|rest| {
+            // A prefix match must end the word: "PTO" and "PTO — Ian" are out
+            // of office, "Ptolemy sync" is a meeting.
+            rest.is_empty() || !rest.starts_with(|c: char| c.is_alphanumeric())
+        })
+    })
+}
+
 impl CalendarEvent {
+    /// Whether this entry may raise a reminder, auto-start, or the "end and
+    /// start next" prompt. The backend drops these already; this is the belt
+    /// for an older backend, and for a title it has not seen.
+    pub fn is_recordable_meeting(&self) -> bool {
+        let kind = self
+            .event_type
+            .as_deref()
+            .unwrap_or_default()
+            .trim()
+            .to_lowercase();
+        if NON_MEETING_EVENT_TYPES.contains(&kind.as_str()) {
+            return false;
+        }
+        !is_non_meeting_title(&self.title)
+    }
+
     /// The link to join the call: the conference URL first, then the Meet
     /// link, trimmed, https only (third-party data passing through the backend).
     pub fn join_url(&self) -> Option<String> {
@@ -425,6 +478,61 @@ mod tests {
             start: iso(start),
             end: iso(end),
             ..Default::default()
+        }
+    }
+
+    #[test]
+    fn non_meeting_event_types_are_never_recordable() {
+        for kind in ["outOfOffice", "focusTime", "workingLocation", "birthday"] {
+            let e = CalendarEvent {
+                event_type: Some(kind.into()),
+                ..ev("x", 0, 60)
+            };
+            assert!(!e.is_recordable_meeting(), "{kind} is not a meeting");
+        }
+        let ordinary = CalendarEvent {
+            event_type: Some("default".into()),
+            ..ev("Weekly sync", 0, 60)
+        };
+        assert!(ordinary.is_recordable_meeting());
+        // An older backend sends no eventType at all.
+        assert!(ev("Weekly sync", 0, 60).is_recordable_meeting());
+    }
+
+    #[test]
+    fn non_meeting_titles_are_skipped_whatever_the_event_type() {
+        for title in [
+            "OOO",
+            "ooo - back monday",
+            "Out of office",
+            "out-of-office (Ian)",
+            "PTO",
+            "PTO — Ian",
+            "Holiday",
+            "Vacation",
+            "Annual leave",
+            "Sick day",
+            "Focus time",
+            "Focus: deep work",
+            "No meetings",
+            "Do not book",
+        ] {
+            assert!(is_non_meeting_title(title), "{title:?} blocks time");
+            let e = CalendarEvent {
+                title: title.into(),
+                ..ev("id", 0, 60)
+            };
+            assert!(!e.is_recordable_meeting(), "{title:?}");
+        }
+        for title in [
+            "Ptolemy sync",
+            "Holidays roadmap review",
+            "Sickle cell study readout",
+            "Vacationing team retro",
+            "1:1 with Sam",
+            "",
+        ] {
+            assert!(!is_non_meeting_title(title), "{title:?} is a meeting");
         }
     }
 
