@@ -453,8 +453,8 @@ impl RecordingSession {
                         StreamStatus::Reconnecting { attempt, reason } => diagnostics::record(
                             &status_app,
                             "deepgram_reconnect_attempt",
-                            Level::Warn,
-                            Category::Transcription,
+                            Level::Warning,
+                            Category::Deepgram,
                             Some(status_meeting.clone()),
                             vec![
                                 ("attempt", attempt.to_string()),
@@ -465,7 +465,7 @@ impl RecordingSession {
                             &status_app,
                             "deepgram_stream_failed",
                             Level::Error,
-                            Category::Transcription,
+                            Category::Deepgram,
                             Some(status_meeting.clone()),
                             vec![("reason", diagnostics::reason_code(reason))],
                         ),
@@ -572,7 +572,7 @@ impl RecordingSession {
                             diagnostics::record(
                                 &audio_app,
                                 "audio_recovery_attempt",
-                                Level::Warn,
+                                Level::Warning,
                                 Category::Audio,
                                 Some(audio_meeting.clone()),
                                 vec![("attempt", failures.to_string())],
@@ -1604,7 +1604,7 @@ pub async fn start_meeting(
                 &app,
                 "session_start_failed",
                 crate::diagnostics::Level::Error,
-                crate::diagnostics::Category::Auth,
+                crate::diagnostics::Category::App,
                 None,
                 vec![("reason", crate::diagnostics::reason_code(&e))],
             );
@@ -3296,7 +3296,7 @@ pub async fn auth_attach_account(
                     &app,
                     "enrollment_failed",
                     crate::diagnostics::Level::Error,
-                    crate::diagnostics::Category::Auth,
+                    crate::diagnostics::Category::App,
                     None,
                     vec![
                         ("operation", "attach".into()),

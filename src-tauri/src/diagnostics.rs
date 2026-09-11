@@ -20,8 +20,10 @@ use crate::prefs::{AppMode, Prefs};
 
 /// Server-side limit, mirrored here so a loop cannot spend a device's budget.
 pub const MAX_EVENTS_PER_MINUTE: usize = 30;
-/// Send when this many are queued, or when the flusher next ticks.
+/// Send when this many are queued, or when the flusher next ticks. The
+/// endpoint takes at most 50 per request and ignores the rest.
 pub const BATCH_SIZE: usize = 10;
+pub const MAX_BATCH_SIZE: usize = 50;
 pub const FLUSH_INTERVAL: Duration = Duration::from_secs(30);
 /// Details are bounded: a handful of short values, never free text.
 pub const MAX_DETAILS: usize = 6;
@@ -42,36 +44,40 @@ pub const EVENT_NAMES: [&str; 10] = [
     "session_start_failed",
 ];
 
+/// `info | warning | error`, as the endpoint spells them. An event whose level
+/// it does not recognise is dropped server-side, so these names are exact.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Level {
     Info,
-    Warn,
+    Warning,
     Error,
 }
 
+/// The endpoint's category set (`app | audio | deepgram | insights`); the
+/// insights one has no Linux caller yet.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "lowercase")]
 pub enum Category {
-    Transcription,
+    App,
     Audio,
-    Auth,
+    Deepgram,
 }
 
+/// One event as `POST /api/client-events` takes it. The device id, app version
+/// and platform come from the request headers, so they are not repeated here.
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct ClientEvent {
     pub name: String,
     pub level: Level,
     pub category: Category,
+    /// ISO 8601.
+    pub occurred_at: String,
     /// Groups the events of one app run; not the Deepgram session id.
-    pub session_id: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub meeting_id: Option<String>,
+    pub diagnostics_session_id: String,
     /// byok | managed (an event is only ever sent in managed).
     pub app_mode: String,
-    pub app_version: String,
-    /// ISO 8601.
-    pub at: String,
+    pub meeting_id: Option<String>,
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub details: BTreeMap<String, String>,
 }
@@ -192,11 +198,10 @@ pub fn record(
         name: name.to_string(),
         level,
         category,
-        session_id: hub().session_id.clone(),
-        meeting_id,
+        occurred_at: chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+        diagnostics_session_id: hub().session_id.clone(),
         app_mode: "managed".into(),
-        app_version: env!("CARGO_PKG_VERSION").to_string(),
-        at: chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+        meeting_id,
         details: bounded(details),
     };
     let ready = {
@@ -221,7 +226,14 @@ pub async fn flush(app: &AppHandle) {
         if q.events.is_empty() {
             return;
         }
-        std::mem::take(&mut q.events)
+        if q.events.len() > MAX_BATCH_SIZE {
+            // Anything past the endpoint's cap would be dropped on arrival;
+            // send the oldest and keep the rest for the next flush.
+            let rest = q.events.split_off(MAX_BATCH_SIZE);
+            std::mem::replace(&mut q.events, rest)
+        } else {
+            std::mem::take(&mut q.events)
+        }
     };
     let Some(state) = app.try_state::<crate::state::AppState>() else {
         return;
@@ -325,26 +337,68 @@ mod tests {
         assert!(out.values().all(|v| v.chars().count() <= MAX_DETAIL_CHARS));
     }
 
+    /// The endpoint drops an event whose level or category it does not
+    /// recognise, so the wire shape is asserted field by field against
+    /// `POST /api/client-events` in miniti-api docs/agents/04-api-reference.md.
     #[test]
-    fn an_event_carries_no_content() {
+    fn the_wire_shape_matches_the_endpoint() {
         let e = ClientEvent {
             name: "deepgram_reconnect_attempt".into(),
-            level: Level::Warn,
-            category: Category::Transcription,
-            session_id: "diag-1".into(),
-            meeting_id: Some("m1".into()),
+            level: Level::Warning,
+            category: Category::Deepgram,
+            occurred_at: "2026-09-11T00:00:00.000Z".into(),
+            diagnostics_session_id: "diag-1".into(),
             app_mode: "managed".into(),
-            app_version: "0.8.0".into(),
-            at: "2026-09-11T00:00:00Z".into(),
+            meeting_id: Some("m1".into()),
             details: bounded(vec![("attempt", "2".into())]),
         };
         let json = serde_json::to_string(&e).unwrap();
-        assert!(json.contains(r#""level":"warn""#));
-        assert!(json.contains(r#""category":"transcription""#));
-        assert!(json.contains(r#""attempt":"2""#));
+        assert!(json.contains(r#""level":"warning""#), "{json}");
+        assert!(json.contains(r#""category":"deepgram""#), "{json}");
+        assert!(json.contains(r#""occurred_at":"#), "{json}");
+        assert!(json.contains(r#""diagnostics_session_id":"diag-1""#), "{json}");
+        assert!(json.contains(r#""meeting_id":"m1""#), "{json}");
+        assert!(json.contains(r#""attempt":"2""#), "{json}");
         assert!(
-            EVENT_NAMES.contains(&e.name.as_str()),
-            "only allowlisted names are sent"
+            !json.contains("app_version"),
+            "the app version travels as a header, not in the body: {json}"
         );
+        for name in EVENT_NAMES {
+            assert!(name.len() <= 60, "{name} is longer than the endpoint keeps");
+        }
+        assert!(EVENT_NAMES.contains(&e.name.as_str()));
+        // A meeting-less event still carries the key, as `uuid-or-null`.
+        let none = ClientEvent {
+            meeting_id: None,
+            ..e
+        };
+        assert!(serde_json::to_string(&none)
+            .unwrap()
+            .contains(r#""meeting_id":null"#));
+    }
+
+    #[test]
+    fn a_batch_never_exceeds_what_the_endpoint_accepts() {
+        const _: () = assert!(BATCH_SIZE <= MAX_BATCH_SIZE);
+        assert_eq!(MAX_BATCH_SIZE, 50, "the endpoint slices at 50");
+        // Over the cap, the oldest go now and the rest wait for the next flush.
+        let mut q = Queue::default();
+        for i in 0..(MAX_BATCH_SIZE + 5) {
+            q.events.push(ClientEvent {
+                name: format!("e{i}"),
+                level: Level::Info,
+                category: Category::App,
+                occurred_at: String::new(),
+                diagnostics_session_id: String::new(),
+                app_mode: "managed".into(),
+                meeting_id: None,
+                details: BTreeMap::new(),
+            });
+        }
+        let rest = q.events.split_off(MAX_BATCH_SIZE);
+        let batch = std::mem::replace(&mut q.events, rest);
+        assert_eq!(batch.len(), MAX_BATCH_SIZE);
+        assert_eq!(batch[0].name, "e0", "oldest first");
+        assert_eq!(q.events.len(), 5, "the rest keep their place in the queue");
     }
 }
