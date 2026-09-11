@@ -2389,21 +2389,26 @@ async fn refresh_calendar(app: &AppHandle) {
             let min = now.to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
             let max = (now + chrono::Duration::days(7))
                 .to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
-            match client.google_events(&min, &max, 50).await {
+            // Everything the backend would filter comes back labelled, and
+            // the user's own filters decide: that is how an event type they
+            // turned back on reaches the app at all. Out-of-office, focus
+            // time and the rest still never raise a reminder, auto-start or a
+            // handoff prompt unless they asked for it.
+            match client
+                .google_events_including_filtered(&min, &max, 50)
+                .await
+            {
                 Ok(ev) => {
-                    // The backend drops out-of-office, focus time, working
-                    // location, birthdays and titles that say as much; this
-                    // repeats the test so an older backend cannot make one of
-                    // them raise a reminder, auto-start or a handoff prompt.
+                    let filters = prefs.calendar_filters.clone();
                     let total = ev.events.len();
                     let events: Vec<_> = ev
                         .events
                         .into_iter()
-                        .filter(|e| e.is_recordable_meeting())
+                        .filter(|e| filters.keeps(e))
                         .collect();
                     if events.len() != total {
                         tracing::info!(
-                            "calendar: {} of {total} events are not meetings; skipped",
+                            "calendar: {} of {total} entries are not meetings to record; skipped",
                             total - events.len()
                         );
                     }
@@ -2487,6 +2492,61 @@ pub async fn calendar_events(
         error: c.last_error.clone(),
         available: state.enrolled(),
     })
+}
+
+/// One entry in the "what would be skipped" preview.
+#[derive(Serialize)]
+pub struct CalendarPreviewEntry {
+    pub id: String,
+    pub title: String,
+    /// ISO 8601 start.
+    pub start: String,
+    pub event_type: Option<String>,
+    /// `null` when it would be recorded.
+    pub skip_reason: Option<crate::integrations::SkipReason>,
+    /// Plain sentence for the reason, empty when it would be recorded.
+    pub why: String,
+    /// True when this verdict comes from the settings above it, so changing
+    /// them changes the answer; false for an all-day or declined entry.
+    pub adjustable: bool,
+}
+
+/// The next seven days as the current filters would treat them, so the effect
+/// of a change can be seen before it is trusted.
+#[tauri::command]
+pub async fn calendar_filter_preview(
+    state: State<'_, AppState>,
+    filters: Option<crate::integrations::CalendarFilters>,
+) -> Result<Vec<CalendarPreviewEntry>, String> {
+    let prefs = state.prefs_snapshot()?;
+    let client = state.api_client(&prefs).map_err(|e| e.to_string())?;
+    // The sheet previews what is on screen, which may not be saved yet.
+    let filters = filters.unwrap_or_else(|| prefs.calendar_filters.clone());
+    let now = chrono::Utc::now();
+    let min = now.to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+    let max = (now + chrono::Duration::days(7)).to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+    let events = client
+        .google_events_including_filtered(&min, &max, 50)
+        .await
+        .map_err(|e| e.to_string())?;
+    let mut out: Vec<CalendarPreviewEntry> = events
+        .events
+        .into_iter()
+        .map(|e| {
+            let reason = filters.skip_reason(&e);
+            CalendarPreviewEntry {
+                id: e.id.clone(),
+                title: e.title.clone(),
+                start: e.start.clone(),
+                event_type: e.event_type.clone(),
+                why: reason.map(|r| r.explanation().to_string()).unwrap_or_default(),
+                adjustable: reason.map(|r| r.is_adjustable()).unwrap_or(false),
+                skip_reason: reason,
+            }
+        })
+        .collect();
+    out.sort_by_key(|e| crate::api::parse_iso8601(&e.start).unwrap_or(i64::MAX));
+    Ok(out)
 }
 
 #[tauri::command]

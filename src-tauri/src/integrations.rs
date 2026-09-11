@@ -103,6 +103,11 @@ pub struct CalendarEvent {
     /// `outOfOffice`, `focusTime`, `workingLocation`, `birthday`.
     #[serde(default, rename = "eventType")]
     pub event_type: Option<String>,
+    /// Why the backend's own filter would drop this event, present only on an
+    /// `?include_filtered=true` fetch: `all_day`, `declined`, `event_type`,
+    /// `title`. Cancelled events are never returned at all.
+    #[serde(default, rename = "skipReason", skip_serializing_if = "Option::is_none")]
+    pub skip_reason: Option<String>,
     #[serde(default, rename = "meetLink")]
     pub meet_link: Option<String>,
     #[serde(default, rename = "conferenceUrl")]
@@ -116,49 +121,165 @@ const NON_MEETING_EVENT_TYPES: [&str; 4] =
     ["outofoffice", "focustime", "workinglocation", "birthday"];
 
 /// Title prefixes that mean the entry blocks time rather than books a call.
-const NON_MEETING_TITLE_PREFIXES: [&str; 12] = [
+/// The same list as the backend's `NON_MEETING_TITLE` regex (miniti-api
+/// `lib/google.ts`) and the Swift client's `isNonMeetingTitle`; the three
+/// change together. `out of office` covers the hyphenated spellings below.
+const NON_MEETING_TITLE_PREFIXES: [&str; 13] = [
     "ooo",
     "out of office",
-    "out-of-office",
     "pto",
+    "annual leave",
     "holiday",
     "vacation",
-    "annual leave",
     "sick",
     "focus time",
-    "focus:",
+    "focus block",
+    "no meeting",
     "no meetings",
     "do not book",
+    "dnb",
 ];
 
-/// True when the title opens with an out-of-office / PTO / focus-time label
-/// (port of the backend's `isNonMeetingTitle`).
-pub fn is_non_meeting_title(title: &str) -> bool {
-    let t = title.trim().to_lowercase();
-    NON_MEETING_TITLE_PREFIXES.iter().any(|p| {
-        t.strip_prefix(p).is_some_and(|rest| {
-            // A prefix match must end the word: "PTO" and "PTO — Ian" are out
-            // of office, "Ptolemy sync" is a meeting.
-            rest.is_empty() || !rest.starts_with(|c: char| c.is_alphanumeric())
-        })
+/// True when `title` starts with any of `prefixes`, on a word boundary.
+pub fn title_matches_any(title: &str, prefixes: &[String]) -> bool {
+    // The backend spells out-of-office as `out[ -]of[ -]office`; normalizing
+    // the separators lets one entry cover every spelling.
+    let normalized = |s: &str| {
+        s.trim()
+            .to_lowercase()
+            .replace('-', " ")
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+    };
+    let t = normalized(title);
+    prefixes.iter().any(|p| {
+        let p = normalized(p);
+        !p.is_empty()
+            && t.strip_prefix(&p).is_some_and(|rest| {
+                // A prefix match must end the word, as the backend's `\b` does:
+                // "PTO" and "PTO — Ian" block time, "Ptolemy sync" is a meeting.
+                rest.is_empty() || !rest.starts_with(|c: char| c.is_alphanumeric() || c == '_')
+            })
     })
 }
 
-impl CalendarEvent {
-    /// Whether this entry may raise a reminder, auto-start, or the "end and
-    /// start next" prompt. The backend drops these already; this is the belt
-    /// for an older backend, and for a title it has not seen.
-    pub fn is_recordable_meeting(&self) -> bool {
-        let kind = self
+/// True when the title opens with an out-of-office / PTO / holiday /
+/// focus-time label (port of the backend's `isNonMeetingTitle`).
+pub fn is_non_meeting_title(title: &str) -> bool {
+    // The backend spells this `out[ -]of[ -]office`; normalizing the
+    // separators lets one entry in the list cover all four spellings.
+    title_matches_any(
+        title,
+        &NON_MEETING_TITLE_PREFIXES
+            .iter()
+            .map(|s| s.to_string())
+            .collect::<Vec<_>>(),
+    )
+}
+
+/// Why an event is not a meeting to record. The first two are the backend's
+/// and are not adjustable; the last two are what the user's filters decide.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SkipReason {
+    AllDay,
+    Declined,
+    EventType,
+    Title,
+}
+
+impl SkipReason {
+    pub fn from_backend(raw: &str) -> Option<Self> {
+        match raw {
+            "all_day" => Some(SkipReason::AllDay),
+            "declined" => Some(SkipReason::Declined),
+            "event_type" => Some(SkipReason::EventType),
+            "title" => Some(SkipReason::Title),
+            _ => None,
+        }
+    }
+
+    /// One phrase for the "what would be skipped" preview.
+    pub fn explanation(self) -> &'static str {
+        match self {
+            SkipReason::AllDay => "an all-day entry",
+            SkipReason::Declined => "you declined it",
+            SkipReason::EventType => "its calendar event type is one you skip",
+            SkipReason::Title => "its title starts with one of your skipped labels",
+        }
+    }
+
+    /// True when the user's own settings decide it, rather than the backend.
+    pub fn is_adjustable(self) -> bool {
+        matches!(self, SkipReason::EventType | SkipReason::Title)
+    }
+}
+
+/// Which calendar entries count as meetings. The defaults mirror the backend;
+/// Settings → Calendar can turn a type back on or add a title label.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CalendarFilters {
+    /// Google `eventType` values to skip, lowercased on comparison.
+    pub skip_event_types: Vec<String>,
+    /// Title prefixes to skip; a match must end the word.
+    pub skip_title_prefixes: Vec<String>,
+}
+
+impl Default for CalendarFilters {
+    fn default() -> Self {
+        Self {
+            skip_event_types: NON_MEETING_EVENT_TYPES.iter().map(|s| s.to_string()).collect(),
+            skip_title_prefixes: NON_MEETING_TITLE_PREFIXES
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
+        }
+    }
+}
+
+impl CalendarFilters {
+    /// Why this event would not be recorded, or `None` when it is a meeting.
+    /// An `all_day` or `declined` verdict from the backend always stands.
+    pub fn skip_reason(&self, event: &CalendarEvent) -> Option<SkipReason> {
+        if event.is_all_day {
+            return Some(SkipReason::AllDay);
+        }
+        match event.skip_reason.as_deref().and_then(SkipReason::from_backend) {
+            Some(r) if !r.is_adjustable() => return Some(r),
+            _ => {}
+        }
+        let kind = event
             .event_type
             .as_deref()
             .unwrap_or_default()
             .trim()
             .to_lowercase();
-        if NON_MEETING_EVENT_TYPES.contains(&kind.as_str()) {
-            return false;
+        if !kind.is_empty()
+            && self
+                .skip_event_types
+                .iter()
+                .any(|t| t.trim().to_lowercase() == kind)
+        {
+            return Some(SkipReason::EventType);
         }
-        !is_non_meeting_title(&self.title)
+        if title_matches_any(&event.title, &self.skip_title_prefixes) {
+            return Some(SkipReason::Title);
+        }
+        None
+    }
+
+    pub fn keeps(&self, event: &CalendarEvent) -> bool {
+        self.skip_reason(event).is_none()
+    }
+}
+
+impl CalendarEvent {
+    /// Whether this entry may raise a reminder, auto-start, or the "end and
+    /// start next" prompt under the default filters. The backend drops these
+    /// already; this is the belt for an older backend and an unseen title.
+    pub fn is_recordable_meeting(&self) -> bool {
+        CalendarFilters::default().keeps(self)
     }
 
     /// The link to join the call: the conference URL first, then the Meet
@@ -320,12 +441,41 @@ impl ApiClient {
         time_max: &str,
         max_results: u32,
     ) -> Result<CalendarEvents, ApiError> {
+        self.google_events_inner(time_min, time_max, max_results, false)
+            .await
+    }
+
+    /// Every non-cancelled event, each carrying `skipReason` when the
+    /// backend's own filter would drop it. The client applies the user's
+    /// filters on top, which is how a skipped event type can be turned back on.
+    pub async fn google_events_including_filtered(
+        &self,
+        time_min: &str,
+        time_max: &str,
+        max_results: u32,
+    ) -> Result<CalendarEvents, ApiError> {
+        self.google_events_inner(time_min, time_max, max_results, true)
+            .await
+    }
+
+    async fn google_events_inner(
+        &self,
+        time_min: &str,
+        time_max: &str,
+        max_results: u32,
+        include_filtered: bool,
+    ) -> Result<CalendarEvents, ApiError> {
         let url = format!(
-            "{}?time_min={}&time_max={}&max_results={}",
+            "{}?time_min={}&time_max={}&max_results={}{}",
             endpoint_url(self.base(), "api/google/events"),
             urlencoding(time_min),
             urlencoding(time_max),
-            max_results
+            max_results,
+            if include_filtered {
+                "&include_filtered=true"
+            } else {
+                ""
+            }
         );
         self.get_json(&url).await
     }
@@ -506,16 +656,19 @@ mod tests {
             "ooo - back monday",
             "Out of office",
             "out-of-office (Ian)",
-            "PTO",
+            "Out-of office",
+            "  PTO",
             "PTO — Ian",
             "Holiday",
             "Vacation",
             "Annual leave",
             "Sick day",
             "Focus time",
-            "Focus: deep work",
+            "Focus block",
+            "No meeting",
             "No meetings",
             "Do not book",
+            "DNB",
         ] {
             assert!(is_non_meeting_title(title), "{title:?} blocks time");
             let e = CalendarEvent {
@@ -529,11 +682,78 @@ mod tests {
             "Holidays roadmap review",
             "Sickle cell study readout",
             "Vacationing team retro",
+            "Prep for holiday campaign",
             "1:1 with Sam",
             "",
         ] {
             assert!(!is_non_meeting_title(title), "{title:?} is a meeting");
         }
+    }
+
+    #[test]
+    fn adjustable_filters_can_turn_a_type_back_on_or_add_a_label() {
+        let ooo = CalendarEvent {
+            event_type: Some("outOfOffice".into()),
+            skip_reason: Some("event_type".into()),
+            ..ev("Out of office", 0, 60)
+        };
+        assert_eq!(
+            CalendarFilters::default().skip_reason(&ooo),
+            Some(SkipReason::EventType)
+        );
+        // The user wants out-of-office blocks recorded after all.
+        let keep_ooo = CalendarFilters {
+            skip_event_types: vec!["focusTime".into()],
+            skip_title_prefixes: vec![],
+        };
+        assert_eq!(keep_ooo.skip_reason(&ooo), None, "backend label overridden");
+
+        // A label of their own, on an event the backend kept.
+        let standup = ev("Standup — no agenda", 0, 60);
+        assert_eq!(CalendarFilters::default().skip_reason(&standup), None);
+        let mine = CalendarFilters {
+            skip_event_types: vec![],
+            skip_title_prefixes: vec!["standup".into()],
+        };
+        assert_eq!(mine.skip_reason(&standup), Some(SkipReason::Title));
+    }
+
+    #[test]
+    fn an_all_day_or_declined_verdict_is_not_adjustable() {
+        let empty = CalendarFilters {
+            skip_event_types: vec![],
+            skip_title_prefixes: vec![],
+        };
+        let all_day = CalendarEvent {
+            is_all_day: true,
+            skip_reason: Some("all_day".into()),
+            ..ev("Conference", 0, 60)
+        };
+        assert_eq!(empty.skip_reason(&all_day), Some(SkipReason::AllDay));
+        let declined = CalendarEvent {
+            skip_reason: Some("declined".into()),
+            ..ev("Weekly sync", 0, 60)
+        };
+        assert_eq!(empty.skip_reason(&declined), Some(SkipReason::Declined));
+        assert!(!SkipReason::AllDay.is_adjustable());
+        assert!(!SkipReason::Declined.is_adjustable());
+        assert!(SkipReason::EventType.is_adjustable());
+        assert!(SkipReason::Title.is_adjustable());
+        // An unknown reason from a newer backend is not a silent skip.
+        assert_eq!(SkipReason::from_backend("something_new"), None);
+    }
+
+    #[test]
+    fn the_default_filters_match_the_backend_lists() {
+        let d = CalendarFilters::default();
+        assert_eq!(d.skip_event_types.len(), NON_MEETING_EVENT_TYPES.len());
+        for kind in NON_MEETING_EVENT_TYPES {
+            assert!(d.skip_event_types.iter().any(|t| t == kind), "{kind}");
+        }
+        assert!(d.skip_title_prefixes.iter().any(|p| p == "out of office"));
+        // The default filters agree with the standalone helper.
+        let e = ev("PTO — Ian", 0, 60);
+        assert_eq!(d.keeps(&e), e.is_recordable_meeting());
     }
 
     #[test]

@@ -62,6 +62,9 @@ pub struct Prefs {
     pub launch_at_login: bool,
     /// Dictionary corrections (`heard` → `correct`), capped at 100.
     pub dictionary_corrections: Vec<crate::corrections::Correction>,
+    /// Which calendar entries count as meetings (Settings → Calendar).
+    /// Defaults mirror the backend's own filter.
+    pub calendar_filters: crate::integrations::CalendarFilters,
     /// Share structured reliability events (`POST /api/client-events`).
     /// `None` means the user never chose: on in managed mode, and never in
     /// BYOK. An explicit `false` stays off.
@@ -98,6 +101,7 @@ impl Default for Prefs {
             calendar_auto_stop: false,
             launch_at_login: false,
             dictionary_corrections: Vec::new(),
+            calendar_filters: crate::integrations::CalendarFilters::default(),
             share_diagnostics: None,
         }
     }

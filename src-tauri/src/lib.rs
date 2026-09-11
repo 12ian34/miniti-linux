@@ -355,6 +355,7 @@ pub fn run() {
             state::google_connect,
             state::google_disconnect,
             state::calendar_events,
+            state::calendar_filter_preview,
             state::get_prep_notes,
             state::set_prep_notes,
             state::start_meeting_from_event,

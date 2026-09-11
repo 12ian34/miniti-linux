@@ -36,12 +36,13 @@ import {
   subscribeUrl,
   addCorrection,
   authAttachAccount,
+  calendarFilterPreview,
   removeCorrection,
   omarchyInstallWidget,
   omarchyRemoveWidget,
   omarchyStatus,
 } from "../api";
-import type { AppMode, AuthDevices, AuthStatus, Correction, CrmProvider, EnvHealth, OmarchyStatus, Prefs, Usage } from "../types";
+import type { AppMode, AuthDevices, AuthStatus, CalendarFilters, CalendarPreviewEntry, Correction, CrmProvider, EnvHealth, OmarchyStatus, Prefs, Usage } from "../types";
 import { Enroll } from "./Enroll";
 import { applyInterfaceScale } from "../scale";
 import { Sheet } from "./MeetingTools";
@@ -247,6 +248,7 @@ export function Settings() {
     { id: "smart", dest: "calendar", label: "Smart meetings", keywords: "smart meetings quiet ended prompt call" },
     { id: "gcal", dest: "calendar", label: "Google Calendar", keywords: "google calendar connect events upcoming" },
     { id: "calauto", dest: "calendar", label: "Calendar automation", keywords: "auto start auto stop calendar" },
+    { id: "calfilters", dest: "calendar", label: "What counts as a meeting", keywords: "calendar filter skip out of office ooo pto focus time birthday working location preview" },
     { id: "attio", dest: "crm", label: "Attio", keywords: "attio crm" },
     { id: "twenty", dest: "crm", label: "Twenty", keywords: "twenty crm" },
     { id: "webhook", dest: "webhooks", label: "Webhook URL", keywords: "webhook url post meeting saved" },
@@ -528,6 +530,14 @@ export function Settings() {
               <Toggle label="Auto-start recording for upcoming calendar events (16 s countdown)" checked={prefs.calendar_auto_start} onChange={(v) => update("calendar_auto_start", v)} />
               <Toggle label="Auto-stop when a calendar event ends (enables automatic handoff with Smart meetings)" checked={prefs.calendar_auto_stop} onChange={(v) => update("calendar_auto_stop", v)} />
             </C>
+            <C highlight={highlight} id="calfilters">
+              <MeetingFilters
+                filters={prefs.calendar_filters}
+                connected={google?.connected === true}
+                onChange={(f) => update("calendar_filters", f)}
+                onError={setError}
+              />
+            </C>
           </>
         )}
 
@@ -804,6 +814,107 @@ function AccountCard({ auth, onChanged, onError, onNotice }: { auth: AuthStatus;
             <button className="btn" onClick={() => setMoveOpen(false)} disabled={busy}>Cancel</button>
           </div>
         </Sheet>
+      )}
+    </section>
+  );
+}
+
+const EVENT_TYPES: [string, string][] = [
+  ["outOfOffice", "Out of office"],
+  ["focusTime", "Focus time"],
+  ["workingLocation", "Working location"],
+  ["birthday", "Birthdays"],
+];
+
+const DEFAULT_TITLE_PREFIXES = [
+  "ooo", "out of office", "pto", "annual leave", "holiday", "vacation", "sick",
+  "focus time", "focus block", "no meeting", "no meetings", "do not book", "dnb",
+];
+
+/**
+ * Which calendar entries count as meetings, and a preview of the next seven
+ * days under the settings currently on screen (saved or not).
+ */
+function MeetingFilters({ filters, connected, onChange, onError }: {
+  filters: CalendarFilters;
+  connected: boolean;
+  onChange: (f: CalendarFilters) => void;
+  onError: (m: string | null) => void;
+}) {
+  const [preview, setPreview] = useState<CalendarPreviewEntry[] | null>(null);
+  const [busy, setBusy] = useState(false);
+  const skips = (kind: string) => filters.skip_event_types.includes(kind);
+  function toggleType(kind: string, skip: boolean) {
+    const next = skip
+      ? [...filters.skip_event_types, kind]
+      : filters.skip_event_types.filter((t) => t !== kind);
+    onChange({ ...filters, skip_event_types: next });
+    setPreview(null);
+  }
+  async function runPreview() {
+    setBusy(true);
+    onError(null);
+    try {
+      setPreview(await calendarFilterPreview(filters));
+    } catch (e) { onError(errorMessage(e)); } finally { setBusy(false); }
+  }
+  const skipped = preview?.filter((e) => e.skip_reason !== null) ?? [];
+  return (
+    <section className="card">
+      <h2 className="card-title">What counts as a meeting</h2>
+      <p className="muted small">
+        Entries that block time rather than book a call never raise a reminder, start a recording,
+        or trigger the next-meeting prompt.
+      </p>
+      <Field label="Skip these calendar event types">
+        {EVENT_TYPES.map(([kind, label]) => (
+          <Toggle key={kind} label={label} checked={skips(kind)} onChange={(v) => toggleType(kind, v)} />
+        ))}
+      </Field>
+      <Field label="Skip titles starting with (comma-separated)">
+        <input
+          className="input"
+          value={filters.skip_title_prefixes.join(", ")}
+          onChange={(e) => {
+            onChange({ ...filters, skip_title_prefixes: e.currentTarget.value.split(",").map((t) => t.trim()).filter(Boolean) });
+            setPreview(null);
+          }}
+          placeholder="ooo, pto, focus time"
+        />
+      </Field>
+      <div className="save-row">
+        <button className="btn small" onClick={runPreview} disabled={busy || !connected}>
+          {busy ? "checking…" : "preview the next 7 days"}
+        </button>
+        <button
+          className="btn small"
+          onClick={() => {
+            onChange({ skip_event_types: EVENT_TYPES.map(([k]) => k), skip_title_prefixes: DEFAULT_TITLE_PREFIXES });
+            setPreview(null);
+          }}
+        >
+          reset to defaults
+        </button>
+      </div>
+      {!connected && <p className="muted tiny">connect Google Calendar above to preview real events.</p>}
+      {preview && (
+        preview.length === 0
+          ? <p className="muted small">nothing in the next seven days.</p>
+          : (
+            <div className="corrections">
+              <p className="muted small">
+                {skipped.length === 0
+                  ? `all ${preview.length} would be recorded.`
+                  : `${skipped.length} of ${preview.length} would be skipped:`}
+              </p>
+              {skipped.map((e) => (
+                <div className="row-line" key={e.id}>
+                  <span className="k">{e.title || "(untitled)"}</span>
+                  <span className="v">{new Date(e.start).toLocaleString()} · {e.why}{e.adjustable ? "" : " (not adjustable here)"}</span>
+                </div>
+              ))}
+            </div>
+          )
       )}
     </section>
   );

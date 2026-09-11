@@ -1,6 +1,8 @@
 import { invoke as tauriInvoke, type InvokeArgs } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type {
+  CalendarFilters,
+  CalendarPreviewEntry,
   CalendarView,
   CatchUp,
   CoachingOverview,
@@ -78,6 +80,12 @@ export const getPrefs = () => invoke<Prefs>("get_prefs");
 export const setPrefs = (prefs: Prefs) => invoke<void>("set_prefs", { prefs });
 /** null when the webhook URL is usable; otherwise the sentence to show under the field. */
 export const validateWebhookUrl = (url: string) => invoke<string | null>("validate_webhook_url", { url });
+/**
+ * The next seven days as `filters` would treat them (the unsaved settings on
+ * screen when given), so the effect of a change can be seen before trusting it.
+ */
+export const calendarFilterPreview = (filters?: CalendarFilters) =>
+  invoke<CalendarPreviewEntry[]>("calendar_filter_preview", { filters: filters ?? null });
 export const getDeviceId = () => invoke<string>("get_device_id");
 
 // Device-bound account (managed mode).

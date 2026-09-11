@@ -43,6 +43,7 @@ export interface Prefs {
   launch_at_login: boolean;
   /** Dictionary corrections: what was heard → what it should say. */
   dictionary_corrections: Correction[];
+  calendar_filters: CalendarFilters;
   /** null = never chosen: on in managed mode, never in BYOK. */
   share_diagnostics: boolean | null;
 }
@@ -70,6 +71,29 @@ export type NudgeKind = "question" | "monologue" | "filler" | "sales";
 export interface OmarchyStatus {
   is_omarchy: boolean;
   widget_installed: boolean;
+}
+
+/** Which calendar entries count as meetings (Settings → Calendar). */
+export interface CalendarFilters {
+  /** Google `eventType` values to skip. */
+  skip_event_types: string[];
+  /** Title prefixes to skip; a match must end the word. */
+  skip_title_prefixes: string[];
+}
+
+export type CalendarSkipReason = "all_day" | "declined" | "event_type" | "title";
+
+/** One entry in the "what would be skipped" preview. */
+export interface CalendarPreviewEntry {
+  id: string;
+  title: string;
+  start: string;
+  event_type: string | null;
+  /** null when it would be recorded. */
+  skip_reason: CalendarSkipReason | null;
+  why: string;
+  /** False for an all-day or declined entry: the settings cannot change it. */
+  adjustable: boolean;
 }
 
 export interface Correction {
