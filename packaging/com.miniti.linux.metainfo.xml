@@ -62,7 +62,7 @@
   <releases>
     <release version="0.7.0" date="2026-09-12" type="development">
       <description>
-        <p>An Omarchy bar widget offered on first launch, Pro that follows your account, moving a computer to another account, an End meeting button on the next-meeting prompt, and a choice of which calendar entries count as meetings.</p>
+        <p>An Omarchy bar widget offered on first launch, Pro that follows your account, moving a computer to another account, an End meeting button on the next-meeting prompt, and meeting filters that decide which calendar entries count as meetings.</p>
       </description>
     </release>
     <release version="0.6.2" date="2026-09-11" type="development">

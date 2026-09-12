@@ -203,27 +203,32 @@ impl SkipReason {
     /// One phrase for the "what would be skipped" preview.
     pub fn explanation(self) -> &'static str {
         match self {
-            SkipReason::AllDay => "an all-day entry",
+            SkipReason::AllDay => "an all-day entry, which has no start time to record against",
             SkipReason::Declined => "you declined it",
             SkipReason::EventType => "its calendar event type is one you skip",
             SkipReason::Title => "its title starts with one of your skipped labels",
         }
     }
 
-    /// True when the user's own settings decide it, rather than the backend.
+    /// True when Settings decides it. Only an all-day entry is fixed, for
+    /// want of a start time to record against.
     pub fn is_adjustable(self) -> bool {
-        matches!(self, SkipReason::EventType | SkipReason::Title)
+        !matches!(self, SkipReason::AllDay)
     }
 }
 
-/// Which calendar entries count as meetings. The defaults mirror the backend;
-/// Settings → Calendar can turn a type back on or add a title label.
+/// Which calendar entries count as meetings (Settings → Calendar → Meeting
+/// filters). The defaults mirror the backend's own filter.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct CalendarFilters {
     /// Google `eventType` values to skip, lowercased on comparison.
     pub skip_event_types: Vec<String>,
     /// Title prefixes to skip; a match must end the word.
     pub skip_title_prefixes: Vec<String>,
+    /// Skip an event this account has declined. Off means a meeting you
+    /// declined but still attend is recorded like any other.
+    pub skip_declined: bool,
 }
 
 impl Default for CalendarFilters {
@@ -234,20 +239,23 @@ impl Default for CalendarFilters {
                 .iter()
                 .map(|s| s.to_string())
                 .collect(),
+            skip_declined: true,
         }
     }
 }
 
 impl CalendarFilters {
     /// Why this event would not be recorded, or `None` when it is a meeting.
-    /// An `all_day` or `declined` verdict from the backend always stands.
+    ///
+    /// An all-day entry is always skipped: the backend sends its start as a
+    /// bare date, so there is no time to record against, count down to, or
+    /// hand over at. Everything else is the user's to decide.
     pub fn skip_reason(&self, event: &CalendarEvent) -> Option<SkipReason> {
         if event.is_all_day {
             return Some(SkipReason::AllDay);
         }
-        match event.skip_reason.as_deref().and_then(SkipReason::from_backend) {
-            Some(r) if !r.is_adjustable() => return Some(r),
-            _ => {}
+        if self.skip_declined && self.is_declined(event) {
+            return Some(SkipReason::Declined);
         }
         let kind = event
             .event_type
@@ -267,6 +275,16 @@ impl CalendarFilters {
             return Some(SkipReason::Title);
         }
         None
+    }
+
+    /// Declined by this account, from the attendee list or from the
+    /// backend's own verdict on an `include_filtered` fetch.
+    fn is_declined(&self, event: &CalendarEvent) -> bool {
+        event.skip_reason.as_deref() == Some("declined")
+            || event
+                .attendees
+                .iter()
+                .any(|a| a.is_self && a.response_status.as_deref() == Some("declined"))
     }
 
     pub fn keeps(&self, event: &CalendarEvent) -> bool {
@@ -705,6 +723,7 @@ mod tests {
         let keep_ooo = CalendarFilters {
             skip_event_types: vec!["focusTime".into()],
             skip_title_prefixes: vec![],
+            ..CalendarFilters::default()
         };
         assert_eq!(keep_ooo.skip_reason(&ooo), None, "backend label overridden");
 
@@ -714,33 +733,86 @@ mod tests {
         let mine = CalendarFilters {
             skip_event_types: vec![],
             skip_title_prefixes: vec!["standup".into()],
+            ..CalendarFilters::default()
         };
         assert_eq!(mine.skip_reason(&standup), Some(SkipReason::Title));
     }
 
     #[test]
-    fn an_all_day_or_declined_verdict_is_not_adjustable() {
-        let empty = CalendarFilters {
+    fn an_all_day_entry_is_skipped_whatever_the_settings_say() {
+        // It has no start time to record against: the backend sends a bare
+        // date, so there is nothing to count down to or hand over at.
+        let nothing_skipped = CalendarFilters {
             skip_event_types: vec![],
             skip_title_prefixes: vec![],
+            skip_declined: false,
         };
         let all_day = CalendarEvent {
             is_all_day: true,
             skip_reason: Some("all_day".into()),
+            start: "2026-09-12".into(),
             ..ev("Conference", 0, 60)
         };
-        assert_eq!(empty.skip_reason(&all_day), Some(SkipReason::AllDay));
-        let declined = CalendarEvent {
-            skip_reason: Some("declined".into()),
-            ..ev("Weekly sync", 0, 60)
-        };
-        assert_eq!(empty.skip_reason(&declined), Some(SkipReason::Declined));
+        assert_eq!(nothing_skipped.skip_reason(&all_day), Some(SkipReason::AllDay));
+        assert_eq!(all_day.start_ts(), None, "a bare date has no time of day");
         assert!(!SkipReason::AllDay.is_adjustable());
-        assert!(!SkipReason::Declined.is_adjustable());
+        // Everything else is the user's to decide.
+        assert!(SkipReason::Declined.is_adjustable());
         assert!(SkipReason::EventType.is_adjustable());
         assert!(SkipReason::Title.is_adjustable());
         // An unknown reason from a newer backend is not a silent skip.
         assert_eq!(SkipReason::from_backend("something_new"), None);
+    }
+
+    #[test]
+    fn a_declined_meeting_is_skipped_unless_you_say_otherwise() {
+        let declined_by_backend = CalendarEvent {
+            skip_reason: Some("declined".into()),
+            ..ev("Weekly sync", 0, 60)
+        };
+        // Or read from the attendee list, when the backend did not label it.
+        let declined_by_attendee = CalendarEvent {
+            attendees: vec![CalendarAttendee {
+                email: "me@acme.com".into(),
+                is_self: true,
+                response_status: Some("declined".into()),
+                ..Default::default()
+            }],
+            ..ev("Weekly sync", 0, 60)
+        };
+        let going = CalendarEvent {
+            attendees: vec![CalendarAttendee {
+                email: "me@acme.com".into(),
+                is_self: true,
+                response_status: Some("accepted".into()),
+                ..Default::default()
+            }],
+            ..ev("Weekly sync", 0, 60)
+        };
+        let d = CalendarFilters::default();
+        assert!(d.skip_declined, "declined meetings are skipped by default");
+        assert_eq!(d.skip_reason(&declined_by_backend), Some(SkipReason::Declined));
+        assert_eq!(d.skip_reason(&declined_by_attendee), Some(SkipReason::Declined));
+        assert_eq!(d.skip_reason(&going), None);
+
+        // Someone who declines but attends anyway turns it off.
+        let keep = CalendarFilters {
+            skip_declined: false,
+            ..CalendarFilters::default()
+        };
+        assert_eq!(keep.skip_reason(&declined_by_backend), None);
+        assert_eq!(keep.skip_reason(&declined_by_attendee), None);
+        // Somebody else declining is not you declining.
+        let other_declined = CalendarEvent {
+            attendees: vec![CalendarAttendee {
+                email: "sam@acme.com".into(),
+                is_self: false,
+                response_status: Some("declined".into()),
+                ..Default::default()
+            }],
+            ..ev("Weekly sync", 0, 60)
+        };
+        assert_eq!(d.skip_reason(&other_declined), None);
     }
 
     #[test]

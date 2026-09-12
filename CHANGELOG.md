@@ -9,7 +9,7 @@ public changelog for miniti for Linux. the changelog for every platform lives at
 - new: On Omarchy, miniti offers to add its bar widget on first launch (and in Settings → General): the recording timer in the bar, a panel with the questions worth asking, start and stop. One click, no second repository to find. `miniti omarchy-widget install` does the same from a terminal
 - new: Move this computer to another account from Settings → Account, with that account's recovery key. It keeps its meetings, usage, calendar and CRM connections, and picks up that account's Pro plan
 - new: The next-meeting prompt offers "End meeting" as well, so you can end the current meeting without starting the next one. It is there on the floating surface, in the app, in the tray, on the notification, and as `miniti decide end`
-- new: Choose what counts as a meeting (Settings → Calendar): out-of-office, focus time, working location and birthdays are skipped by default, along with titles that start with a label like OOO or PTO. Turn any of them back on, add labels of your own, and preview the next seven days to see what would be skipped before you trust it
+- new: Meeting filters (Settings → Calendar): out-of-office, focus time, working location, birthdays, meetings you declined, and titles that start with a label like OOO or PTO are not meetings to record. Turn any of them back on, add labels of your own, and preview the next seven days to see what would be skipped before you trust it
 - new: Share diagnostics (Settings → Privacy & Support): structured reliability events — errors, reconnects, health states — so problems can be fixed. Never any transcript or audio content, and nothing at all in BYOK mode
 - improvement: With the Omarchy widget in the bar the tray icon is hidden, since the widget does the same job, and closing the window keeps miniti running in the background
 - improvement: Pro follows your account. A computer whose account holds a subscription on another device gets Pro and its 5,000 minutes, and says where the plan comes from
@@ -17,7 +17,7 @@ public changelog for miniti for Linux. the changelog for every platform lives at
 - improvement: Coaching counts a filler once. "uh huh" was also counted as an "uh"; the number is now called detected fillers and reads as a floor, since transcription misses some hesitations
 - improvement: A webhook URL must be https, unless it points at this machine. The payload carries the full transcript and attendee names, so it never travels in plaintext, and the log records the hook's host rather than its full URL
 - fix: Correcting a word only to fix its capitals ("lightdash" → "Lightdash") was rejected as the same word. It now works, and a correction the app cannot save says why instead of closing as though it had
-- fix: An out-of-office block or a focus-time entry could end the meeting you were in and start a recording of nothing
+- fix: An out-of-office block, a focus-time entry or a meeting you declined could end the meeting you were in and start a recording of nothing
 - fix: When the backend asks miniti to slow down, it waits as long as it was asked before trying that request again, and tells you how long
 
 ### 2026-09-11 - v0.6.2

@@ -73,12 +73,14 @@ export interface OmarchyStatus {
   widget_installed: boolean;
 }
 
-/** Which calendar entries count as meetings (Settings → Calendar). */
+/** Which calendar entries count as meetings (Settings → Calendar → Meeting filters). */
 export interface CalendarFilters {
   /** Google `eventType` values to skip. */
   skip_event_types: string[];
   /** Title prefixes to skip; a match must end the word. */
   skip_title_prefixes: string[];
+  /** Skip a meeting this account declined. */
+  skip_declined: boolean;
 }
 
 export type CalendarSkipReason = "all_day" | "declined" | "event_type" | "title";

@@ -248,7 +248,7 @@ export function Settings() {
     { id: "smart", dest: "calendar", label: "Smart meetings", keywords: "smart meetings quiet ended prompt call" },
     { id: "gcal", dest: "calendar", label: "Google Calendar", keywords: "google calendar connect events upcoming" },
     { id: "calauto", dest: "calendar", label: "Calendar automation", keywords: "auto start auto stop calendar" },
-    { id: "calfilters", dest: "calendar", label: "What counts as a meeting", keywords: "calendar filter skip out of office ooo pto focus time birthday working location preview" },
+    { id: "calfilters", dest: "calendar", label: "Meeting filters", keywords: "calendar filter skip out of office ooo pto focus time birthday working location declined all day preview what counts as a meeting" },
     { id: "attio", dest: "crm", label: "Attio", keywords: "attio crm" },
     { id: "twenty", dest: "crm", label: "Twenty", keywords: "twenty crm" },
     { id: "webhook", dest: "webhooks", label: "Webhook URL", keywords: "webhook url post meeting saved" },
@@ -861,7 +861,7 @@ function MeetingFilters({ filters, connected, onChange, onError }: {
   const skipped = preview?.filter((e) => e.skip_reason !== null) ?? [];
   return (
     <section className="card">
-      <h2 className="card-title">What counts as a meeting</h2>
+      <h2 className="card-title">Meeting filters</h2>
       <p className="muted small">
         Entries that block time rather than book a call never raise a reminder, start a recording,
         or trigger the next-meeting prompt.
@@ -870,7 +870,16 @@ function MeetingFilters({ filters, connected, onChange, onError }: {
         {EVENT_TYPES.map(([kind, label]) => (
           <Toggle key={kind} label={label} checked={skips(kind)} onChange={(v) => toggleType(kind, v)} />
         ))}
+        <Toggle
+          label="Meetings you declined"
+          checked={filters.skip_declined}
+          onChange={(v) => { onChange({ ...filters, skip_declined: v }); setPreview(null); }}
+        />
       </Field>
+      <p className="muted tiny">
+        All-day entries are always skipped: they carry a date but no time of day, so there is
+        nothing to count down to or hand over at.
+      </p>
       <Field label="Skip titles starting with (comma-separated)">
         <input
           className="input"
@@ -889,7 +898,7 @@ function MeetingFilters({ filters, connected, onChange, onError }: {
         <button
           className="btn small"
           onClick={() => {
-            onChange({ skip_event_types: EVENT_TYPES.map(([k]) => k), skip_title_prefixes: DEFAULT_TITLE_PREFIXES });
+            onChange({ skip_event_types: EVENT_TYPES.map(([k]) => k), skip_title_prefixes: DEFAULT_TITLE_PREFIXES, skip_declined: true });
             setPreview(null);
           }}
         >
