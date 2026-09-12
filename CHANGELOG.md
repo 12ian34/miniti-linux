@@ -4,7 +4,7 @@ public changelog for miniti for Linux. the changelog for every platform lives at
 
 ## releases
 
-### unreleased - v0.7.0
+### 2026-09-12 - v0.7.0
 
 - new: On Omarchy, miniti offers to add its bar widget on first launch (and in Settings → General): the recording timer in the bar, a panel with the questions worth asking, start and stop. One click, no second repository to find. `miniti omarchy-widget install` does the same from a terminal
 - new: Move this computer to another account from Settings → Account, with that account's recovery key. It keeps its meetings, usage, calendar and CRM connections, and picks up that account's Pro plan
