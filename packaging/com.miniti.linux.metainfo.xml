@@ -60,6 +60,16 @@
     <control>keyboard</control>
   </recommends>
   <releases>
+    <release version="0.7.0" date="2026-09-12" type="development">
+      <description>
+        <p>An Omarchy bar widget offered on first launch, Pro that follows your account, moving a computer to another account, an End meeting button on the next-meeting prompt, and a choice of which calendar entries count as meetings.</p>
+      </description>
+    </release>
+    <release version="0.6.2" date="2026-09-11" type="development">
+      <description>
+        <p>Correct a misheard word from the transcript, join a call from miniti, and one person on the microphone stays one speaker.</p>
+      </description>
+    </release>
     <release version="0.5.0" date="2026-09-07" type="development">
       <description>
         <p>A command line, a control socket, a D-Bus interface and a launch-at-login option. The machine stays awake during a meeting, and opening miniti twice no longer opens two copies.</p>

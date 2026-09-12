@@ -192,6 +192,49 @@ mod tests {
         assert!(p.can_transcribe());
     }
 
+    /// A prefs.json written by an earlier version has none of the fields added
+    /// since. Every one must come back as its default rather than as nothing:
+    /// the Settings screen reads `calendar_filters` without a guard, so a
+    /// missing list would be a blank page on the first launch after an update.
+    #[test]
+    fn a_prefs_file_from_an_older_version_gains_the_new_fields() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("prefs.json");
+        // The key set a 0.6.x install actually has on disk.
+        std::fs::write(
+            &path,
+            r#"{
+                "app_mode":"managed","language":"en","byok_deepgram_key":null,
+                "byok_openai_key":null,"webhook_url":null,"docs_mcp_url":null,
+                "export_folder":null,"filler_overrides":[],"smart_meetings_enabled":true,
+                "show_tray":true,"show_floating_indicator":true,"capture_system_audio":true,
+                "accepted_terms_version":"1.0","onboarding_complete":true,
+                "live_insights_enabled":true,"sales_insights_default":false,
+                "codebase_root":null,"personal_dictionary":[],"notifications_enabled":true,
+                "live_guidance_enabled":false,"disabled_nudge_kinds":[],
+                "interface_scale":"standard","auto_stop_minutes":0,
+                "calendar_auto_start":false,"calendar_auto_stop":false,
+                "launch_at_login":false,"dictionary_corrections":[]
+            }"#,
+        )
+        .unwrap();
+
+        let loaded = Prefs::load_from(&path);
+        // What was in the file is preserved.
+        assert_eq!(loaded.app_mode, AppMode::Managed);
+        assert!(loaded.smart_meetings_enabled);
+        assert_eq!(loaded.accepted_terms_version.as_deref(), Some("1.0"));
+        // What was not is filled in.
+        assert_eq!(loaded.share_diagnostics, None, "unset, so the default applies");
+        assert_eq!(
+            loaded.calendar_filters,
+            crate::integrations::CalendarFilters::default(),
+            "the filters must arrive populated, not empty"
+        );
+        assert!(!loaded.calendar_filters.skip_event_types.is_empty());
+        assert!(!loaded.calendar_filters.skip_title_prefixes.is_empty());
+    }
+
     #[test]
     fn roundtrip_and_missing_file_defaults() {
         let dir = tempfile::tempdir().unwrap();
