@@ -435,3 +435,7 @@ Full write-up: [docs/feasibility.md](docs/feasibility.md).
 4. Do not enable Tauri updater signing; pacman owns updates.  
 5. Do not commit secrets.  
 6. Ask before `git init` / remote / publish if the user has not requested it.
+
+## Tracking: on-device speaker separation (macOS/iOS v2.10.0, 2026-09-25)
+
+The Apple apps gained an optional (default off, beta) on-device diarizer: NVIDIA Nemotron-3-Diarization through FluidAudio (Core ML). When active they open the Deepgram socket without `diarize_model` and assign each word's speaker from a local 10 ms speaker-activity timeline. Backend contract unchanged (diarization is client-side). For parity here: use the ONNX build (`onnx-community/Nemotron-3-Diarization-ONNX`, ONNX Runtime) with the same streaming preset (1.04 s), the same word-assignment rule (majority dominant speaker over the word's timestamps, borrowed neighbour at low confidence past the horizon), and the same fallback to Deepgram diarization. Until then Linux keeps `diarize_model=latest`. Design and evidence: `../miniti/docs/on-device-diarization-plan.md`, `../miniti/scripts/diarization-poc/RESULTS.md`.
