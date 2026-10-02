@@ -454,3 +454,8 @@ Details: `../miniti/docs/smart-meetings-plan.md` §3–4, `../miniti/docs/call-l
 ## Tracking: Jev classifier for speaker naming and the sales nudge (macOS/iOS v2.10.0, 2026-09-25)
 
 New backend route `POST /api/classify` (device auth with proof, `classify` rate bucket). The Apple apps, behind a default-off managed-only setting, send `kind: speaker_names` (transcript of prefiltered `[SpeakerID:N]` turns, attendees, unresolved speaker IDs) and get one attendee name or `unknown` per ID, and `kind: sales_nudge` (last 40 finals) every 8 finals and fire the sales suggestion after two consecutive `isSales >= 0.7`. Any failure or a 503 `classifier_unavailable` hands back to GPT / the phrase list. For parity here: same request shapes and thresholds; see `../miniti/docs/jev-system-one-plan.md` (Implementation status) and `../miniti-api/lib/classify.ts`.
+
+
+## parity note 2026-10-02 (from the Apple apps, 2.10.0)
+
+- calendar-linked meetings keep the event title: the Apple apps now ignore `suggested_title` from `/api/insights` (live and final) when the meeting has a `calendarEventId`. Mirror this in the Linux client. Also 2.10.0: on-device Nemotron diarization (default off), Jev classifier via `/api/classify` (default off), a macOS microphone picker, and a macOS fix for the mic engine stopping after an output-device switch. Backend minimum version for macOS/iOS is now 2.6.0 and their client-auth mode is `require`; Linux is unchanged.
