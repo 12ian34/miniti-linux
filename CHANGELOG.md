@@ -4,6 +4,10 @@ public changelog for miniti for Linux. the changelog for every platform lives at
 
 ## releases
 
+### 2026-10-22 - v0.7.1
+
+- fix: miniti no longer trusts the eMudhra root certificate whose signing keys were cracked on 17 October. miniti for Linux carries its own list of trusted roots, so a system update does not cover it. Update to be safe
+
 ### 2026-09-13 - v0.7.0
 
 - new: On Omarchy, miniti offers to add its bar widget on first launch (and in Settings → General): the recording timer in the bar, a panel with the questions worth asking, start and stop. One click, no second repository to find. `miniti omarchy-widget install` does the same from a terminal

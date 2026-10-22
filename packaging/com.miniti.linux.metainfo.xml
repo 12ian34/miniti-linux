@@ -60,6 +60,11 @@
     <control>keyboard</control>
   </recommends>
   <releases>
+    <release version="0.7.1" date="2026-10-22" type="development">
+      <description>
+        <p>Drops trust in the eMudhra root certificate whose signing keys were cracked. miniti carries its own list of trusted roots, so a system update does not cover it.</p>
+      </description>
+    </release>
     <release version="0.7.0" date="2026-09-13" type="development">
       <description>
         <p>An Omarchy bar widget offered on first launch, Pro that follows your account, moving a computer to another account, an End meeting button on the next-meeting prompt, and meeting filters that decide which calendar entries count as meetings.</p>
