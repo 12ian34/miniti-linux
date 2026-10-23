@@ -150,6 +150,10 @@ Full contract: `../miniti-api/AGENTS.md`. Summary for this client:
 | POST/GET | `/api/google/*` | Calendar OAuth + events |
 | POST/GET | `/api/attio/*`, `/api/twenty/*` | CRM |
 
+**To mirror (2026-10-21, Apple 3.3.0):** the cloud switch is per account. `GET /api/usage` now returns `cloud_version` and, once set, `cloud_enabled`; `PUT /api/account/cloud { enabled }` (device auth + proof) writes it. Linux should follow a version it has not applied and write its own flips. Contract: `../miniti-api/docs/agents/08-cloud.md` § "One switch per account"; rules: `../miniti/docs/cloud-sync-plan.md`.
+
+**To mirror (2026-10-23, Apple 3.3.1, Granola import):** Granola's bulk export now has the columns `document_id, user_email, document_title, workspace_name, document_created, summary, notes, transcript`; the old alias lists matched none of the three that matter, so every row was skipped as "missing a date". The header fix (prefix-stripped aliases, `canonical_header`) is in `src-tauri/src/import/granola.rs` as of this commit. Still to port from `../miniti/Miniti/Services/GranolaCSVImporter.swift`: unlabelled transcripts (one fragment per line, no speakers) joined per sentence instead of merged into one block; meeting length estimated at 150 words a minute when the export has no end time; turn timestamps placed by word position; the markdown summary flattened to plain text (leading title heading dropped, `\&` unescaped, `**` removed); the zip Granola emails accepted directly (stored or deflated CSV entries, several `-00N.csv` parts, in name order). Plan and tests: `../miniti/docs/granola-import-plan.md`, `../miniti/MinitiTests/MeetingModelTests.swift` Granola section.
+
 ### Session JWT
 
 Prefer `access_token` + `expires_at` / `expires_in`. Connect Deepgram with `Authorization: Bearer <token>`. Refresh before reconnect if within ~60s of expiry. Persist `session_id` on the meeting for orphan end reporting.

@@ -83,7 +83,7 @@ pub struct ParseResult {
 }
 
 const ID_HEADERS: &[&str] = &["id", "noteid", "documentid", "meetingid", "granolaid"];
-const TITLE_HEADERS: &[&str] = &["title", "notetitle", "meetingtitle", "name"];
+const TITLE_HEADERS: &[&str] = &["title", "notetitle", "meetingtitle", "documenttitle", "name"];
 const START_HEADERS: &[&str] = &[
     "starttime",
     "meetingstart",
@@ -91,6 +91,7 @@ const START_HEADERS: &[&str] = &[
     "date",
     "createdat",
     "created",
+    "documentcreated",
     "scheduledstarttime",
     "calendareventstart",
 ];
@@ -118,7 +119,7 @@ const TRANSCRIPT_HEADERS: &[&str] = &[
     "transcription",
 ];
 const ATTENDEE_HEADERS: &[&str] = &["attendees", "invitees", "participants", "people"];
-const OWNER_HEADERS: &[&str] = &["owneremail", "owner", "createdbyemail"];
+const OWNER_HEADERS: &[&str] = &["owneremail", "owner", "createdbyemail", "useremail"];
 const ORGANIZER_HEADERS: &[&str] = &["organizer", "organiser", "organizeremail", "organiseremail"];
 const CALENDAR_HEADERS: &[&str] = &["calendareventid", "calendarid", "eventid"];
 const URL_HEADERS: &[&str] = &["weburl", "granolaurl", "url", "link"];
@@ -129,6 +130,25 @@ fn normalize_header(h: &str) -> String {
         .chars()
         .filter(|c| c.is_alphanumeric())
         .collect()
+}
+
+/// Granola prefixes its columns with the kind of record (`document_title`, `document_created`).
+/// A header that is not known as written is retried without that prefix.
+const HEADER_PREFIXES: &[&str] = &["document", "note", "meeting", "granola"];
+
+fn canonical_header(h: &str, recognized: &HashSet<&str>) -> String {
+    let normalized = normalize_header(h);
+    if recognized.contains(normalized.as_str()) {
+        return normalized;
+    }
+    for prefix in HEADER_PREFIXES {
+        if let Some(stripped) = normalized.strip_prefix(prefix) {
+            if recognized.contains(stripped) {
+                return stripped.to_string();
+            }
+        }
+    }
+    normalized
 }
 
 /// RFC 4180-ish parser: quoted fields, doubled quotes, CR/LF/CRLF rows.
@@ -647,7 +667,6 @@ pub fn parse(text: &str) -> Result<ParseResult, String> {
         .first()
         .filter(|r| !r.is_empty())
         .ok_or("This CSV does not contain recognizable Granola meeting columns.")?;
-    let headers: Vec<String> = raw_headers.iter().map(|h| normalize_header(h)).collect();
     let recognized: HashSet<&str> = [
         ID_HEADERS,
         TITLE_HEADERS,
@@ -665,6 +684,10 @@ pub fn parse(text: &str) -> Result<ParseResult, String> {
     .iter()
     .flat_map(|h| h.iter().copied())
     .collect();
+    let headers: Vec<String> = raw_headers
+        .iter()
+        .map(|h| canonical_header(h, &recognized))
+        .collect();
     if !headers.iter().any(|h| recognized.contains(h.as_str())) {
         return Err("This CSV does not contain recognizable Granola meeting columns.".into());
     }
@@ -771,6 +794,20 @@ mod tests {
         assert_eq!(rows[1], vec!["x, y", "line1\nline2"]);
         assert_eq!(rows[2][0], "he said \"hi\"");
         assert!(parse_csv_rows("a,\"unterminated").is_err());
+    }
+
+    #[test]
+    fn bulk_export_document_columns_are_recognized() {
+        // The export Granola emailed on 2026-10-23.
+        let csv = "document_id,user_email,document_title,workspace_name,document_created,summary,notes,transcript\n\
+04827048-b78d-47e0-acf3-3bb9eb9a1055,ian@example.com,Emily and Ian,Ian,2025-07-31T13:43:28.068Z,Notes,,\"Yeah.\nAnd more.\"\n";
+        let parsed = parse(csv).unwrap();
+        assert_eq!(parsed.meetings.len(), 1);
+        let m = &parsed.meetings[0];
+        assert_eq!(m.title, "Emily and Ian");
+        assert_eq!(m.external_id, "04827048-b78d-47e0-acf3-3bb9eb9a1055");
+        assert_eq!(m.start, 1_753_969_408);
+        assert_eq!(m.summary.as_deref(), Some("Notes"));
     }
 
     #[test]
