@@ -117,3 +117,5 @@ Every release adds an entry to `CHANGELOG.md`; the rules are in [docs/changelog-
 3. Ask before adding Flatpak/AppImage or changing the binary + Omarchy-repository ship model. Do not suggest the AUR.
 
 Apple O6 diagnostic timeline/support schema parity is tracked in `PLAN.md` (2026-10-29); not implemented or released on Linux. Existing support shapes remain accepted by the additive backend parser.
+
+Apple 3.6.0 sync/delivery parity is tracked in [PLAN.md](PLAN.md#tracking-apple-360-sync-and-delivery-reliability-2026-10-30-local-implementation): optional webhook `processing`, durable stopped-meeting eligibility/count freshness, held completion handoff, immutable delivery IDs/current-data resend and saved-AI authority. Tracking only; Swift implementation does not establish Linux parity or change its release version. No backend sync schema change.
