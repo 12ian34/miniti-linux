@@ -74,6 +74,6 @@ Roughly ~41k LOC of macOS/shared Swift. Strongly platform-bound (~14k+): `AudioC
 ## Sources
 
 - `../miniti` AGENTS.md, docs/architecture.md, docs/audio.md, docs/monetization.md, docs/call-lifecycle-and-recording-presence-plan.md  
-- `../miniti/ANDROID_PLAN.md` (API/schema patterns; Linux parity is *wider* than Android v1)  
+- `../miniti/docs/research/android-original-plan.md` (API/schema patterns; Linux parity is *wider* than Android v1)
 - Tauri v2 Debian distribute docs  
 - Investigation canvas (Cursor) locked Tauri + binary tarball 2026-09-05  

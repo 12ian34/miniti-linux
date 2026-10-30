@@ -41,8 +41,8 @@ Do not modify sibling repos from this workflow unless the user explicitly asks. 
 | CLI, control socket, state file, D-Bus, Waybar, autostart | [docs/desktop-integration.md](docs/desktop-integration.md) |
 | What a gold-standard Linux app still needs (done / open / decided) | [docs/linux-roadmap.md](docs/linux-roadmap.md) |
 | Backend endpoints / Polar | `../miniti-api/AGENTS.md` (and PLAN § API) |
-| Current macOS audio / echo / multichannel | `../miniti/docs/audio.md` (reference only — reimplement here) |
-| Call lifecycle policy semantics | `../miniti/docs/call-lifecycle-and-recording-presence-plan.md` |
+| Current macOS audio / echo / multichannel | `../miniti/docs/reference/audio.md` (reference only — reimplement here) |
+| Call lifecycle policy semantics | `../miniti/docs/archive/call-lifecycle-and-recording-presence-plan.md` |
 
 ## Product (user-facing target)
 
@@ -115,3 +115,5 @@ Every release adds an entry to `CHANGELOG.md`; the rules are in [docs/changelog-
 1. Read [PLAN.md](PLAN.md).
 2. Prefer reimplementing contracts over copying Swift.
 3. Ask before adding Flatpak/AppImage or changing the binary + Omarchy-repository ship model. Do not suggest the AUR.
+
+Apple O6 diagnostic timeline/support schema parity is tracked in `PLAN.md` (2026-10-29); not implemented or released on Linux. Existing support shapes remain accepted by the additive backend parser.
