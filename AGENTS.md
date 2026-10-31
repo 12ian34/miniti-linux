@@ -121,3 +121,5 @@ Apple O6 diagnostic timeline/support schema parity is tracked in `PLAN.md` (2026
 Apple 3.6.0 sync/delivery parity is tracked in [PLAN.md](PLAN.md#tracking-apple-360-sync-and-delivery-reliability-2026-10-30-local-implementation): optional webhook `processing`, durable stopped-meeting eligibility/count freshness, held completion handoff, immutable delivery IDs/current-data resend and saved-AI authority. Tracking only; Swift implementation does not establish Linux parity or change its release version. No backend sync schema change.
 
 Recording-recovery telemetry has no verified Linux `recording_recovered`/`pcm_sent` producer yet. The backend keeps Linux recovery unconfirmed; implementing it needs an explicit producer contract and minimum-version tests, tracked in `PLAN.md` (2026-10-31). Do not infer capability from Apple or numeric version ordering.
+
+Apple handoff follow-up (2026-10-31) is tracked in PLAN.md: held-row expiry, released-only saved-before-updated ordering, temporary destination fingerprints, terminal-marker recovery and honest blocked status. Tracking only; do not claim a Linux implementation from the Apple build.
