@@ -516,3 +516,15 @@ Tracking only: no Linux code or release change in this entry. Apple implementati
 - **R7, saved AI:** per-meeting/request authority covers transcript revision and prompt inputs, template/language/manual-speaker changes, account/credential generation and newer requests. Recheck after awaits before model/UI/export writes; old tasks clear only their own progress. Save failure restores displayed and stored state. Include Docs topic/lookup completions, undo, resume and deletion tests.
 
 Apple queue forward compatibility does not imply safe downgrade: 3.5.0 ignores the new held flag and can dispatch before marker acknowledgment. Linux should design its own explicit queue-version/downgrade policy when porting. Test with held fake senders and isolated stores, including lost-response reload, old completion/new successor, stop while selected, count-refresh failure, History edits during AI and disk-write failure. Keep Linux version constants and release schedule independent.
+
+
+### Recording-recovery evidence gap (2026-10-31)
+
+Tracking only, no Linux implementation or release change. The backend incident evaluator accepts `recording_recovered` with `pcm_sent=true` only from verified Apple 3.5+ producers. No Linux emitter for this event/evidence was found in `src` or `src-tauri`; version numbers alone must not establish recovery. Linux recording failures remain recovery-unconfirmed until a Linux producer contract, minimum supporting version and tests prove audio resumed after failure. A connected socket or a later absence of errors is insufficient; resumed PCM still does not prove transcript completeness. Coordinate the capability predicate change in `../miniti-api/lib/clientIncidents.ts` with that future implementation.
+
+
+### 3.6.0 review clarifications (2026-10-31)
+
+Tracking only; no Linux code or release change. Configured completion exports remain independent of the managed account, while old-account AI answers remain fenced. Apple's local completion marker captures the webhook URL; a changed/cleared URL pauses ready/held handoff with a visible action, and explicit Try again accepts the current destination under a fresh ID. Already released queue rows retain the existing current-URL sender policy. Preserve that distinction when porting.
+
+Template inputs belong only to the template job's authority; changing a template must not discard unrelated final Summary/Sales/Questions. The stopped-meeting picker persists the new selection before an old template child can commit. Stopped and History AI Update actions are disabled as finishing during final work (also checked inside the action), while Coaching still recomputes locally. Marker-only persistence does not notify cloud unless the same save also commits already-dirty content. Reconcile only marked meetings and fetch/index current meetings once per resend operation. The recording-recovery evidence note above is unchanged.
