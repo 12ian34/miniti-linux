@@ -542,7 +542,7 @@ Use a temporary destination fingerprint instead of persisting the full URL in me
 
 ## Tracking: managed lightweight Luna (2026-10-31, local only)
 
-Apple 3.6.0 includes a bounded backend migration: `speaker_names`, `catchup`, `docs_topics` and `template_draft` use `gpt-6-luna` with reasoning `none`. This is implemented/tested locally in `../miniti-api`, not deployed. Existing Linux managed callers inherit the server-selected routing when deployed; client `model` remains ignored and response shapes are unchanged. Template drafting creates a definition, while filling a meeting template stays on the quality model.
+Apple 3.6.0 includes a bounded backend migration: `speaker_names`, `catchup`, `docs_topics` and `template_draft` use `gpt-6-luna` with reasoning `none`. This is implemented/tested locally in `../miniti-api`, not deployed. The first backend rollout must explicitly set `INSIGHTS_LIGHTWEIGHT_LUNA=off`; Luna activation is a separate authorized redeploy after review. Existing Linux managed callers inherit the server-selected routing when enabled; client `model` remains ignored and response shapes are unchanged. Template drafting creates a definition, while filling a meeting template stays on the quality model.
 
 - [x] Record shared API routing, rollback and unchanged Linux BYOK. `src-tauri/src/insights/mod.rs` model constants remain GPT-5 mini/GPT-5.4 mini; no Linux code or binary changed.
 - [ ] After authorized backend deployment, verify available Linux managed speaker naming, catch-up and Playbook topic extraction through the normal client. Template-draft UI parity remains the separately tracked 2.12.0 follow-up above; this backend change does not implement it.

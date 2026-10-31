@@ -124,4 +124,4 @@ Recording-recovery telemetry has no verified Linux `recording_recovered`/`pcm_se
 
 Apple handoff follow-up (2026-10-31) is tracked in PLAN.md: held-row expiry, released-only saved-before-updated ordering, temporary destination fingerprints, terminal-marker recovery and honest blocked status. Tracking only; do not claim a Linux implementation from the Apple build.
 
-Managed lightweight model follow-up (2026-10-31, local only): backend Luna routing for four modes is tracked in [PLAN.md](PLAN.md#tracking-managed-lightweight-luna-2026-10-31-local-only). No Linux client or BYOK model changes. Deploy/managed-client checks remain pending; do not infer shipped parity.
+Managed lightweight model follow-up (2026-10-31, local only): backend Luna routing for four modes is tracked in [PLAN.md](PLAN.md#tracking-managed-lightweight-luna-2026-10-31-local-only). No Linux client or BYOK model changes. Initial backend rollout is planned with Luna explicitly off; activation and managed-client checks remain pending. Do not infer shipped parity.
