@@ -128,4 +128,4 @@ Managed lightweight model follow-up (2026-10-31, deployed but disabled): backend
 
 Managed standard-summary extension (2026-10-31, deployed but disabled): `INSIGHTS_STANDARD_LUNA=on` separately opts full and incremental `standard` requests into Luna none. Default off; the legacy incremental-quality rollback takes precedence. Tracked alongside lightweight Luna in PLAN.md. Linux BYOK/prompts/binary stay unchanged; activation and client verification remain pending.
 
-Apple 3.6.0 publication (2026-10-31): Mac build 146 is released; iOS release is pending. Backend `031c692` deployed with both Luna flags unset, so managed model choices have not changed. This repo receives tracking documentation only; no Linux binary/version/BYOK change or Linux release is implied.
+Apple 3.6.0 publication (2026-10-31): Mac build 146 is released; iOS build 146 became available on 2026-11-01. Backend `031c692` deployed with both Luna flags unset, so managed model choices have not changed. This repo receives tracking documentation only; no Linux binary/version/BYOK change or Linux release is implied.

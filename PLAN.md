@@ -555,3 +555,7 @@ The subsequent 2026-10-31 standard-summary extension adds independent `INSIGHTS_
 - [x] Track server-owned full/incremental `standard` Luna selection, independent from the four lightweight tasks. No Linux source, BYOK, prompt or response-shape changes.
 - [ ] After separately authorized activation, verify Linux managed live, final and saved-meeting standard summaries, selected-model telemetry, latency and owner/date preservation. The initial backend rollout keeps both Luna opt-ins off.
 - [ ] Verify rollback with `INSIGHTS_STANDARD_LUNA=off` plus redeploy; it leaves lightweight selection alone. The existing incremental-quality switch retains precedence. No release or device-verification claim follows from this tracking entry.
+
+### Tracking: Apple iOS 3.6.0 availability, 2026-11-01
+
+Apple’s public App Store lookup confirms iOS 3.6.0 is available. The backend iOS latest-version marker advances to 3.6.0; Linux versions, minimums, download URL, BYOK and binary are unchanged. Both production Luna opt-ins remain unset/off. This is release metadata tracking, not Linux feature parity or a Linux release.
