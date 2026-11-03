@@ -568,6 +568,8 @@ Transcript:
             "You generate incisive questions that reveal what a conversation is missing. You find gaps, unstated assumptions, dropped threads, and tensions between statements. Your questions reference specific things said in the transcript — never generic. Each question should be something a brilliant, curious person would actually say out loud.".into(),
             format!(r#"{language_instruction}Analyze this conversation and generate questions the listener should ask. Focus on what's NOT been said, what's been assumed, and what's been glossed over.
 
+{}
+
 Hard rules:
 - Return ONLY one valid JSON object. No markdown, no prose, no code fences.
 - Generate 5-8 questions.
@@ -608,7 +610,7 @@ Respond in JSON:
     ]
 }}
 
-{}{appendix}"#, ctx.transcript_section),
+{}{appendix}"#, ctx.context_note, ctx.transcript_section),
         ),
         InsightMode::Catchup => {
             let li = if lang != "en" {
@@ -850,6 +852,29 @@ mod tests {
         assert!(user.contains("New transcript delta (new since last successful update):\ndelta"));
         assert!(user.contains("Transcript snapshot context:\nfull"));
         assert!(user.contains("preserve prior rolling_state"));
+    }
+
+    #[test]
+    fn incremental_questions_include_the_actual_baseline() {
+        let req = InsightRequest {
+            transcript: "Budget agreed".into(),
+            mode: "questions",
+            incremental: true,
+            incremental_payload: Some(IncrementalPayload {
+                strategy: "delta_recent_window_v1".into(),
+                full_segment_count: 3,
+                acked_segment_count: 2,
+                delta_segment_count: 1,
+                recent_segment_count: 3,
+                transcript_delta: "Agreed Friday".into(),
+                recent_transcript: "Budget agreed Friday".into(),
+                rolling_state: json!({"questions": [{"question": "Who signs?", "type": "clarify", "context": "Budget"}]}),
+            }),
+            ..Default::default()
+        };
+        let (_, user) = build_prompt(&req, InsightMode::Questions, None).unwrap();
+        assert!(user.contains("Who signs?"));
+        assert!(user.contains("Agreed Friday"));
     }
 
     #[test]
