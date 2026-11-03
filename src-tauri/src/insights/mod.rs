@@ -94,34 +94,20 @@ pub enum InvestigationScope {
 }
 
 /// Pinned model ids (contract: `/api/insights` § model).
-pub const MODEL_MINI: &str = "gpt-5-mini-2025-08-07";
+pub const MODEL_LUNA: &str = "gpt-6-luna";
 pub const MODEL_MINI_LARGE: &str = "gpt-5.4-mini-2026-03-17";
 
-/// Resolve the model for a mode. Managed: mirrors what the server will use
-/// (it ignores the field). BYOK: the model the client calls OpenAI with.
-pub fn model_for(mode: InsightMode, app_mode: AppMode, incremental: bool) -> &'static str {
-    match app_mode {
-        AppMode::Byok => match mode {
-            InsightMode::Investigation => MODEL_MINI_LARGE,
-            _ => MODEL_MINI,
-        },
-        AppMode::Managed => {
-            if incremental && mode.supports_incremental() {
-                return MODEL_MINI;
-            }
-            match mode {
-                InsightMode::Standard
-                | InsightMode::Meddpicc
-                | InsightMode::Template
-                | InsightMode::Questions
-                | InsightMode::Docs
-                | InsightMode::Investigation => MODEL_MINI_LARGE,
-                InsightMode::SpeakerNames | InsightMode::Catchup | InsightMode::DocsTopics => {
-                    MODEL_MINI
-                }
-            }
-        }
+/// BYOK task mapping. Managed sends the same hint; the backend owns its flags
+/// and ignores the client model field. No automatic cross-model retries.
+pub fn model_for(mode: InsightMode, _app_mode: AppMode, _incremental: bool) -> &'static str {
+    match mode {
+        InsightMode::Standard | InsightMode::SpeakerNames | InsightMode::Catchup | InsightMode::DocsTopics => MODEL_LUNA,
+        InsightMode::Meddpicc | InsightMode::Template | InsightMode::Questions | InsightMode::Docs | InsightMode::Investigation => MODEL_MINI_LARGE,
     }
+}
+
+pub fn reasoning_for(model: &str) -> &'static str {
+    if model == MODEL_LUNA { "none" } else { "low" }
 }
 
 /// `attendees[]` entry: `{ name, domain, role? }`.
@@ -407,11 +393,11 @@ mod tests {
     fn model_pins_follow_server_routing() {
         assert_eq!(
             model_for(InsightMode::Standard, AppMode::Managed, true),
-            MODEL_MINI
+            MODEL_LUNA
         );
         assert_eq!(
             model_for(InsightMode::Standard, AppMode::Managed, false),
-            MODEL_MINI_LARGE
+            MODEL_LUNA
         );
         assert_eq!(
             model_for(InsightMode::Meddpicc, AppMode::Managed, false),
@@ -423,19 +409,19 @@ mod tests {
         );
         assert_eq!(
             model_for(InsightMode::SpeakerNames, AppMode::Managed, false),
-            MODEL_MINI
+            MODEL_LUNA
         );
         assert_eq!(
             model_for(InsightMode::Catchup, AppMode::Managed, false),
-            MODEL_MINI
+            MODEL_LUNA
         );
         assert_eq!(
             model_for(InsightMode::DocsTopics, AppMode::Managed, false),
-            MODEL_MINI
+            MODEL_LUNA
         );
         assert_eq!(
             model_for(InsightMode::Standard, AppMode::Byok, false),
-            MODEL_MINI
+            MODEL_LUNA
         );
         assert_eq!(
             model_for(InsightMode::Investigation, AppMode::Byok, false),
@@ -480,7 +466,7 @@ mod tests {
             "delta_recent_window_v1"
         );
         assert_eq!(json["incremental_payload"]["acked_segment_count"], 120);
-        assert_eq!(json["model"], MODEL_MINI, "incremental → lighter model");
+        assert_eq!(json["model"], MODEL_LUNA, "incremental → lighter model");
         for absent in [
             "docs_mcp_url",
             "topic",

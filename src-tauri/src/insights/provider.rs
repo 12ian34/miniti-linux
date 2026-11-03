@@ -163,6 +163,19 @@ fn friendly(e: ApiError) -> String {
     e.to_string()
 }
 
+fn openai_chat_body(model: &str, system: &str, user: &str) -> Value {
+    json!({
+        "model": model,
+        "messages": [
+            { "role": "system", "content": system },
+            { "role": "user", "content": user }
+        ],
+        "response_format": { "type": "json_object" },
+        "reasoning_effort": super::reasoning_for(model),
+        "max_completion_tokens": 10000
+    })
+}
+
 async fn openai_json(
     http: &reqwest::Client,
     key: &str,
@@ -170,16 +183,7 @@ async fn openai_json(
     system: &str,
     user: &str,
 ) -> Result<Value, String> {
-    let body = json!({
-        "model": model,
-        "messages": [
-            { "role": "system", "content": system },
-            { "role": "user", "content": user }
-        ],
-        "response_format": { "type": "json_object" },
-        "reasoning_effort": "low",
-        "max_completion_tokens": 10000
-    });
+    let body = openai_chat_body(model, system, user);
     let resp = http
         .post(OPENAI_CHAT_URL)
         .bearer_auth(key)
@@ -824,6 +828,23 @@ mod tests {
             !user.contains("German"),
             "speaker names never get the language instruction"
         );
+    }
+
+    #[test]
+    fn all_byok_requests_use_supported_models_and_explicit_reasoning() {
+        for mode in [InsightMode::Standard, InsightMode::SpeakerNames, InsightMode::Catchup, InsightMode::DocsTopics,
+            InsightMode::Meddpicc, InsightMode::Questions, InsightMode::Template, InsightMode::Docs] {
+            for incremental in [false, true] {
+                let luna = matches!(mode, InsightMode::Standard | InsightMode::SpeakerNames | InsightMode::Catchup | InsightMode::DocsTopics);
+                let model = model_for(mode, AppMode::Byok, incremental);
+                let body = openai_chat_body(model, "system fixture", "user fixture");
+                assert_eq!(body["model"], if luna { "gpt-6-luna" } else { "gpt-5.4-mini-2026-03-17" });
+                assert_eq!(body["reasoning_effort"], if luna { "none" } else { "low" });
+                assert_eq!(body["response_format"]["type"], "json_object");
+                assert_eq!(body["messages"][1]["content"], "user fixture");
+            }
+        }
+        assert_eq!(model_for(InsightMode::Investigation, AppMode::Byok, false), "gpt-5.4-mini-2026-03-17");
     }
 
     #[test]

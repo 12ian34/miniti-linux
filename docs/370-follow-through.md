@@ -1,0 +1,7 @@
+# Apple 3.7.0 local follow-through, 2026-11-03
+
+Linux BYOK retirement is implemented locally: summaries/helpers use `gpt-6-luna` with reasoning `none`; specialist tasks and investigations use pinned GPT-5.4 mini with `low`. The direct chat builder sends explicit reasoning. Full Rust checks passed: 220 tests, one opt-in live-enrollment test ignored. `pnpm build` passed. No Linux desktop/audio or live-provider evaluation, binary publication or push occurred. Release on the Linux version line before the shared December 11 deadline; PLAN.md retains the delivery checks.
+
+Apple's first recording fixes now give Stop a bounded final drain before discarding an empty recording and prevent a reconnect from replacing a still-pending handshake after three seconds. Linux parity remains a tracked follow-up: audit its stop/receive tail and reconnect owner against controlled late-first-word, two-source, hung-close and stale-generation cases before claiming the same fixes. No Linux audio code was changed in this work.
+
+Backend operator-email presentation and stored probe evidence changed locally, without changing the client protocol, probe count, recipients or notification thresholds. Diagnostics/usage contracts and Apple local-speaker failure handling are still in progress; do not emit speculative fields from Linux. Apple’s roadmap remains the cross-repository priority owner. Nothing has been deployed or released.

@@ -470,7 +470,7 @@ export function Settings() {
                 <h2 className="card-title">Models</h2>
                 <div className="rows">
                   <Row k="transcription" v="Deepgram Nova-3 (streaming, diarized)" />
-                  <Row k="insights" v={prefs.app_mode === "byok" ? "gpt-5-mini (investigations: gpt-5.4-mini) via your OpenAI key" : "gpt-5.4-mini full passes · gpt-5-mini incremental, via the miniti backend"} />
+                  <Row k="insights" v={prefs.app_mode === "byok" ? "gpt-6-luna summaries and helpers · gpt-5.4-mini specialist insights, via your OpenAI key" : "gpt-6-luna summaries and helpers · gpt-5.4-mini specialist insights, via miniti"} />
                   <Row k="coaching" v="computed locally, never sent anywhere" />
                 </div>
               </section>
