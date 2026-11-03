@@ -4,6 +4,8 @@ Native Linux desktop client for [Miniti](https://miniti.app) — AI meeting assi
 
 This file is the canonical entry point for agents working here. Long-form delivery context lives in [PLAN.md](PLAN.md). Do not invent Apple/Swift APIs in this repo — reimplement product contracts in Rust + Tauri.
 
+Local implementation (2026-11-03): the [test-foundation handoff](docs/test-foundation-followup.md) records the incremental Questions baseline correction and canonical wire-fixture follow-through. No model migration or release is implied.
+
 ## Locked decisions (do not reopen without asking)
 
 | Decision | Choice |
@@ -112,6 +114,14 @@ Every release adds an entry to `CHANGELOG.md`; the rules are in [docs/changelog-
 
 ## When in doubt
 
+3.7.0 cross-client review (2026-11-03): [Apple release checklist](../miniti/docs/releases/3.7.0.md) owns integration gates. PLAN.md records the separate managed-usage versus diagnostic-consent contract; Linux's existing Deepgram usage must not be double-reported. No new Linux engine/default or telemetry producer is selected.
+
+Apple 3.7.0 recording/client AI diagnostic follow-up is tracked in [PLAN.md](PLAN.md#tracking-recording-and-client-ai-diagnostics-2026-11-03). New failure-stage/request correlation is planning only; existing Linux recovery remains unconfirmed until its own producer contract and tests are verified. No Linux source, BYOK routing or release change follows from the Apple observations.
+
+Apple Mac local speaker reliability/device diagnostics (scope revised 2026-11-03) is tracked in PLAN.md and the [Apple plan](../miniti/docs/plans/local-speakers-default.md). Failure-handling fixes and diagnostics remain in 3.7.0; the Mac default stays off, with default-on deferred until M1 testing. No Linux engine/default or telemetry producer change is selected; future backend metadata stays additive. Planning only.
+
+GPT-5 mini retirement (selected 2026-11-03): Apple's 3.7.0 [bounded migration](../miniti/docs/plans/gpt-5-mini-retirement.md) approves Luna none for summaries/lightweight tasks and pinned GPT-5.4 mini low for other AI tasks and backend fallbacks, including Linux BYOK coordination before 2026-12-11. PLAN.md owns Linux tracking; Linux keeps its own release version. Local implementation now selects Luna/none for standard and helpers, quality mini/low for specialist tasks, and sends explicit reasoning in direct chat bodies. Rust checks pass (220 tests, one live test ignored), frontend build passes; no binary or release has shipped.
+
 1. Read [PLAN.md](PLAN.md).
 2. Prefer reimplementing contracts over copying Swift.
 3. Ask before adding Flatpak/AppImage or changing the binary + Omarchy-repository ship model. Do not suggest the AUR.
@@ -131,3 +141,13 @@ Managed standard-summary extension (2026-10-31, deployed but disabled): `INSIGHT
 Apple 3.6.0 publication (2026-10-31): Mac build 146 is released; iOS build 146 became available on 2026-11-01. Backend `031c692` deployed with both Luna flags unset, so managed model choices have not changed. This repo receives tracking documentation only; no Linux binary/version/BYOK change or Linux release is implied.
 
 Managed Luna activation (2026-11-01): both backend opt-ins are now on, so existing managed Linux callers inherit Luna none for the four lightweight tasks and full/incremental standard summaries. Synthetic HTTP checks passed on the shared backend; this is not a physical Linux client pass. Questions and other quality modes, BYOK, Linux source/binary and release version remain unchanged. PLAN.md records follow-up and rollback. Earlier disabled-rollout entries above are historical.
+
+Recording reporting v1 (2026-11-03, local only) is tracked in [the cross-client handoff](docs/recording-reporting-v1.md). Separate authenticated local-duration accounting and additive diagnostic fields do not create a Linux producer or duplicate its Deepgram usage. Account IDs remain case-sensitive; only installation IDs canonicalize. No deployment or Linux release.
+
+Apple local-speaker failure handoff (2026-11-03): [tracking](docs/local-speaker-failures-370.md) records compatible Unknown speaker names and the optional speaker-state/failure producer. No Linux model, producer or release change.
+
+Apple/backend 3.7.0 hardware/activity/outcome changes have a [local handoff](docs/hardware-activity-outcomes-370.md). No Linux hardware producer or release is implied; backend normalization keeps existing Linux contracts compatible.
+
+3.7.0 recovery/AI/removal handoff (local, 2026-11-03): [tracking](docs/recovery-ai-removal-370.md) defines compatible additive backend fields and future Linux parity boundaries. Rust tests and frontend build pass locally; no native Linux recording or publication is implied.
+
+Apple/backend 3.7.0 review handoff (2026-11-03): [PLAN.md](PLAN.md#tracking-370-review-corrections-2026-11-03) tracks full Questions prompt/fixture parity and Luna access-error behavior. Linux runtime implementation is still pending; do not infer parity from the incremental-only baseline fix.

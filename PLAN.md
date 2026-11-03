@@ -563,3 +563,47 @@ Apple’s public App Store lookup confirms iOS 3.6.0 is available. The backend i
 ### Both managed Luna groups activated, 2026-11-01
 
 Ian explicitly authorized both production opt-ins after baseline observation. The shared backend now uses Luna none for speaker names, catch-up, Playbook topics, template drafting and full/incremental standard summaries. Synthetic live API checks passed; selected-model telemetry verifies Luna and unchanged Questions routing. Existing Linux managed requests inherit the routing; no Linux client source, BYOK or binary changed. Physical Linux client checks above remain open. Roll back either group with its `INSIGHTS_LIGHTWEIGHT_LUNA=off` or `INSIGHTS_STANDARD_LUNA=off` setting plus redeploy; legacy incremental-quality rollback keeps precedence.
+
+## Tracking: recording and client AI diagnostics (2026-11-03)
+
+Apple 3.7.0's [recording/client follow-up](../miniti/docs/plans/recording-reliability-followup.md) owns bounded final drain, truthful capture/connection/transcript evidence, activity-ID normalization and the newly explicit investigation of live/final AI failures despite successful backend responses. The observed incidents are Apple evidence, not proof of identical Linux defects. Linux keeps its own release line; this is parity tracking only.
+
+- [ ] Review Linux stop-before-first-result and reconnect generation ownership against the bounded acceptance cases; preserve local-engine privacy and exclude automatic cloud fallback/audio replay.
+- [ ] Define and test Linux attempt/engine/recovery evidence before enabling its backend recovery capability. Connection-open alone cannot establish words resumed.
+- [ ] When the additive diagnostic contract is implemented, track AI mode/stage, fixed failure category and bounded request correlation through Linux's own transport/decode/apply lifecycle. Distinguish expected cancellation/stale authority from genuine failure; never include transcript, generated content, credentials or raw exception text.
+- [ ] Coordinate ingest/Help allowlists and old-client compatibility with the backend before client delivery. Preserve independent BYOK routing, saved-result authority and bounded retry behavior. No Linux implementation or device validation is claimed here.
+
+## Tracking: GPT-5 mini retirement (2026-11-03)
+
+Selected alongside Apple 3.7.0; Linux ships on its own version line. Implemented locally, no release claim. The [bounded migration](../miniti/docs/plans/gpt-5-mini-retirement.md) owns the approved model split and cross-client acceptance: `gpt-6-luna` with reasoning `none` for summaries/lightweight tasks, `gpt-5.4-mini-2026-03-17` with `low` for other AI tasks and backend fallbacks. Both `gpt-5-mini` and the pinned `gpt-5-mini-2025-08-07` shut down on 2026-12-11. Backend migration cannot fix older Linux binaries making direct BYOK calls.
+
+- [ ] Implement and validate the approved BYOK split in `src-tauri/src/insights/mod.rs` and direct request builders: Luna none for standard summaries, speaker naming, catch-up, Docs topics and template drafting wherever implemented; GPT-5.4 mini low for MEDDPICC, Questions, template filling and grounded Docs answers. Investigations keep GPT-5.4 mini low. Do not implement missing feature parity implicitly or inherit the old low-reasoning default for Luna.
+- [x] Update direct request construction, parsing tests and Settings model descriptions. Preserve prompt/response contracts, bounded retries, account fences and cadence; record any necessary compatibility changes.
+- [ ] Verify inherited managed behavior after backend fallback/probe migration, including supported rollback configurations. Current managed Luna/quality routing stays unchanged.
+- [ ] Release the Linux update before 2026-12-11, record client evidence and provide older-BYOK-binary upgrade guidance. Keep Linux version/minimum changes in its own release process; no automatic force-update policy is selected here.
+
+## Tracking: Apple Mac local speaker reliability and device diagnostics (2026-11-03)
+
+Apple 3.7.0 selected [Mac local speaker reliability/device diagnostics](../miniti/docs/plans/local-speakers-default.md): fix inference failure handling, preserve choices/iOS/voice flags, and add bounded consent-gated hardware/actual-engine metadata. Ian revised the scope on 2026-11-03 to keep Mac local separation off by default, preserving existing enabled users. Default-on is deferred until M1 testing, with no later version assigned. Linux keeps its current engine/default and independent release line; this does not port Core ML or add Linux hardware telemetry. Backend fields will be additive and older clients remain unknown, not unsupported. Record final field allowlists/coverage and assess any Linux producer separately when the contract is implemented. Planning only, no schema or runtime change.
+
+3.7.0 integration review: the [Apple release checklist](../miniti/docs/releases/3.7.0.md) owns cross-plan gates. All managed recording minutes, including Apple local/private duration, are accounted independently of Share diagnostics; BYOK reporting remains off. Existing Linux Deepgram reporting is unchanged and must not be doubled by a new route. This does not add Linux local transcription/telemetry. Keep shared wire fixtures and the model-retirement deadline aligned; implement any future Linux producer only after its contract is tracked here.
+
+### Test foundation implementation handoff (2026-11-03)
+
+[Tracking record](docs/test-foundation-followup.md): backend/Apple T06 exposed omitted prior questions in the incremental prompt; Linux BYOK now includes the baseline and has a regression test. Shared synthetic fixture versioning is tracked there. No provider routing or release version changed.
+
+Retirement local evidence (2026-11-03): actual BYOK chat-body fixtures verify supported literal model IDs and explicit reasoning across full/incremental tasks. Full Rust suite: 220 passed, 1 ignored live-enrollment test. `pnpm build` passed. Checks ran on macOS, not Linux desktop/audio; provider availability/quality/cost and distribution remain open. No push or release.
+
+## Tracking: recording reporting v1 (2026-11-03)
+
+[Contract handoff](docs/recording-reporting-v1.md) records the locally implemented shared usage endpoint, exact owner semantics, atomic deduplication, coverage, and additive fixed diagnostic schema. Existing Linux Deepgram reporting remains unchanged. No new Linux engine, telemetry producer or release is selected.
+
+Apple local-speaker failure handoff (2026-11-03): [tracking](docs/local-speaker-failures-370.md) records compatible Unknown speaker names and the optional speaker-state/failure producer. No Linux model, producer or release change.
+
+Apple/backend 3.7.0 hardware/activity/outcome changes have a [local handoff](docs/hardware-activity-outcomes-370.md). No Linux hardware producer or release is implied; backend normalization keeps existing Linux contracts compatible.
+
+3.7.0 same-day contract follow-through (2026-11-03): [recovery, AI and removal handoff](docs/recovery-ai-removal-370.md) tracks additive recovery milestones/counters, optional AI request correlation and atomic local-duration removal/ownership fences. Existing Linux protocols remain compatible; no new Linux telemetry producer is implemented. Local test evidence is recorded there; release stays separate.
+
+## Tracking: 3.7.0 review corrections (2026-11-03)
+
+Apple/backend review fixes are local and unreleased. Full Questions BYOK prompts in Swift now mirror the managed prompt verbatim, including previous-summary/start context and the existing question-stability rules. The shared `../miniti/test-contracts/v1/review-370-v1.json` covers absent, empty and populated previous summaries. Linux must mirror these full-prompt bytes and import this additive fixture in its next parity change; the earlier incremental baseline fix alone does not establish full-prompt parity. Also track the plain-language Luna model-access refusal and fixed `model_access` category, without automatic cross-model retries or BYOK telemetry. No Linux runtime or release changes are included in this review task.
