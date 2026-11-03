@@ -9,8 +9,8 @@ it coaches you to speak with clarity and confidence.
 your transcripts and insights stay on your machine, and you own them forever.
 
 this is the native Linux app, built with Tauri 2 and Rust.
-same backend, same insights, same meeting data as the Mac app.
-a Linux desk gets everything a Mac desk gets.
+shared backend and core meeting features with the Mac app.
+Linux ships independently; the feature table and limits below describe the released client.
 
 ![miniti during a live call: transcript with named speakers on the left, live questions on the right](docs/screenshots/recording-questions.png)
 
@@ -51,11 +51,7 @@ sudo pacman -S miniti-bin
 ```
 
 PipeWire is already there, and the floating recording surface pins itself to
-the corner through layer-shell on Hyprland. On first launch miniti offers to
-add its bar widget (timer in the bar, a panel with the questions worth asking,
-start and stop); it replaces the tray icon and lives in its own repository,
-[miniti-omarchy](https://github.com/12ian34/miniti-omarchy), which the
-marketplace can also install. If you see anything Omarchy-specific,
+the corner through layer-shell on Hyprland. For bar integrations, use the CLI examples below. The separate Omarchy widget repository was not publicly available at the documentation check on 2026-11-03. If you see anything Omarchy-specific,
 [open an issue](https://github.com/12ian34/miniti-linux/issues).
 
 **Other Arch systems.** The same package builds anywhere with `makepkg`.
@@ -83,6 +79,7 @@ sudo apt install ./miniti_*_amd64.deb
 tar xzf miniti-*-x86_64-unknown-linux-gnu.tar.gz && cd miniti-*-x86_64-unknown-linux-gnu
 install -Dm755 miniti ~/.local/bin/miniti
 install -Dm644 miniti.desktop ~/.local/share/applications/miniti.desktop
+mkdir -p ~/.local/share/icons/hicolor
 cp -r icons/hicolor/* ~/.local/share/icons/hicolor/
 miniti
 ```
@@ -102,10 +99,8 @@ Choose how miniti should run:
 
 - **Managed** uses the miniti backend. Your account is an anonymous recovery
   key created in the app, with no email or password. 500 free minutes every
-  month; Pro is a Polar subscription. Keep the recovery key somewhere safe: it
-  is the only way to restore your account on another computer.
-- **BYOK** uses your own Deepgram and OpenAI API keys and never talks to the
-  miniti backend.
+  month; Pro is a Polar subscription. Keep the recovery key somewhere safe: the released Linux app uses recovery-key restore. Apple apps also support verified-email sign-in.
+- **BYOK** uses your own Deepgram and OpenAI API keys for provider requests. Version checks and configured calendar or CRM integrations can still contact the miniti backend.
 
 System audio for remote callers needs PipeWire with the pulse shim
 (`pipewire-pulse`). Without it miniti transcribes the microphone only.
@@ -115,23 +110,24 @@ checks the minimum supported version on launch but does not update itself.
 
 ## what is in the Linux app
 
-miniti for Linux follows the Mac app feature for feature wherever Linux allows
-it.
+These features are available in the released Linux app. Apple release numbers do not establish Linux parity.
 
 | Area | Linux | Notes |
 | --- | --- | --- |
 | Live transcription (Deepgram Nova-3, speaker separation, echo reconciliation) | Yes | Microphone plus system audio through PipeWire |
-| Live insights: Summary, Questions, Coaching, Sales (MEDDPICC), Playbook (Docs MCP) | Yes | Same cadence and prompts as macOS |
+| Live insights: Summary, Questions, Coaching, Sales (MEDDPICC), Playbook (Docs MCP) | Yes | Live and saved-meeting updates |
 | Catch me up, Investigate (web and codebase), automatic speaker naming | Yes | |
 | History: search, pin, rename speakers, mark as you, trim, delete, notes | Yes | |
 | Export: Markdown, copy transcript, webhooks, Granola CSV import | Yes | A webhook URL must be https (or a loopback host for a hook on this machine) |
 | Google Calendar, Attio, Twenty | Yes | OAuth completes in the browser and returns through a `miniti-*` URL scheme; which calendar entries count as meetings is adjustable, with a preview |
 | Smart meetings (quiet prompts, calendar handoff, call detection) | Yes | Call detection is PipeWire-client based; browsers are a weaker signal than native apps |
 | Tray icon with timer, floating recording surface, desktop notifications | Yes | Surface never takes focus; on Wayland it pins itself via layer-shell where supported (Hyprland, Sway, KDE), GNOME decides placement |
-| Pro via Polar, license-key restore, BYOK, usage banner and limit view | Yes | Pro follows the account: a subscription on any device covers the rest |
+| Pro via Polar, license-key restore, BYOK, usage banner and limit view | Yes | Polar Pro covers all platforms on the account; App Store Pro only covers iPhone and iPad |
 | Interface scale (compact / standard / large), debug log viewer | Yes | |
 | Coaching charts and grounded examples | Yes | Trend chart per metric; clickable passages from recent meetings |
 | Templates view (BANT, SPIN, interview, check-in, stand-up, 1:1) | Yes | Live, on demand, on saved meetings; in exports and webhooks |
+| Cloud sync, on-device models, private mode, remembered voices | No | Apple features, not in released Linux 0.7.1 |
+| Custom template editor and AI drafting | No | Built-in templates are available |
 | Silent in-app updates | No | Package manager or releases page instead |
 | iOS companion, Apple subscriptions, Sparkle | No | Apple-only by nature |
 

@@ -63,7 +63,7 @@ Honest Linux limits (document in UI/docs, don’t fake parity): Process-Tap-clas
 - **Dark mode only**, terminal-adjacent visual language — port tokens from `../miniti/Miniti/Models/ColorPalette.swift` and `design.md`; no random hex in components.
 - **PCM contract**: 16 kHz PCM16 LE to Deepgram; mono (`channels=1`) or stereo interleave mic/system (`channels=2&multichannel=true`) matching macOS.
 - **Hot-path**: never filter unbounded transcript arrays on every finalize; reverse-iterate and break on window expiry (same rule as Apple apps).
-- **Secrets**: never commit API keys; obfuscate shared `X-API-Key` like other clients; device UUID via libsecret with file fallback.
+- **Secrets**: never commit API keys or introduce a shared `X-API-Key`. Managed requests use device-bound installation credentials and request proofs; local credential files are owner-only, with desktop keyring integration when available.
 - **Arch / Omarchy**: no Tauri updater; pacman owns updates through the Omarchy package repository. Nothing is ever published to the AUR.
 - **Changelog**: public-audience prose when shipping; no code refs in user-facing notes.
 
@@ -151,3 +151,5 @@ Apple/backend 3.7.0 hardware/activity/outcome changes have a [local handoff](doc
 3.7.0 recovery/AI/removal handoff (local, 2026-11-03): [tracking](docs/recovery-ai-removal-370.md) defines compatible additive backend fields and future Linux parity boundaries. Rust tests and frontend build pass locally; no native Linux recording or publication is implied.
 
 Apple/backend 3.7.0 review handoff (2026-11-03): [PLAN.md](PLAN.md#tracking-370-review-corrections-2026-11-03) tracks full Questions prompt/fixture parity and Luna access-error behavior. Linux runtime implementation is still pending; do not infer parity from the incremental-only baseline fix.
+
+Public documentation audit (2026-11-03, local only): README and the public Linux guide now distinguish released 0.7.1 from Apple features, Polar versus App Store account coverage, BYOK provider traffic versus integration/version requests, and the tarball icon-directory prerequisite. No implementation or release changed. Full evidence: [public docs audit](../miniti/docs/research/public-docs-audit-2026-11-03.md).
