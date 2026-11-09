@@ -181,3 +181,5 @@ Apple eighth review (2026-11-06): [PLAN.md](PLAN.md#apple-eighth-review-compatib
 Apple build 155 compatibility follow-through (2026-11-06): the API mapper accepts 503 as well as 409 `busy`. PLAN.md owns the bounded change and validation; no Linux release is implied.
 
 Apple Home presentation tracking (2026-11-08): PLAN.md records exclusive setup/calendar content and persistent calendar visibility controls. No Linux runtime or version change.
+
+Linux 0.7.2 release execution (2026-11-09): Ian authorized the coordinated release. Local Rust tests pass (220 passed, one ignored), clippy and frontend build pass. Ubuntu CI tests and desktop paint smoke pass; packaging is in progress. The release includes committed BYOK/Granola/Questions work since 0.7.1 and the 503 busy mapper. Folder/setup parity remains tracked, not implemented. Public availability will be recorded after tagged assets exist.

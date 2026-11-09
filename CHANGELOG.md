@@ -4,7 +4,7 @@ public changelog for miniti for Linux. the changelog for every platform lives at
 
 ## releases
 
-### unreleased - v0.7.2
+### 2026-11-09 - v0.7.2
 
 - improvement: (Linux) own-key summaries use newer AI models ahead of the old model's retirement
 - fix: (Linux) import meeting titles and dates from current Granola exports
