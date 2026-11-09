@@ -10,6 +10,10 @@ Apple iOS live and saved meetings now use one transcript/insights/notes picker w
 
 Saved Apple iOS discussion, actions and decisions use one selectable text surface per list. Shared Apple list spacing and marker-width indents keep wrapped lines aligned; Mac live discussion retains numbering. Action arrows replace checkboxes whose completion existed only in the view. No stored completion model, action-text mutation, Markdown-export or CRM task-selection change. Audit any equivalent Linux affordance against durable behavior; retain independent export/CRM selection controls. No Linux runtime or backend change is included.
 
+## Apple 3.9.0 standard section parity, 2026-11-09
+
+Apple standard insight sections now share summary/discussion/actions/decisions/topics titles, ordering and semantic accents while preserving each screen’s existing field coverage and summary-presence policy. Saved Mac headings/topic tags now match canonical colours, and its discussion/actions use selectable native lists with resolved reading spacing and measured hanging indents. Numbered Mac discussion stays numbered. Track equivalent Linux consistency without adding or removing fields, changing content/filtering, or changing exports and CRM payloads. Shared section geometry and broader accessibility remain Apple acceptance work; this is no Linux runtime, backend or release change.
+
 ## Apple 3.9.0 Sales section parity, 2026-11-09
 
 Apple Sales views now share eight named fields, stable ordering, titles and canonical category colours across live and saved surfaces. Economic buyer and competition use the corrected lighter colours. Preserve field-specific values and existing nil/blank/null/n/a/none filtering without conflating the two D or two C fields. Track equivalent Linux category consistency; this is not a Linux runtime, backend or release change.
