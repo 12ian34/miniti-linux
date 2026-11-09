@@ -4,6 +4,8 @@ Apple publication, 2026-11-09: macOS 3.8.0 build 164 is public. The compatible b
 
 ## Apple 3.9.0 target follow-through, 2026-11-09
 
+The next Apple slice also names metric help/close and question/docs copy actions for accessibility, gives them the shared target allocation, and removes copy-button focus opt-outs. Track Linux keyboard eligibility and recognizable labels for equivalent native controls. Apple native keyboard/pointer acceptance is still open.
+
 Apple UI1 separates compact control chrome from its allocated interactive bounds. Audit Linux shared tabs, compact controls and disclosures for appropriate desktop targets, non-overlapping adjacent frames and native action/disabled/focus behavior. Do not copy iOS's 44-point minimum into desktop controls blindly. Apple coverage includes a native iPhone target fixture and existing large-text journeys; Mac keyboard and constrained parent layouts remain separate gates. No Linux runtime, wire or version change is included.
 
 ## Apple 3.9.0 contrast follow-through, 2026-11-09
