@@ -741,3 +741,5 @@ Apple folder journey parity, 2026-11-08: post-161 Apple source adds an optional 
 ### Apple Home layout parity, 2026-11-09
 
 Apple 3.8.0 source now places language above Start in a fixed bottom area. iOS setup/calendar/feedback share one equal-cell footer row. Mac retains its footer positions and moves calendar into an independent collapsible right sidebar, using an overlay at narrow widths. This is presentation-only tracking; no wire/data/auth/default change or Linux runtime implementation. Linux 0.7.2 remains the released baseline.
+
+Apple Mac control parity, 2026-11-09: folder disclosures gain full-row targets and matching dark surfaces. Models becomes a labelled Home footer control; Cmd-] toggles the Home calendar or meeting insights by context. Track equivalent discoverability and hit targets when Linux parity is selected. No Linux implementation or backend contract change.
