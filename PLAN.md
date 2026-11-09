@@ -2,6 +2,10 @@
 
 Apple publication, 2026-11-09: macOS 3.8.0 build 164 is public. The compatible backend is deployed, and iOS build 164 is on internal TestFlight and waiting for App Review. Linux 0.7.2 remains the independent public release; the Apple parity items below are tracking, not Linux adoption. Apple final validation and publication evidence live in the [3.8.0 release record](../miniti/docs/releases/3.8.0.md). No Linux runtime or version change accompanies this record.
 
+## Apple 3.9.0 reading metrics follow-through, 2026-11-09
+
+Apple UI1 is implementing shared reading metrics for live/saved transcripts, insights, Sales/templates and notes. Track Linux parity for consistent readable sizes across those surfaces and the app text-size preference; audit the Linux system/font scaling mechanism before choosing its implementation. Apple uses InterfaceScale alone on Mac and combines it with unshifted Dynamic Type once on iOS; UIKit/SwiftUI APIs are Apple-specific. Preserve selection, editing and incremental transcript updates. This introduces no backend, persistence, prompt or wire change and assigns no Linux version. Apple validation/review remains in [3.9.0](../miniti/docs/releases/3.9.0.md); no Linux adoption is claimed.
+
 ## Apple 3.8.0 shared-contract planning, 2026-11-04
 
 Apple assigned 3.8.0 to reconnect metering, provider speaker restoration, explicit account choices/device labels and Watch/link reliability. The [release checklist](../miniti/docs/releases/3.8.0.md) and [metering contract](../miniti/docs/plans/managed-reconnect-metering.md) own scope. This is a planning handoff, not Linux implementation or a Linux version assignment.

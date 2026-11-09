@@ -20,6 +20,8 @@ Apple audio-route follow-up (2026-11-06): PLAN.md tracks the Mac-specific hardwa
 
 Apple recording-status parity (2026-11-09): PLAN.md tracks neutral startup copy versus actual recovery. No Linux runtime change.
 
+Apple 3.9.0 reading metrics (2026-11-09): [PLAN.md](PLAN.md#apple-390-reading-metrics-follow-through-2026-11-09) tracks live/saved prose-size consistency and platform scaling parity. No Linux runtime or version change.
+
 ## Locked decisions (do not reopen without asking)
 
 | Decision | Choice |
