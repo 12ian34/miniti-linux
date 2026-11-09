@@ -2,6 +2,10 @@
 
 Apple publication, 2026-11-09: macOS 3.8.0 build 164 is public. The compatible backend is deployed, and iOS build 164 is on internal TestFlight and waiting for App Review. Linux 0.7.2 remains the independent public release; the Apple parity items below are tracking, not Linux adoption. Apple final validation and publication evidence live in the [3.8.0 release record](../miniti/docs/releases/3.8.0.md). No Linux runtime or version change accompanies this record.
 
+## Apple 3.9.0 appearance follow-through, 2026-11-09
+
+Apple explicitly keeps main, Settings and Debug Log windows dark under a Light ambient appearance, without overriding system-owned menu-bar appearance. The SwiftUI scene fix is Mac-specific. Audit the equivalent Linux native controls and window chrome against the Linux theme contract; do not change the desktop-wide theme. No Linux runtime, backend contract or version change is included. Apple native evidence belongs in the [3.9.0 checklist](../miniti/docs/releases/3.9.0.md).
+
 ## Apple 3.9.0 target follow-through, 2026-11-09
 
 The next Apple slice also names metric help/close and question/docs copy actions for accessibility, gives them the shared target allocation, and removes copy-button focus opt-outs. Track Linux keyboard eligibility and recognizable labels for equivalent native controls. Apple native keyboard/pointer acceptance is still open.
