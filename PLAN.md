@@ -10,6 +10,10 @@ Apple iOS live and saved meetings now use one transcript/insights/notes picker w
 
 Saved Apple iOS discussion, actions and decisions use one selectable text surface per list. Shared Apple list spacing and marker-width indents keep wrapped lines aligned; Mac live discussion retains numbering. Action arrows replace checkboxes whose completion existed only in the view. No stored completion model, action-text mutation, Markdown-export or CRM task-selection change. Audit any equivalent Linux affordance against durable behavior; retain independent export/CRM selection controls. No Linux runtime or backend change is included.
 
+## Apple 3.9.0 Sales section parity, 2026-11-09
+
+Apple Sales views now share eight named fields, stable ordering, titles and canonical category colours across live and saved surfaces. Economic buyer and competition use the corrected lighter colours. Preserve field-specific values and existing nil/blank/null/n/a/none filtering without conflating the two D or two C fields. Track equivalent Linux category consistency; this is not a Linux runtime, backend or release change.
+
 ## Apple 3.9.0 appearance follow-through, 2026-11-09
 
 Apple explicitly keeps main, Settings and Debug Log windows dark under a Light ambient appearance, without overriding system-owned menu-bar appearance. The SwiftUI scene fix is Mac-specific. Audit the equivalent Linux native controls and window chrome against the Linux theme contract; do not change the desktop-wide theme. No Linux runtime, backend contract or version change is included. Apple native evidence belongs in the [3.9.0 checklist](../miniti/docs/releases/3.9.0.md).
