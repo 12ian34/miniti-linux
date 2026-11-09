@@ -2,6 +2,10 @@
 
 Apple publication, 2026-11-09: macOS 3.8.0 build 164 is public. The compatible backend is deployed, and iOS build 164 is on internal TestFlight and waiting for App Review. Linux 0.7.2 remains the independent public release; the Apple parity items below are tracking, not Linux adoption. Apple final validation and publication evidence live in the [3.8.0 release record](../miniti/docs/releases/3.8.0.md). No Linux runtime or version change accompanies this record.
 
+## Apple 3.9.0 target follow-through, 2026-11-09
+
+Apple UI1 separates compact control chrome from its allocated interactive bounds. Audit Linux shared tabs, compact controls and disclosures for appropriate desktop targets, non-overlapping adjacent frames and native action/disabled/focus behavior. Do not copy iOS's 44-point minimum into desktop controls blindly. Apple coverage includes a native iPhone target fixture and existing large-text journeys; Mac keyboard and constrained parent layouts remain separate gates. No Linux runtime, wire or version change is included.
+
 ## Apple 3.9.0 contrast follow-through, 2026-11-09
 
 Apple UI1 improves question context/copy labels, coaching units/column headings, readable placeholders and foreground on solid recording red. Audit matching Linux surfaces against the 4.5:1 ordinary-text target, including available controls and empty-field hints; do not blindly mirror Apple token names. The Mac menu-bar badge is platform-specific. No wire, data, Linux runtime or version change is included. Evidence remains in the Apple [3.9.0 checklist](../miniti/docs/releases/3.9.0.md).
