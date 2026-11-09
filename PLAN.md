@@ -736,3 +736,8 @@ Apple Home visual parity, 2026-11-08 (tracking only): account choices now use a 
 
 
 Apple folder journey parity, 2026-11-08: post-161 Apple source adds an optional folder setup task with explicit review confirmation, and separate preview/create/manage destinations. Preserve manual assignments by default, Preview → Apply for old history, optional matching/local-only editor controls, and independent hide/restore. No backend contract, Linux code or release change.
+
+
+### Apple Home layout parity, 2026-11-09
+
+Apple 3.8.0 source now places language above Start in a fixed bottom area. iOS setup/calendar/feedback share one equal-cell footer row. Mac retains its footer positions and moves calendar into an independent collapsible right sidebar, using an overlay at narrow widths. This is presentation-only tracking; no wire/data/auth/default change or Linux runtime implementation. Linux 0.7.2 remains the released baseline.
