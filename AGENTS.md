@@ -16,6 +16,8 @@ Apple setup visibility parity (2026-11-05): PLAN.md tracks progress, independent
 
 Apple audio-route follow-up (2026-11-06): PLAN.md tracks the Mac-specific hardware timeout/recovery boundary. No Linux runtime, wire contract or release change is implied.
 
+Apple recording-status parity (2026-11-09): PLAN.md tracks neutral startup copy versus actual recovery. No Linux runtime change.
+
 ## Locked decisions (do not reopen without asking)
 
 | Decision | Choice |
