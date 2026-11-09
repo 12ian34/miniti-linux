@@ -1,5 +1,19 @@
 # miniti Linux — Build Plan & Full Context
 
+## Apple 3.8.0 shared-contract planning, 2026-11-04
+
+Apple assigned 3.8.0 to reconnect metering, provider speaker restoration, explicit account choices/device labels and Watch/link reliability. The [release checklist](../miniti/docs/releases/3.8.0.md) and [metering contract](../miniti/docs/plans/managed-reconnect-metering.md) own scope. This is a planning handoff, not Linux implementation or a Linux version assignment.
+
+- Track `accounting_version: 2`, `recording_id`, `renew_session_id`, original `session_started_at`, `duration_ms` and `accepted_duration_ms` across `/api/session` and `/api/session/end`. Stable session identity survives grant renewal; v2 counts recordings beyond four hours and finalizes once. Preserve legacy request compatibility until a separately tested Linux adoption; never infer support from an old response missing the echoed version.
+- Pending charges are frozen to the enrolled owner, with bounded retention/retry and terminal owner/expiry/conflict errors. BYOK remains excluded. Legacy Linux accounting remains limited until v2 adoption; do not advertise the Apple fix as delivered on Linux.
+- Account parity: first use offers Sign in or Continue without signing in; sign-out/revocation persist until an explicit choice. Preserve healthy accounts, existing auth proofs, non-destructive credential handling and server Retry-After. Apple approval is the product contract, not evidence of a Linux implementation.
+- Track additive PATCH `/api/auth/account/devices/{installationId}` with a bounded label or null reset. Manual labels survive future automatic metadata refreshes. Personal device names never enter diagnostics. Existing list/revoke endpoints stay compatible.
+- Generic web sign-in/confirmation claims become atomic, with conditional approval/refusal behavior. Preserve current device-enrollment inspect/bind/consume and lost-response recovery; update affected Linux integration tests against the backend fixtures before adoption.
+- Speaker restoration and Watch importer changes are Apple-specific in this delivery. Retain Linux's existing source/recovery contract; do not invent support for the Apple local model or Watch companion.
+
+Before a Linux release adopting these contracts, implement Rust wire fixtures and real lifecycle/owner/long-session tests, update public docs and choose the Linux release version independently. No Linux code or release metadata changes are part of this planning handoff.
+
+
 ## Apple follow-ups in implementation, 2026-10-28
 
 Track Linux parity for [logging and monitoring](../miniti/docs/plans/logging-and-monitoring.md), [selective cloud privacy](../miniti/docs/plans/selective-cloud-privacy.md) and [purchase return](../miniti/docs/plans/purchase-return.md). Apple implementation is built locally and tested, not released. Preserve legacy diagnostics ingestion while adding stable event IDs and acknowledgements; Linux must adopt the same content-free event contract. Add the live/saved meeting Cloud/Local toolbar choice (no Home checkbox, per Ian’s 2026-10-29 UX review) and local calendar-title rules, including exclusion during an outstanding upload and preservation of excluded local meetings during pulls/deletes. `syncExcluded` stays local, without a sync-document schema change. Polar's HTTPS confirmation page must retain a usable Linux fallback until Linux registers and tests its own billing callback. Do not send every buyer to a Mac-only callback. Wire additions: diagnostics `event_id` and `accepted_ids`/`rejected_ids`; explicit signed upload-envelope `restore_deleted: true` with exact base revision, used only for the user’s Put on the cloud action. Preserve a local pending-restore intent across pull/reconcile until acknowledged; ordinary writes cannot resurrect tombstones. Purchase status requires the original installation and captured account. See `../miniti-api/docs/agents/09-followups.md`. No Linux implementation or release is claimed here.
@@ -607,3 +621,118 @@ Apple/backend 3.7.0 hardware/activity/outcome changes have a [local handoff](doc
 ## Tracking: 3.7.0 review corrections (2026-11-03)
 
 Apple/backend review fixes are local and unreleased. Full Questions BYOK prompts in Swift now mirror the managed prompt verbatim, including previous-summary/start context and the existing question-stability rules. The shared `../miniti/test-contracts/v1/review-370-v1.json` covers absent, empty and populated previous summaries. Linux must mirror these full-prompt bytes and import this additive fixture in its next parity change; the earlier incremental baseline fix alone does not establish full-prompt parity. Also track the plain-language Luna model-access refusal and fixed `model_access` category, without automatic cross-model retries or BYOK telemetry. No Linux runtime or release changes are included in this review task.
+
+
+## Apple 3.8.0 local contract handoff (2026-11-04)
+
+Apple/backend implementation is local and uncommitted, not deployed. Linux remains on its independent release line and legacy request format. No Linux metering/UX change is claimed. The new fixture at `test-contracts/managed-accounting-v2.json` is an exact copy of Apple's `test-contracts/v1/managed-accounting-v2.json` and backend `test/fixtures/managed-accounting-v2.json`.
+
+Track adoption as a bounded Linux task: stable recording UUID/version, monotonic active-time checkpoint, owner-bound durable report, v2 start/renew/end and six-hour accounting, positive legacy negotiation only before capture and no downgrade of an active v2 journal; an uncaptured failed request retains its UUID but can accept a successful legacy response on retry. Until then the old reconnect undercount and four-hour legacy cap remain. Legacy requests and response fields remain supported by the additive backend. Separately track explicit first-use/sign-out choices, unreadable keyring classification, persisted Retry-After, device label PATCH and manual-label preservation. Generic links gain atomic consumption server-side; device-enrollment proof/binding retries retain the existing protocol. No prompts, auth vectors or model choices change in 3.8.0.
+
+### 3.8.0 Apple folder compatibility (2026-11-04, local contract)
+
+Apple FO1 adds optional `folder_id` (UUID/null) and `folder_manual` (boolean) to schema-v1 meeting documents. Preserve these unknown fields verbatim in read/edit/write cycles. Empty-folder catalogs use separate account-scoped `/api/sync/folders` GET/PUT with revision CAS and deletion tombstones; Linux does not need to call it to remain compatible. Shared folder fixtures and round-trip verification are required before rollout. Linux folder UI is not implemented by the Apple work. Backend migration/route first, no production change authorized.
+
+Folder handoff verification: `test-contracts/folders-v1.json` is an exact copy of the Apple canonical catalog fixture. The released Linux client has no cloud sync producer, so there is no current Linux folder round-trip path to run. Preserve the additive fields and tombstones when its future cloud sync is implemented; do not claim Linux folder UI or sync support from this tracking update.
+
+### Apple 3.8.0 Home setup parity, 2026-11-04
+
+Track SG1: optional staged Home account/calendar guide, direct working email action, preserved existing preferences/dismissals and truthful reviewed/skipped/pending progress. Apple local-transcription review is Mac-specific, not a Linux promise. No API/schema/prompt change or Linux runtime implementation in this handoff. See [Apple SG1](../miniti/docs/plans/home-setup-guide.md).
+
+### 3.8.0 review correction tracking, 2026-11-04
+
+The Apple/backend local review now persists normalized Polar period-end spelling under the device CAS, keeping legacy/Linux session-end accounting compatible. Shared meeting uploads without `folder_id` preserve server folder membership; explicit null removes it. Preserve unknown folder fields where available and omit them for any future device-only override. Apple also makes setup controls direct, requires explicit confirmation before rotating an already-registered device, and retains one CRM completion across Resume/Stop. These are Linux parity follow-ups, not Linux implementation or release claims. See the Apple 3.8.0 runtime/review correction record for validation and remaining device gates.
+
+### Apple 3.8.0 UX parity follow-up, 2026-11-05
+
+Track broad purpose folders instead of per-title generation, preview grouped by category with counts/descriptions, native visible form fields and Reduce Motion-aware setup hiding. Matching remains local and the catalog/wire format is unchanged. Existing folder IDs/custom rules/manual moves survive. Default recommendations remain a discussion, not an Apple or Linux preference migration. No Linux runtime change.
+
+### Apple 3.8.0 file setup parity, 2026-11-05
+
+Track visible local Markdown destination and AGENTS index choices in first-use/Home, retaining explicit export defaults and keeping app history distinct from file copies. Apple bookmarks now preserve the previous destination on failure; its index writer preserves existing instructions outside a miniti-owned comment block. Calendar auto-start is a recommendation after connection, not a preference migration. No wire or Linux runtime change is included.
+
+### 3.8.0 second-review compatibility, 2026-11-05
+
+Backend fixes raw Redis comparison/volatile read contention, negative legacy elapsed time/global aggregate compatibility and v2-prefix collisions without requiring a Linux update. Account deletion now propagates purge failure and tolerates a missing folder table. Apple preserves old cloud fingerprints, avoids export-enable backfills, completes crash recovery, keeps keychain retries safe and reduces folder matching/poll cost. Track applicable Linux parity; no Linux runtime implementation is claimed. The revised Apple checklist is a proposal only. Ian resolved CRM behavior on 2026-11-05: first-completion-only automatic sync, with later changes resent manually. Continuing-call calendar transitions and automatic shared-folder creation for upgraders remain product decisions.
+
+### Apple checklist and release-note parity, 2026-11-05
+
+Ian approved the vertical Home checklist with real completion states, one expanded task and direct preference controls. Mac adds separate transcription/speaker choices. No Linux runtime change. Release notes must compare final behavior with the previous public release, omitting candidate-only regressions and describing newly introduced features as new.
+
+
+Apple setup visibility follow-up (2026-11-05): track a bottom-left setup control with configured/eligible progress, independent guide collapse/permanent dismissal, individual task hiding and General restoration. Hiding does not complete tasks or change preferences; account dismissal stays account-scoped. Contextual info links open specific docs. This is Apple-local UX parity tracking, not Linux implementation.
+
+
+### Apple third-review parity, 2026-11-05
+
+Track calendar-first Home with collapsible Today/Tomorrow/Later, subdued completed setup tasks, row-level hide/docs actions and model preparation/status. Backend accepts historical signed/exponent usage counters and retries legacy CAS races; no Linux client change is needed for that compatibility fix. Cloud writes now serialize with account deletion. Apple promotes newly known folder extras and protects remote content during folder-only sync; preserve those properties when adopting folders on Linux. Bulk uploads remain full documents. Applicable identity-recovery and CRM readiness fixes remain tracked; Ian chose first-completion-only automatic CRM sync with manual resend for later changes; automatic update-in-place is outside the Apple 3.8.0 scope. No Linux implementation/version change is claimed.
+
+
+### Apple 3.8.0 fourth-review parity, 2026-11-05
+
+Backend account-write contention is now retryable 503 rather than meeting-conflict 409; Linux must retain unsent edits and the last known revision on this transient response. Account deletion shares its owner-token lock with cloud writes, including token/grant creation. Both accounting paths reject oversized corrupt counters before charging. Apple folder migration rebases clean fingerprints, retains dirty edits and merges remote content for folder-only changes across all sync paths. Ambiguous start retries keep the recording UUID; recovered drafts do not automatically export before completion. CRM stays once on first completion, with manual resend. Track these contracts before Linux adopts the corresponding features; this is not a Linux implementation or release claim. Apple evidence: [fourth-review disposition](../miniti/docs/releases/3.8.0-evidence.md#fourth-review-corrections-2026-11-05).
+
+
+3.8.0 fifth-review parity tracking (2026-11-05): the compatible backend uses 503 `busy` plus `Retry-After` for account contention, with short bounded acquisition waits; never interpret this as a meeting revision conflict. Apple retries twice quietly and retains dirty work for the next poll. Track equivalent Linux transient UX when adopting cloud sync. OAuth/email contention preserves unconsumed credentials. Automatic Markdown parity should compare locale-free content identity, excluding pin/folder state, and avoid rendering full history during launch checks. Tracking only, no Linux implementation or release claim.
+
+
+### Apple 3.8.0 sixth-review parity, 2026-11-06
+
+Track independent content/folder sync baselines across push, pull and reconciliation; retain both sides of concurrent note/folder edits and ignore stale Undo markers. Apple blocks account moves until recording and owned usage/import work settles, and prevents a late resume grant from starting capture after Discard. Automatic Markdown compares only rendered input, excluding session and unrelated sync metadata. Compatible backend fixes preserve committed results after lock-release failure, fence browser sign-in with account deletion, reject inactive web sessions and restore automatic device naming after clearing a label. Apple offline setup and compact Home/calendar UI remain platform parity work. No Linux runtime implementation, version bump or release is claimed.
+
+
+### Apple 3.8.0 seventh-review parity, 2026-11-06
+
+Tracking only: Apple now preserves complete Watch audio, permits credential repair while retaining pending usage under its original account, and retries existing managed reports after a BYOK switch. Evaluate equivalent recovery/owner-retention behavior in Linux's own bounded work; no Linux runtime change is claimed. Backend meeting PUT ignores echoed folder membership only for known pre-3.8 Apple versions. `X-Platform: linux` retains its own version line and behavior, covered by the route regression. See [Apple disposition](../miniti/docs/releases/3.8.0-evidence.md#seventh-review-corrections-2026-11-06).
+
+
+## Apple audio-route hang follow-up, 2026-11-06
+
+Apple 3.8.0 now isolates Mac Core Audio/AVAudioEngine lifecycle operations on a serial worker with route settling, bounded timeout/quarantine and stale-callback rejection. Stop preserves received transcript and freezes/enqueues usage before queued teardown. This is a Mac-specific fix, with no Linux API/PCM/default change or Linux runtime adoption. Retain the corresponding responsiveness/late-callback acceptance criteria for future PipeWire recovery work; do not copy Apple APIs. The [Apple release record](../miniti/docs/releases/3.8.0-evidence.md#audio-route-hang-follow-up-2026-11-06) owns automated evidence and outstanding physical AirPods checks.
+
+### Apple eighth-review compatibility, 2026-11-06
+
+Backend legacy migration now checks both UUID spellings during preflight and final eligibility, retaining proof/key binding. No wire or Linux version change. Track Apple's same-revision folder refresh before uploading promoted legacy extras, preservation of explicit restore intent, and temporary-key Sign out protection without blocking authenticated repair. Mac hardware deadlines now exclude queue wait and remain quarantined after a genuine timeout. Watch paid-response checkpoints are iOS-specific. See the [Apple disposition](../miniti/docs/releases/3.8.0-evidence.md#eighth-review-corrections-and-legacy-migration-2026-11-06). No Linux runtime implementation or production backend deployment is claimed.
+
+
+### Confirmed Apple defaults and release handoff, 2026-11-06
+
+Ian selected keeping a continuing call in one recording across calendar boundaries, with explicit next-meeting handoff. Automatic folders apply to newly completed meetings, including upgraders; historical regrouping requires Preview and Apply. Track these for Linux parity without changing Linux defaults in this Apple task. The [compact Apple release checklist](../miniti/docs/releases/3.8.0.md) now separates current gates from dated development evidence. No Linux runtime or release change.
+
+
+### Apple build 155 review follow-through, 2026-11-06
+
+Apple fixes legacy folder refresh without cached membership, receipt-only Watch retry billing, idle audio quarantine actions and migration negative-cache retry. Linux has no Watch or Mac audio owner. The API error mapper now treats both 503 account-lock contention and historical/attach-specific 409 busy as retryable Busy, with the existing mapping test extended. No Linux version or release change. Apple release evidence owns validation; backend rollout remains separate.
+
+Apple 3.8.0 tenth-review tracking (2026-11-06): per-meeting folder-refresh retries/export callbacks, local migration query, hardware quarantine prompts and Watch checkpoint retention are Apple-only corrections. No backend wire/status change or new Linux runtime requirement; the existing 409/503 busy fix remains. Apple build 156 owns validation and no Linux release is implied.
+
+Apple setup feedback (2026-11-06): info buttons now show a short native explanation and an explicit docs link; setup disclosure/info/hide controls align consistently. Microphone authorization is cached and queried off the UI thread. Track the help interaction and nonblocking readiness policy for future Linux setup parity, without adopting Apple APIs or changing Linux runtime, defaults or release metadata. Calendar task restoration remains visibility-only, separate from connection and completion.
+
+### Apple transcript presentation follow-up, 2026-11-07
+
+Apple 3.8.0 now retains provisional words during source ordering, guards newer provisional phrases against delayed finals and batches the visible handoff. Mac gently brightens only newly committed words and skips that animation with Reduce Motion. Track the equivalent no-blank handoff in Linux; no Linux runtime, backend, transcription wire format or preference change is included here.
+
+
+### Apple setup remaining-choice follow-up, 2026-11-07
+
+Track explicit audio-choice review separate from model preferences/readiness, verified-email account completion with recovery key retained as backup, and omission of completed microphone/calendar prerequisites from Home while retaining progress. Existing dismissals/preferences remain intact; adding email does not enable optional Pro cloud storage/sync. Apple Home also gets an opaque fixed header. No Linux runtime, wire contract, defaults or release change is included.
+
+
+### Apple cloud-exclusion undo correction, 2026-11-07
+
+Apple 3.8.0 cancels a pending cloud-only removal atomically when restoring upload eligibility and rejects stale removal records for a local non-excluded meeting. Track this invariant when Linux implements selective cloud privacy; local user deletion still propagates normally. Apple also isolates setup state/permission reads and uses targeted local ID fetches during folder reconciliation. No backend or wire change, Linux runtime change or release is implied.
+
+Apple setup copy follow-up (2026-11-07): compare online processing and local processing benefits separately for transcription and speaker separation. Describe the optional AGENTS.md index as helping folder-aware AI assistants find saved meeting notes, with technical details in help. No preference, backend, Linux runtime or release change.
+
+Apple post-158 review follow-up (2026-11-07): Mac display-only paragraph breaks bound long-speaker TextKit edits while preserving words and stored transcript. Selection restores after the edit batch; Reduce Motion and real presentation-order regressions are covered. Pending microphone checks remain visible without claiming denial. Track equivalent presentation invariants for Linux as appropriate; no backend, wire, Linux runtime or default change.
+
+### Apple Home presentation parity, 2026-11-08
+
+Track the selected Apple 3.8.0 Home layout: remove the large brand lockup/tagline, show either setup or calendar, and keep setup/calendar controls together in the footer. Opening setup hides calendar; collapse/removal returns to it. Calendar hide persists locally without changing connection or automatic recording. Reuse Linux control conventions when parity is selected. No Linux implementation, release or backend contract change is included.
+
+Apple account-entry follow-up, 2026-11-08 (tracking only): explicit anonymous Continue now shows pending enrollment, selects managed mode before enrollment, and advances setup without waiting for usage. Preserve this behavior when adopting the planned explicit account-choice flow on Linux; temporary device identity failures must be visible, not silently reset. No Linux runtime change or release in this pass.
+
+Apple Home visual parity, 2026-11-08 (tracking only): account choices now use a centered cardless prompt and neutral controls aligned with the recording-action width. Preserve clear progress/error/recovery states when adapting this entry flow. The centered Feedback row is iOS-specific; Mac retains its right-aligned footer action. No Linux implementation in this pass.
+
+
+Apple folder journey parity, 2026-11-08: post-161 Apple source adds an optional folder setup task with explicit review confirmation, and separate preview/create/manage destinations. Preserve manual assignments by default, Preview → Apply for old history, optional matching/local-only editor controls, and independent hide/restore. No backend contract, Linux code or release change.

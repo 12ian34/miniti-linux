@@ -4,6 +4,13 @@ public changelog for miniti for Linux. the changelog for every platform lives at
 
 ## releases
 
+### unreleased - v0.7.2
+
+- improvement: (Linux) own-key summaries use newer AI models ahead of the old model's retirement
+- fix: (Linux) import meeting titles and dates from current Granola exports
+- fix: (Linux) live Questions updates keep the questions already found
+- fix: (Linux) temporary account contention is recognised as busy instead of an unexpected server error
+
 ### 2026-10-22 - v0.7.1
 
 - fix: miniti no longer trusts the eMudhra root certificate whose signing keys were cracked on 17 October. miniti for Linux carries its own list of trusted roots, so a system update does not cover it. Update to be safe

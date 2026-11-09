@@ -6,6 +6,14 @@ This file is the canonical entry point for agents working here. Long-form delive
 
 Local implementation (2026-11-03): the [test-foundation handoff](docs/test-foundation-followup.md) records the incremental Questions baseline correction and canonical wire-fixture follow-through. No model migration or release is implied.
 
+Apple 3.8.0 local implementation handoff (2026-11-04): [PLAN.md](PLAN.md#apple-380-shared-contract-planning-2026-11-04) tracks additive v2 metering, account-choice/device-label parity and atomic link compatibility. The local implementation handoff and exact wire fixture are in PLAN.md and test-contracts/managed-accounting-v2.json. No Linux adoption or release is claimed; its version line remains independent.
+
+Apple folder journey parity (2026-11-08): PLAN.md tracks optional folder setup and separate preview/create/manage destinations. No Linux runtime change.
+
+Apple setup visibility parity (2026-11-05): PLAN.md tracks progress, independent guide/task dismissal and General restoration; no Linux runtime change. Fifth- through seventh-review tracking there covers retryable account contention, stable Markdown checks, pending-usage recovery and Apple-specific old-client folder protection, without claiming Linux adoption.
+
+Apple audio-route follow-up (2026-11-06): PLAN.md tracks the Mac-specific hardware timeout/recovery boundary. No Linux runtime, wire contract or release change is implied.
+
 ## Locked decisions (do not reopen without asking)
 
 | Decision | Choice |
@@ -66,6 +74,10 @@ Honest Linux limits (document in UI/docs, don’t fake parity): Process-Tap-clas
 - **Secrets**: never commit API keys or introduce a shared `X-API-Key`. Managed requests use device-bound installation credentials and request proofs; local credential files are owner-only, with desktop keyring integration when available.
 - **Arch / Omarchy**: no Tauri updater; pacman owns updates through the Omarchy package repository. Nothing is ever published to the AUR.
 - **Changelog**: public-audience prose when shipping; no code refs in user-facing notes.
+
+## Release preparation, 2026-11-09
+
+Ian authorized the coordinated release across repositories. Linux 0.7.2 includes the existing Granola import and BYOK/Questions corrections since 0.7.1, plus the 503 busy compatibility mapping. Apple feature parity remains deferred. Full local checks and Linux CI/package evidence are required before the new tag and availability update.
 
 ## Status
 
@@ -153,3 +165,19 @@ Apple/backend 3.7.0 hardware/activity/outcome changes have a [local handoff](doc
 Apple/backend 3.7.0 review handoff (2026-11-03): [PLAN.md](PLAN.md#tracking-370-review-corrections-2026-11-03) tracks full Questions prompt/fixture parity and Luna access-error behavior. Linux runtime implementation is still pending; do not infer parity from the incremental-only baseline fix.
 
 Public documentation audit (2026-11-03, local only): README and the public Linux guide now distinguish released 0.7.1 from Apple features, Polar versus App Store account coverage, BYOK provider traffic versus integration/version requests, and the tarball icon-directory prerequisite. No implementation or release changed. Full evidence: [public docs audit](../miniti/docs/research/public-docs-audit-2026-11-03.md).
+
+Expanded Apple 3.8.0 handoff: PLAN.md tracks optional folder catalog/membership compatibility and the exact `test-contracts/folders-v1.json` fixture. Linux has no current cloud-sync producer, so no Linux folder UI/sync implementation or round-trip claim follows from this Apple update. Its version/release line remains unchanged.
+
+Apple SG1 Home setup UX parity is tracked in PLAN.md (2026-11-04). No Linux behavior or backend contract changes are implied.
+
+Apple/backend second-review handoff (2026-11-05): PLAN tracks compatible raw-accounting, deletion and legacy-ID fixes plus Apple sync/export/folder parity. No Linux runtime change. Apple checklist redesign is now locally implemented after Ian’s approval; PLAN records parity, without Linux adoption.
+
+Apple third-review follow-up (2026-11-05): PLAN.md tracks calendar/setup refinement and folder-only sync preservation; backend accounting compatibility changes require no Linux version bump. No runtime parity is claimed.
+
+CRM parity decision (2026-11-05): automatic Attio/Twenty sync runs at the first completed recording; later edits or resumed content are resent manually. PLAN.md records the resolved Apple 3.8.0 contract.
+
+Apple eighth review (2026-11-06): [PLAN.md](PLAN.md#apple-eighth-review-compatibility-2026-11-06) tracks migration case compatibility, folder refresh and account-repair parity. No Linux runtime or release change.
+
+Apple build 155 compatibility follow-through (2026-11-06): the API mapper accepts 503 as well as 409 `busy`. PLAN.md owns the bounded change and validation; no Linux release is implied.
+
+Apple Home presentation tracking (2026-11-08): PLAN.md records exclusive setup/calendar content and persistent calendar visibility controls. No Linux runtime or version change.

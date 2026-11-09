@@ -316,7 +316,7 @@ pub fn map_error_with_retry(
             device_cap: parsed.device_cap,
         },
         (409, "subscription_conflict") => ApiError::SubscriptionConflict,
-        (409, "busy") => ApiError::Busy,
+        (409 | 503, "busy") => ApiError::Busy,
         (429, _) => ApiError::RateLimited { retry_after_s },
         (s, code) => ApiError::Http {
             status: s,
@@ -966,6 +966,10 @@ mod tests {
         ));
         assert!(matches!(
             map_error(409, r#"{"error":"busy"}"#),
+            Some(ApiError::Busy)
+        ));
+        assert!(matches!(
+            map_error(503, r#"{"error":"busy"}"#),
             Some(ApiError::Busy)
         ));
         // The existing enrollment conflict keeps its own meaning.
