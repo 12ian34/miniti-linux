@@ -10,6 +10,10 @@ Apple iOS live and saved meetings now use one transcript/insights/notes picker w
 
 Saved Apple iOS discussion, actions and decisions use one selectable text surface per list. Shared Apple list spacing and marker-width indents keep wrapped lines aligned; Mac live discussion retains numbering. Action arrows replace checkboxes whose completion existed only in the view. No stored completion model, action-text mutation, Markdown-export or CRM task-selection change. Audit any equivalent Linux affordance against durable behavior; retain independent export/CRM selection controls. No Linux runtime or backend change is included.
 
+## Apple 3.9.0 insight Update chrome, 2026-11-09
+
+Apple live/saved insight Update labels now share neutral utility chrome while keeping their platform density, native actions, update/regenerate/finishing wording and disabled gates. Track equivalent Linux action consistency through its own shared controls. Keep progress adjacent without overlap and retain native keyboard behavior; do not copy iOS target sizes onto desktop. This is tracking only, with no Linux runtime, backend or version change.
+
 ## Apple 3.9.0 insight section geometry, 2026-11-09
 
 Apple insight wrappers now share desktop/mobile plain-section and markdown/plain-card geometry. Mac live headings match saved weight and accent-bar shape; existing outer padding, native help controls, card surfaces and scroll owners stay intact. Track equivalent Linux consistency through its own components while retaining native density and help interactions. This is tracking only, with no Linux runtime, backend or version change.
