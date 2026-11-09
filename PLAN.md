@@ -12,6 +12,8 @@ Apple also names metric help/close and question/docs copy actions for accessibil
 
 Apple Coaching history sort headers now have minimum targets, full accessible sort names, direction and selection. iOS widens its metric columns and scrolls the table at narrow widths to avoid overlap; that touch-specific geometry is not a Linux requirement. Include equivalent Linux sort controls, keyboard focus, metric help and narrow-table reachability in this audit. No Linux runtime or backend change is included.
 
+Apple Mac live notes now retain a usable editor viewport when the pane is resized to its minimum. Include equivalent Linux resizable text panes in the narrow-layout audit; preserve their own desktop sizing rather than copying the Mac bound. No Linux runtime or wire change is included.
+
 Apple UI1 separates compact control chrome from its allocated interactive bounds. Audit Linux shared tabs, compact controls and disclosures for appropriate desktop targets, non-overlapping adjacent frames and native action/disabled/focus behavior. Do not copy iOS's 44-point minimum into desktop controls blindly. Apple coverage includes a native iPhone target fixture and existing large-text journeys; Mac keyboard and constrained parent layouts remain separate gates. No Linux runtime, wire or version change is included.
 
 ## Apple 3.9.0 contrast follow-through, 2026-11-09
