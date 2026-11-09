@@ -2,6 +2,10 @@
 
 Apple publication, 2026-11-09: macOS 3.8.0 build 164 is public. The compatible backend is deployed, and iOS build 164 is on internal TestFlight and waiting for App Review. Linux 0.7.2 remains the independent public release; the Apple parity items below are tracking, not Linux adoption. Apple final validation and publication evidence live in the [3.8.0 release record](../miniti/docs/releases/3.8.0.md). No Linux runtime or version change accompanies this record.
 
+## Apple 3.9.0 meeting-section parity, 2026-11-09
+
+Apple iOS live and saved meetings now use one transcript/insights/notes picker with matching neutral chrome, minimum targets and selected semantics. Selection and content remain local to each screen. Track equivalent Linux live/saved navigation consistency while preserving desktop layout and shortcuts; do not duplicate the iOS tab layout automatically. No Linux runtime, backend contract or version change is included. Apple source evidence remains in the [3.9.0 checklist](../miniti/docs/releases/3.9.0.md).
+
 ## Apple 3.9.0 appearance follow-through, 2026-11-09
 
 Apple explicitly keeps main, Settings and Debug Log windows dark under a Light ambient appearance, without overriding system-owned menu-bar appearance. The SwiftUI scene fix is Mac-specific. Audit the equivalent Linux native controls and window chrome against the Linux theme contract; do not change the desktop-wide theme. No Linux runtime, backend contract or version change is included. Apple native evidence belongs in the [3.9.0 checklist](../miniti/docs/releases/3.9.0.md).
