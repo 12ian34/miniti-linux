@@ -8,7 +8,7 @@ Apple iOS live and saved meetings now use one transcript/insights/notes picker w
 
 ## Apple 3.9.0 action presentation, 2026-11-09
 
-Saved Apple iOS meeting actions use selectable arrow lists, replacing checkboxes whose completion existed only in the view. No stored completion model, action-text mutation, Markdown-export or CRM task-selection change. Audit any equivalent Linux affordance against durable behavior; retain independent export/CRM selection controls. No Linux runtime or backend change is included.
+Saved Apple iOS discussion, actions and decisions use one selectable text surface per list. Shared Apple list spacing and marker-width indents keep wrapped lines aligned; Mac live discussion retains numbering. Action arrows replace checkboxes whose completion existed only in the view. No stored completion model, action-text mutation, Markdown-export or CRM task-selection change. Audit any equivalent Linux affordance against durable behavior; retain independent export/CRM selection controls. No Linux runtime or backend change is included.
 
 ## Apple 3.9.0 appearance follow-through, 2026-11-09
 
