@@ -6,6 +6,10 @@ Apple publication, 2026-11-09: macOS 3.8.0 build 164 is public. The compatible b
 
 Apple iOS live and saved meetings now use one transcript/insights/notes picker with matching neutral chrome, minimum targets and selected semantics. Selection and content remain local to each screen. Track equivalent Linux live/saved navigation consistency while preserving desktop layout and shortcuts; do not duplicate the iOS tab layout automatically. No Linux runtime, backend contract or version change is included. Apple source evidence remains in the [3.9.0 checklist](../miniti/docs/releases/3.9.0.md).
 
+## Apple 3.9.0 action presentation, 2026-11-09
+
+Saved Apple iOS meeting actions use selectable arrow lists, replacing checkboxes whose completion existed only in the view. No stored completion model, action-text mutation, Markdown-export or CRM task-selection change. Audit any equivalent Linux affordance against durable behavior; retain independent export/CRM selection controls. No Linux runtime or backend change is included.
+
 ## Apple 3.9.0 appearance follow-through, 2026-11-09
 
 Apple explicitly keeps main, Settings and Debug Log windows dark under a Light ambient appearance, without overriding system-owned menu-bar appearance. The SwiftUI scene fix is Mac-specific. Audit the equivalent Linux native controls and window chrome against the Linux theme contract; do not change the desktop-wide theme. No Linux runtime, backend contract or version change is included. Apple native evidence belongs in the [3.9.0 checklist](../miniti/docs/releases/3.9.0.md).
