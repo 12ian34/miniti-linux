@@ -8,7 +8,7 @@ Local implementation (2026-11-03): the [test-foundation handoff](docs/test-found
 
 Apple 3.8.0 local implementation handoff (2026-11-04): [PLAN.md](PLAN.md#apple-380-shared-contract-planning-2026-11-04) tracks additive v2 metering, account-choice/device-label parity and atomic link compatibility. The local implementation handoff and exact wire fixture are in PLAN.md and test-contracts/managed-accounting-v2.json. No Linux adoption or release is claimed; its version line remains independent.
 
-Apple Home layout parity (2026-11-09): PLAN.md records bottom recording controls, the independent full-height Mac calendar sidebar, mirrored sidebar footer controls, full-row folder disclosures and labelled Models/keyboard access. No Linux runtime change.
+Apple Home layout parity (2026-11-09): PLAN.md records bottom recording controls, the independent full-height Mac calendar sidebar, mirrored sidebar footer controls and labelled collapsed calendar rail, full-row folder disclosures and labelled Models/keyboard access. No Linux runtime change.
 
 Apple folder journey parity (2026-11-08): PLAN.md tracks optional folder setup and separate preview/create/manage destinations. No Linux runtime change.
 
