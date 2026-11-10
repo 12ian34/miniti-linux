@@ -819,3 +819,8 @@ The next local backend package removes raw Polar webhook payload/error logs and 
 ## Polar checkout and restore boundary, 2026-11-10
 
 The local backend now preserves authenticated checkout account metadata when purchase-return UI is off. Callback/return-record creation is still disabled in that mode; legacy checkout requests remain unattributed. Linux request/response shapes and its binary remain unchanged. Restore and subscription-financial diagnostics omit raw provider bodies and identifiers within the documented boundary. The [Apple grouped evidence](../miniti/docs/releases/3.9.0.md#polar-checkout-capture-and-restore-boundary) includes synthetic Linux checkout tests and keeps provider correlation, durable ownership, storage and deployment open. No new Linux owner-binding or settlement support is claimed.
+
+
+## Account-period reference, 2026-11-10
+
+The Apple [period candidate](../miniti/docs/research/ownership-period-design-2026-11-10.md) and backend offline model distinguish selecting a paid rail from resetting an account's minutes. Paid-rail changes retain one window; verified renewal/free UTC rollover can open another. First-paid activation versus restore and stale-provider availability remain unresolved, preserving the shipped first-paid allowance as a requirement. This is design/test evidence, not a Linux/backend runtime, API, owner-binding or deployment change. Future Linux fixtures must verify the resulting account usage/reset fields and captured settlement identity when the adapter contract is complete.
