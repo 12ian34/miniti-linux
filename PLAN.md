@@ -814,3 +814,8 @@ The shared attach path now locally compares exact eligible purchase IDs across b
 
 
 The next local backend package removes raw Polar webhook payload/error logs and reachable usage-helper identifiers, retaining fixed diagnostic events and a random per-delivery trace. This changes operational logs only; Linux purchase/restore handling and API shapes remain. [Boundary and evidence](../miniti/docs/releases/3.9.0.md#polar-webhook-diagnostic-boundary) explicitly leave event deduplication, durable ownership and global billing-log coverage open. The S0 public-copy correction now names distinct same-rail refusals as well as shared-purchase acceptance; existing collision counts are still a pre-deployment inventory gate.
+
+
+## Polar checkout and restore boundary, 2026-11-10
+
+The local backend now preserves authenticated checkout account metadata when purchase-return UI is off. Callback/return-record creation is still disabled in that mode; legacy checkout requests remain unattributed. Linux request/response shapes and its binary remain unchanged. Restore and subscription-financial diagnostics omit raw provider bodies and identifiers within the documented boundary. The [Apple grouped evidence](../miniti/docs/releases/3.9.0.md#polar-checkout-capture-and-restore-boundary) includes synthetic Linux checkout tests and keeps provider correlation, durable ownership, storage and deployment open. No new Linux owner-binding or settlement support is claimed.
