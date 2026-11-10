@@ -42,7 +42,7 @@ Apple Coaching history sort headers now have minimum targets, full accessible so
 
 Apple Mac live notes now retain a usable editor viewport when the pane is resized to its minimum. Include equivalent Linux resizable text panes in the narrow-layout audit; preserve their own desktop sizing rather than copying the Mac bound. No Linux runtime or wire change is included.
 
-Apple UI1 separates compact control chrome from its allocated interactive bounds. Audit Linux shared tabs, compact controls and disclosures for appropriate desktop targets, non-overlapping adjacent frames and native action/disabled/focus behavior. Do not copy iOS's 44-point minimum into desktop controls blindly. Apple coverage includes a native iPhone target fixture and existing large-text journeys; Mac keyboard and constrained parent layouts remain separate gates. No Linux runtime, wire or version change is included.
+Apple consent actions also reserve the platform minimum target while keeping disclosure content separate from the action bar; audit equivalent Linux permission choices without changing consent policy. Apple UI1 separates compact control chrome from its allocated interactive bounds. Audit Linux shared tabs, compact controls and disclosures for appropriate desktop targets, non-overlapping adjacent frames and native action/disabled/focus behavior. Do not copy iOS's 44-point minimum into desktop controls blindly. Apple coverage includes a native iPhone target fixture and existing large-text journeys; Mac keyboard and constrained parent layouts remain separate gates. No Linux runtime, wire or version change is included.
 
 ## Apple 3.9.0 contrast follow-through, 2026-11-09
 
