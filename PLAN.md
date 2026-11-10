@@ -830,3 +830,8 @@ The elapsed-window F1 correction at backend `cf17e546` is reviewed in scope. Fir
 ## Billing period timestamp identity, 2026-11-10
 
 The shared backend’s existing Polar/Apple device writers now compare valid period-start instants before resetting usage. UTC/offset/fraction spelling changes, including a CAS retry after another writer charges, no longer erase used minutes. The final test fails against archived deployed `ec6add1` and passes against the correction. Linux uses the Polar path; no Linux binary, wire response, purchase ownership or version changes. First paid links and real renewals still reset under existing rules. The Apple [release evidence](../miniti/docs/releases/3.9.0.md#billing-period-identity-and-receipt-validation) records checks and activation status. The accepted offline receipt model also gains seed-owner, stored-shape/time-order and bounded-replay checks; the provider classifier/storage remain unimplemented.
+
+
+## Device counts and automatic names, 2026-11-10
+
+Apple/backend grouped 3.9.0 package adds optional token-grant labels and new-enrollment automatic provenance, preserving manual and unknown nonempty legacy names. Existing Linux bodies remain compatible; a Linux automatic-name token producer is not implemented or claimed. Blank server list labels use both legacy UUID spellings before platform fallback. Admin totals count case variants of valid UUIDs once and retain separate raw-record counts, raw rows and sums; no B0 merge or Linux version change. [Apple evidence](../miniti/docs/releases/3.9.0.md#device-counts-and-automatic-name-provenance) owns validation/review. Nothing deployed.
